@@ -1,0 +1,11 @@
+{
+  "name": "whatasppclient",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "inspect:web": "node scripts/inspect-whatsapp-web.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.54.2"
+  }
+}

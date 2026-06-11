@@ -1,0 +1,233 @@
+{
+  "capturedAt": "2026-04-16T18:20:39.919Z",
+  "target": "https://web.whatsapp.com/",
+  "snapshot": {
+    "location": "https://web.whatsapp.com/",
+    "title": "",
+    "localStorageKeys": [],
+    "sessionStorageKeys": [],
+    "indexedDbDatabases": [],
+    "serviceWorkers": [],
+    "scripts": [
+      "data:application/x-javascript; charset=utf-8;base64,Oy8qRkJfUEtHX0RFTElNKi8KCnZhciBkYXRhRWxlbWVudD1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgiZW52anNvbiIpO2lmKGRhdGFFbGVtZW50IT1udWxsKXt2YXIgY29weVZhcmlhYmxlcz1mdW5jdGlvbihlKXtmb3IodmFyIG4gaW4gdmFyaWFibGVzKWVbbl09dmFyaWFibGVzW25dfSx2YXJpYWJsZXM9SlNPTi5wYXJzZShkYXRhRWxlbWVudC50ZXh0Q29udGVudCk7d2luZG93LnJlcXVpcmVMYXp5P3dpbmRvdy5yZXF1aXJlTGF6eShbIkVudiJdLGNvcHlWYXJpYWJsZXMpOih3aW5kb3cuRW52PXdpbmRvdy5FbnZ8fHt9LGNvcHlWYXJpYWJsZXMod2luZG93LkVudikpfQovLyMgc291cmNlVVJMPWh0dHBzOi8vc3RhdGljLndoYXRzYXBwLm5ldC9yc3JjLnBocC92NC95Qi9yL2RIYnF0ZHJGdnVuLmpzCg==",
+      "data:application/x-javascript; charset=utf-8;base64,Oy8qRkJfUEtHX0RFTElNKi8KCl9fYW5ub3RhdG9yPWZ1bmN0aW9uKGUpe3JldHVybiBlfSxfX2Rfc3R1Yj1bXSxfX2Q9ZnVuY3Rpb24oZSx0LG4scil7X19kX3N0dWIucHVzaChbZSx0LG4scl0pfSxfX3JsX3N0dWI9W10scmVxdWlyZUxhenk9ZnVuY3Rpb24oKXtfX3JsX3N0dWIucHVzaChhcmd1bWVudHMpfTsKLy8jIHNvdXJjZVVSTD1odHRwczovL3N0YXRpYy53aGF0c2FwcC5uZXQvcnNyYy5waHAvdjQveW8vci84d0RrMEpyZURNSi5qcwo=",
+      "data:application/x-javascript; charset=utf-8;base64,Oy8qRkJfUEtHX0RFTElNKi8KCl9idGxkcj17fSxfbm93SW5sPWZ1bmN0aW9uKCl7dmFyIGU9d2luZG93LnBlcmZvcm1hbmNlO3JldHVybiBlJiZlLm5vdyYmZS50aW1pbmcmJmUudGltaW5nLm5hdmlnYXRpb25TdGFydD9lLm5vdygpK2UudGltaW5nLm5hdmlnYXRpb25TdGFydDpuZXcgRGF0ZSgpLmdldFRpbWUoKX0sX3FwbElubD0oZnVuY3Rpb24oKXt2YXIgZT17Y2xpZW50Ont9fTtyZXR1cm57YWRkUG9pbnQ6ZnVuY3Rpb24odCl7ZS5jbGllbnRbdF09X25vd0lubCgpfSxnZXRQb2ludHM6ZnVuY3Rpb24oKXtyZXR1cm4gZX19fSkoKSxfcXBsSW5sLmFkZFBvaW50KCJodG1sRmx1c2giKTsKLy8jIHNvdXJjZVVSTD1odHRwczovL3N0YXRpYy53aGF0c2FwcC5uZXQvcnNyYy5waHAvdjQveUsvci9uT2FwY1BzUndwWi5qcwo=",
+      "data:application/x-javascript; charset=utf-8;base64,Oy8qRkJfUEtHX0RFTElNKi8KCihmdW5jdGlvbigpe2Z1bmN0aW9uIGUoZSl7cmV0dXJuIGUucGFyZW50RWxlbWVudCE9PWRvY3VtZW50LmJvZHkmJmUucGFyZW50RWxlbWVudCE9PWRvY3VtZW50LmhlYWR9ZnVuY3Rpb24gdChlKXt2YXIgdDtyZXR1cm4gZS5ub2RlTmFtZT09PSJTQ1JJUFQifHxlLm5vZGVOYW1lPT09IkxJTksiJiYoKHQ9bihlKSk9PW51bGw/dm9pZCAwOnQuYXN5bmNDc3MpfWZ1bmN0aW9uIG4oZSl7cmV0dXJuIGUuZGF0YXNldCBpbnN0YW5jZW9mIHdpbmRvdy5ET01TdHJpbmdNYXA/ZS5kYXRhc2V0Om51bGx9ZnVuY3Rpb24gcihyKXt2YXIgbzt0cnl7aWYoci5ub2RlVHlwZSE9PU5vZGUuRUxFTUVOVF9OT0RFKXJldHVybn1jYXRjaChlKXtyZXR1cm59aWYoIShlKHIpfHwhdChyKSkpe3ZhciBhPShvPW4ocikpPT1udWxsP3ZvaWQgMDpvLmJvb3Rsb2FkZXJIYXNoO2lmKGEhPW51bGwmJmEhPT0iIil7dmFyIGk9bnVsbCxsPWZ1bmN0aW9uKCl7d2luZG93Ll9idGxkclthXT0xLGk9PW51bGx8fGkoKX07aT1mdW5jdGlvbigpe3IucmVtb3ZlRXZlbnRMaXN0ZW5lcigibG9hZCIsbCksci5yZW1vdmVFdmVudExpc3RlbmVyKCJlcnJvciIsbCl9LHIuYWRkRXZlbnRMaXN0ZW5lcigibG9hZCIsbCksci5hZGRFdmVudExpc3RlbmVyKCJlcnJvciIsbCl9fX1BcnJheS5mcm9tKGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3JBbGwoJ3NjcmlwdCxsaW5rW2RhdGEtYXN5bmMtY3NzPSIxIl0nKSkuZm9yRWFjaChmdW5jdGlvbihlKXtyZXR1cm4gcihlKX0pO3ZhciBvPW5ldyBNdXRhdGlvbk9ic2VydmVyKGZ1bmN0aW9uKGUsdCl7ZS5mb3JFYWNoKGZ1bmN0aW9uKGUpe2UudHlwZT09PSJjaGlsZExpc3QiJiZBcnJheS5mcm9tKGUuYWRkZWROb2RlcykuZm9yRWFjaChmdW5jdGlvbihlKXtyKGUpfSl9KX0pO28ub2JzZXJ2ZShkb2N1bWVudC5nZXRFbGVtZW50c0J5VGFnTmFtZSgiaHRtbCIpWzBdLHthdHRyaWJ1dGVzOiExLGNoaWxkTGlzdDohMCxzdWJ0cmVlOiEwfSl9KSgpOwovLyMgc291cmNlVVJMPWh0dHBzOi8vc3RhdGljLndoYXRzYXBwLm5ldC9yc3JjLnBocC92NC95bS9yL0lRSzRJc0dMXzk0LmpzCg==",
+      "data:application/x-javascript; charset=utf-8;base64,Oy8qRkJfUEtHX0RFTElNKi8KCiJ1c2Ugc3RyaWN0Ijt0cnl7dmFyIFRIRU1FX0tFWT0idGhlbWUiLFNZU1RFTV9USEVNRV9NT0RFPSJzeXN0ZW0tdGhlbWUtbW9kZSIsc3BsYXNoc2NyZWVuVmFyaWFibGVNYXA9eyItLXNwbGFzaHNjcmVlbi1zdGFydHVwLWJhY2tncm91bmQiOntsaWdodDoiI0Y3RjVGMyIsZGFyazoiIzE2MTcxNyJ9LCItLXNwbGFzaHNjcmVlbi1zdGFydHVwLWJhY2tncm91bmQtcmdiIjp7bGlnaHQ6IjI0NywgMjQ1LCAyNDMiLGRhcms6IjIyLCAyMywgMjMifSwiLS1zcGxhc2hzY3JlZW4tc3RhcnR1cC1pY29uIjp7bGlnaHQ6InJnYmEoMCwgMCwgMCwgMC4xKSIsZGFyazoicmdiYSgyNTUsIDI1NSwgMjU1LCAwLjIpIn0sIi0tc3BsYXNoc2NyZWVuLXByaW1hcnktdGl0bGUiOntsaWdodDoiIzBBMEEwQSIsZGFyazoiI0ZBRkFGQSJ9LCItLXNwbGFzaHNjcmVlbi1zZWNvbmRhcnktbGlnaHRlciI6e2xpZ2h0OiJyZ2JhKDAsIDAsIDAsIDAuNikiLGRhcms6InJnYmEoMjU1LCAyNTUsIDI1NSwgMC42KSJ9LCItLXNwbGFzaHNjcmVlbi1wcm9ncmVzcy1wcmltYXJ5Ijp7bGlnaHQ6IiMxREFBNjEiLGRhcms6IiMyMUMwNjMifSwiLS1zcGxhc2hzY3JlZW4tcHJvZ3Jlc3MtYmFja2dyb3VuZCI6e2xpZ2h0OiJyZ2JhKDAsIDAsIDAsIDAuMSkiLGRhcms6InJnYmEoMjU1LCAyNTUsIDI1NSwgMC4xKSJ9fSxwcmVmZXJzQ29sb3JTY2hlbWVNb2RlPW51bGw7aWYod2luZG93Lm1hdGNoTWVkaWEpe3ZhciBwcmVmZXJzRGFyaz13aW5kb3cubWF0Y2hNZWRpYSgiKHByZWZlcnMtY29sb3Itc2NoZW1lOiBkYXJrKSIpLHByZWZlcnNMaWdodD13aW5kb3cubWF0Y2hNZWRpYSgiKHByZWZlcnMtY29sb3Itc2NoZW1lOiBsaWdodCkiKTtwcmVmZXJzRGFyay5tYXRjaGVzPT09ITA/cHJlZmVyc0NvbG9yU2NoZW1lTW9kZT0iZGFyayI6cHJlZmVyc0xpZ2h0Lm1hdGNoZXMmJihwcmVmZXJzQ29sb3JTY2hlbWVNb2RlPSJsaWdodCIpfXZhciBzeXN0ZW1UaGVtZU1vZGVTZXQ9d2luZG93LmxvY2FsU3RvcmFnZS5nZXRJdGVtKFNZU1RFTV9USEVNRV9NT0RFKT09PSJ0cnVlIixjb25maWd1cmVkVGhlbWU9d2luZG93LmxvY2FsU3RvcmFnZS5nZXRJdGVtKFRIRU1FX0tFWSk7c3lzdGVtVGhlbWVNb2RlU2V0P3ByZWZlcnNDb2xvclNjaGVtZU1vZGU9PT0iZGFyayI/T2JqZWN0LmtleXMoc3BsYXNoc2NyZWVuVmFyaWFibGVNYXApLmZvckVhY2goZnVuY3Rpb24oZSl7dmFyIG47cmV0dXJuKG49ZG9jdW1lbnQuZG9jdW1lbnRFbGVtZW50KT09bnVsbD92b2lkIDA6bi5zdHlsZS5zZXRQcm9wZXJ0eShlLHNwbGFzaHNjcmVlblZhcmlhYmxlTWFwW2VdLmRhcmspfSk6cHJlZmVyc0NvbG9yU2NoZW1lTW9kZT09PSJsaWdodCImJk9iamVjdC5rZXlzKHNwbGFzaHNjcmVlblZhcmlhYmxlTWFwKS5mb3JFYWNoKGZ1bmN0aW9uKGUpe3ZhciBuO3JldHVybihuPWRvY3VtZW50LmRvY3VtZW50RWxlbWVudCk9PW51bGw/dm9pZCAwOm4uc3R5bGUuc2V0UHJvcGVydHkoZSxzcGxhc2hzY3JlZW5WYXJpYWJsZU1hcFtlXS5saWdodCl9KTpjb25maWd1cmVkVGhlbWU9PT0nImRhcmsiJz9PYmplY3Qua2V5cyhzcGxhc2hzY3JlZW5WYXJpYWJsZU1hcCkuZm9yRWFjaChmdW5jdGlvbihlKXt2YXIgbjtyZXR1cm4obj1kb2N1bWVudC5kb2N1bWVudEVsZW1lbnQpPT1udWxsP3ZvaWQgMDpuLnN0eWxlLnNldFByb3BlcnR5KGUsc3BsYXNoc2NyZWVuVmFyaWFibGVNYXBbZV0uZGFyayl9KTooY29uZmlndXJlZFRoZW1lPT1udWxsfHxjb25maWd1cmVkVGhlbWU9PT0nImxpZ2h0IicpJiZPYmplY3Qua2V5cyhzcGxhc2hzY3JlZW5WYXJpYWJsZU1hcCkuZm9yRWFjaChmdW5jdGlvbihlKXt2YXIgbjtyZXR1cm4obj1kb2N1bWVudC5kb2N1bWVudEVsZW1lbnQpPT1udWxsP3ZvaWQgMDpuLnN0eWxlLnNldFByb3BlcnR5KGUsc3BsYXNoc2NyZWVuVmFyaWFibGVNYXBbZV0ubGlnaHQpfSl9Y2F0Y2goZSl7fQovLyMgc291cmNlVVJMPWh0dHBzOi8vc3RhdGljLndoYXRzYXBwLm5ldC9yc3JjLnBocC92NC95dS9yL3FHODlqaVVYSVZrLmpzCg==",
+      "data:text/javascript;base64,cmVxdWlyZUxhenkoWyJTZXJ2ZXJKU1BheWxvYWRMaXN0ZW5lciJdLGZ1bmN0aW9uKG0pe20ucHJvY2VzcygpO30sbnVsbCwweDEwMCk=",
+      "https://static.whatsapp.net/rsrc.php/v4/y8/r/cqQl5CN3vO-.js",
+      "https://static.whatsapp.net/rsrc.php/v4/yn/r/F3Bh_vg1DvikIUy9WTZPkMHTEFngCYwvvkMoS7dYxeXRrBGl1VNl-DE_mp6xq6w4sDa_zHNlDMhh_CeeUTDH2pdaZ_24AX4JG7WN2BaG9ISuhoe0qnL2dG90HwJ34wthXfB37LzCOL_W7Hlu63lw_MkRQA.js",
+      "https://static.whatsapp.net/rsrc.php/v4/yV/r/zYXwWBEdFyq.js",
+      "https://static.whatsapp.net/rsrc.php/v4/y6/r/uz2LWZJJ4N_.js",
+      "https://static.whatsapp.net/rsrc.php/v4ihln4/yz/l/pt_BR-j/gN1OtKFq9vw_2lEamxrkwc3IEODGsaq7SaCfnmC2Sf2oWl_HC4ZDPfuKnSGw9gSp64cbYmeg3SYx99plcsOqfscBu5V1Ub2O_eFrBzTPGTk8fAOwo1GF5ZPg057VTNBLKm8HCR58KkSKr1U.js",
+      "https://static.whatsapp.net/rsrc.php/v4iaMT4/yS/l/pt_BR-j/gl-qWtoiHvoJ4jOo9mq7tEkKglZLm8LYQ4FPoI-WIXMkANYbQi0UDlcGSdHeMgZ91IdDSG-qfIXL9OCHY_hgScfYBxtQCRYCzZsVIc-G0sHAgA6eD4R-QADlk2Hp5uzXNYP2W24TrgLLRxxqLHCXmPk0ZWe5VsiJZ0h1pCsviLnUnBmUCFaMnmkexGMA6UGsWl_2vidf-K6dZS2nKAbr_J6suc61L1vZ3VY3Y_6uEo5q-4X5wzwCd1xqrhA4lasuSFvHE8EcQchDuLRvZlIkzCjlEkul-VLjYsSRyrhAzz4-FFqPeO-cAbxHDc6Aa_kcKxJcYRzyyU.js",
+      "https://static.whatsapp.net/rsrc.php/v4/yq/r/l_wJqtyrtMz.js",
+      "https://static.whatsapp.net/rsrc.php/v4iu4R4/yz/l/pt_BR-j/hjhIKXVue8D.js",
+      "https://static.whatsapp.net/rsrc.php/v4i2iV4/yP/l/pt_BR-j/5lePdwDARv3.js"
+    ],
+    "styleSheets": [
+      "https://static.whatsapp.net/rsrc.php/v5/yQ/l/0,cross/QCe84PWyczVpCtyrg7TQChIhSs-fETw0mlwij8nbyzl0.css"
+    ],
+    "domMarkers": {
+      "rootIds": [
+        "whatsapp-web",
+        "envjson",
+        "app"
+      ],
+      "dialogCount": 0,
+      "buttonCount": 0
+    }
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "resourceType": "document",
+      "url": "https://web.whatsapp.com/"
+    },
+    {
+      "method": "GET",
+      "resourceType": "stylesheet",
+      "url": "https://static.whatsapp.net/rsrc.php/v5/yQ/l/0,cross/QCe84PWyczVpCtyrg7TQChIhSs-fETw0mlwij8nbyzl0.css"
+    },
+    {
+      "method": "GET",
+      "resourceType": "script",
+      "url": "https://static.whatsapp.net/rsrc.php/v4/y8/r/cqQl5CN3vO-.js"
+    },
+    {
+      "method": "GET",
+      "resourceType": "script",
+      "url": "https://static.whatsapp.net/rsrc.php/v4/yn/r/F3Bh_vg1DvikIUy9WTZPkMHTEFngCYwvvkMoS7dYxeXRrBGl1VNl-DE_mp6xq6w4sDa_zHNlDMhh_CeeUTDH2pdaZ_24AX4JG7WN2BaG9ISuhoe0qnL2dG90HwJ34wthXfB37LzCOL_W7Hlu63lw_MkRQA.js"
+    },
+    {
+      "method": "GET",
+      "resourceType": "script",
+      "url": "https://static.whatsapp.net/rsrc.php/v4/yV/r/zYXwWBEdFyq.js"
+    },
+    {
+      "method": "GET",
+      "resourceType": "script",
+      "url": "https://static.whatsapp.net/rsrc.php/v4/y6/r/uz2LWZJJ4N_.js"
+    },
+    {
+      "method": "GET",
+      "resourceType": "script",
+      "url": "https://static.whatsapp.net/rsrc.php/v4ihln4/yz/l/pt_BR-j/gN1OtKFq9vw_2lEamxrkwc3IEODGsaq7SaCfnmC2Sf2oWl_HC4ZDPfuKnSGw9gSp64cbYmeg3SYx99plcsOqfscBu5V1Ub2O_eFrBzTPGTk8fAOwo1GF5ZPg057VTNBLKm8HCR58KkSKr1U.js"
+    },
+    {
+      "method": "GET",
+      "resourceType": "script",
+      "url": "https://static.whatsapp.net/rsrc.php/v4iaMT4/yS/l/pt_BR-j/gl-qWtoiHvoJ4jOo9mq7tEkKglZLm8LYQ4FPoI-WIXMkANYbQi0UDlcGSdHeMgZ91IdDSG-qfIXL9OCHY_hgScfYBxtQCRYCzZsVIc-G0sHAgA6eD4R-QADlk2Hp5uzXNYP2W24TrgLLRxxqLHCXmPk0ZWe5VsiJZ0h1pCsviLnUnBmUCFaMnmkexGMA6UGsWl_2vidf-K6dZS2nKAbr_J6suc61L1vZ3VY3Y_6uEo5q-4X5wzwCd1xqrhA4lasuSFvHE8EcQchDuLRvZlIkzCjlEkul-VLjYsSRyrhAzz4-FFqPeO-cAbxHDc6Aa_kcKxJcYRzyyU.js"
+    },
+    {
+      "method": "GET",
+      "resourceType": "script",
+      "url": "https://static.whatsapp.net/rsrc.php/v4/yq/r/l_wJqtyrtMz.js"
+    },
+    {
+      "method": "GET",
+      "resourceType": "script",
+      "url": "https://static.whatsapp.net/rsrc.php/v4iu4R4/yz/l/pt_BR-j/hjhIKXVue8D.js"
+    },
+    {
+      "method": "GET",
+      "resourceType": "script",
+      "url": "https://static.whatsapp.net/rsrc.php/v4i2iV4/yP/l/pt_BR-j/5lePdwDARv3.js"
+    },
+    {
+      "method": "GET",
+      "resourceType": "image",
+      "url": "https://web.whatsapp.com/images/whatsapp/web/landing/logo-whatsapp.png"
+    },
+    {
+      "method": "GET",
+      "resourceType": "image",
+      "url": "https://web.whatsapp.com/images/whatsapp/web/landing/logo-chrome.png"
+    }
+  ],
+  "responses": [
+    {
+      "status": 200,
+      "url": "https://web.whatsapp.com/",
+      "headers": {
+        "cache-control": "private, no-cache, no-store, must-revalidate",
+        "content-type": "text/html; charset=\"utf-8\""
+      }
+    },
+    {
+      "status": 200,
+      "url": "https://web.whatsapp.com/images/whatsapp/web/landing/logo-whatsapp.png",
+      "headers": {
+        "content-type": "image/png",
+        "cache-control": "public,max-age=86400",
+        "content-length": "4177"
+      }
+    },
+    {
+      "status": 200,
+      "url": "https://web.whatsapp.com/images/whatsapp/web/landing/logo-chrome.png",
+      "headers": {
+        "content-type": "image/png",
+        "cache-control": "public,max-age=86400",
+        "content-length": "4898"
+      }
+    },
+    {
+      "status": 200,
+      "url": "https://static.whatsapp.net/rsrc.php/v5/yQ/l/0,cross/QCe84PWyczVpCtyrg7TQChIhSs-fETw0mlwij8nbyzl0.css",
+      "headers": {
+        "content-type": "text/css; charset=utf-8",
+        "cache-control": "public,max-age=31536000,immutable",
+        "content-length": "288411"
+      }
+    },
+    {
+      "status": 200,
+      "url": "https://static.whatsapp.net/rsrc.php/v4/y6/r/uz2LWZJJ4N_.js",
+      "headers": {
+        "content-type": "application/x-javascript; charset=utf-8",
+        "cache-control": "public,max-age=31536000,immutable",
+        "content-length": "33664"
+      }
+    },
+    {
+      "status": 200,
+      "url": "https://static.whatsapp.net/rsrc.php/v4/y8/r/cqQl5CN3vO-.js",
+      "headers": {
+        "content-type": "application/x-javascript; charset=utf-8",
+        "cache-control": "public,max-age=31536000,immutable",
+        "content-length": "78910"
+      }
+    },
+    {
+      "status": 200,
+      "url": "https://static.whatsapp.net/rsrc.php/v4/yV/r/zYXwWBEdFyq.js",
+      "headers": {
+        "content-type": "application/x-javascript; charset=utf-8",
+        "cache-control": "public,max-age=31536000,immutable",
+        "content-length": "100984"
+      }
+    },
+    {
+      "status": 200,
+      "url": "https://static.whatsapp.net/rsrc.php/v4/yn/r/F3Bh_vg1DvikIUy9WTZPkMHTEFngCYwvvkMoS7dYxeXRrBGl1VNl-DE_mp6xq6w4sDa_zHNlDMhh_CeeUTDH2pdaZ_24AX4JG7WN2BaG9ISuhoe0qnL2dG90HwJ34wthXfB37LzCOL_W7Hlu63lw_MkRQA.js",
+      "headers": {
+        "content-type": "application/x-javascript; charset=utf-8",
+        "cache-control": "public,max-age=31536000,immutable",
+        "content-length": "101734"
+      }
+    },
+    {
+      "status": 200,
+      "url": "https://static.whatsapp.net/rsrc.php/v4iaMT4/yS/l/pt_BR-j/gl-qWtoiHvoJ4jOo9mq7tEkKglZLm8LYQ4FPoI-WIXMkANYbQi0UDlcGSdHeMgZ91IdDSG-qfIXL9OCHY_hgScfYBxtQCRYCzZsVIc-G0sHAgA6eD4R-QADlk2Hp5uzXNYP2W24TrgLLRxxqLHCXmPk0ZWe5VsiJZ0h1pCsviLnUnBmUCFaMnmkexGMA6UGsWl_2vidf-K6dZS2nKAbr_J6suc61L1vZ3VY3Y_6uEo5q-4X5wzwCd1xqrhA4lasuSFvHE8EcQchDuLRvZlIkzCjlEkul-VLjYsSRyrhAzz4-FFqPeO-cAbxHDc6Aa_kcKxJcYRzyyU.js",
+      "headers": {
+        "content-type": "application/x-javascript; charset=utf-8",
+        "cache-control": "public,max-age=31536000,immutable",
+        "content-length": "103096"
+      }
+    },
+    {
+      "status": 200,
+      "url": "https://static.whatsapp.net/rsrc.php/v4/yq/r/l_wJqtyrtMz.js",
+      "headers": {
+        "content-type": "application/x-javascript; charset=utf-8",
+        "cache-control": "public,max-age=31536000,immutable",
+        "content-length": "195441"
+      }
+    },
+    {
+      "status": 200,
+      "url": "https://static.whatsapp.net/rsrc.php/v4i2iV4/yP/l/pt_BR-j/5lePdwDARv3.js",
+      "headers": {
+        "content-type": "application/x-javascript; charset=utf-8",
+        "cache-control": "public,max-age=31536000,immutable",
+        "content-length": "316012"
+      }
+    },
+    {
+      "status": 200,
+      "url": "https://static.whatsapp.net/rsrc.php/v4ihln4/yz/l/pt_BR-j/gN1OtKFq9vw_2lEamxrkwc3IEODGsaq7SaCfnmC2Sf2oWl_HC4ZDPfuKnSGw9gSp64cbYmeg3SYx99plcsOqfscBu5V1Ub2O_eFrBzTPGTk8fAOwo1GF5ZPg057VTNBLKm8HCR58KkSKr1U.js",
+      "headers": {
+        "content-type": "application/x-javascript; charset=utf-8",
+        "cache-control": "public,max-age=31536000,immutable",
+        "content-length": "1166408"
+      }
+    },
+    {
+      "status": 200,
+      "url": "https://static.whatsapp.net/rsrc.php/v4iu4R4/yz/l/pt_BR-j/hjhIKXVue8D.js",
+      "headers": {
+        "content-type": "application/x-javascript; charset=utf-8",
+        "cache-control": "public,max-age=31536000,immutable",
+        "content-length": "1227117"
+      }
+    }
+  ],
+  "consoleMessages": [
+    {
+      "type": "warning",
+      "text": "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'."
+    }
+  ],
+  "pageErrors": []
+}

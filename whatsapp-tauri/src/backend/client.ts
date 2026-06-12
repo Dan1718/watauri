@@ -1,7 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listChats as listMockChats } from "./repositories/chatRepository";
-import { listMessages as listMockMessages } from "./repositories/messageRepository";
 import type { Chat, Message } from "../types";
+
+const BASE = "http://localhost:8090";
 
 export interface BackendHealth {
   name: string;
@@ -10,21 +9,19 @@ export interface BackendHealth {
 }
 
 export async function backendHealth(): Promise<BackendHealth> {
-  try {
-    return await invoke<BackendHealth>("backend_health");
-  } catch {
-    return {
-      name: "whatsapp-tauri",
-      status: "ok",
-      mode: "mock",
-    };
-  }
+  const res = await fetch(`${BASE}/health`);
+  if (!res.ok) throw new Error(`health check failed: ${res.status}`);
+  return res.json();
 }
 
 export async function listChats(): Promise<Chat[]> {
-  return listMockChats();
+  const res = await fetch(`${BASE}/api/chats`);
+  if (!res.ok) throw new Error(`listChats failed: ${res.status}`);
+  return res.json();
 }
 
 export async function listMessages(chatId: string): Promise<Message[]> {
-  return listMockMessages(chatId);
+  const res = await fetch(`${BASE}/api/chats/${chatId}`);
+  if (!res.ok) throw new Error(`listMessages failed: ${res.status}`);
+  return res.json();
 }

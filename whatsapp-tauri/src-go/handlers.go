@@ -57,10 +57,7 @@ func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAuthStart(w http.ResponseWriter, r *http.Request) {
-	if err := wa.StartPairing(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	wa.StartPairing()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": wa.GetStatus(),

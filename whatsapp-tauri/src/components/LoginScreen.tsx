@@ -10,33 +10,50 @@ interface LoginScreenProps {
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [status, setStatus] = useState("connecting");
+  const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef(false);
 
   useEffect(() => {
     let active = true;
 
     async function init() {
-      const initial = await getAuthStatus();
-      if (!active) return;
-
-      if (initial.status === "connected") {
-        onLogin();
-        return;
-      }
-
-      if (initial.qr) {
-        setQrCode(initial.qr);
-        setStatus(initial.status);
-      }
-
-      if (initial.status === "unauthenticated") {
-        const started = await startAuth();
+      try {
+        console.log("[login] Fetching initial auth status...");
+        const initial = await getAuthStatus();
+        console.log("[login] Initial status:", initial);
         if (!active) return;
-        if (started.qr) setQrCode(started.qr);
-        setStatus(started.status);
-      }
 
-      pollingRef.current = true;
+        if (initial.status === "connected") {
+          console.log("[login] Already connected, navigating to chats");
+          onLogin();
+          return;
+        }
+
+        if (initial.qr) {
+          console.log("[login] QR from initial status, length:", initial.qr.length);
+          setQrCode(initial.qr);
+          setStatus(initial.status);
+        }
+
+        if (initial.status === "unauthenticated") {
+          console.log("[login] Starting auth pairing...");
+          const started = await startAuth();
+          console.log("[login] Auth start response:", started);
+          if (!active) return;
+          if (started.qr) {
+            console.log("[login] QR from start, length:", started.qr.length, "starts with:", started.qr.substring(0, 50));
+            setQrCode(started.qr);
+          } else {
+            console.warn("[login] No QR in start response");
+          }
+          setStatus(started.status);
+        }
+
+        pollingRef.current = true;
+      } catch (err) {
+        console.error("[login] Init error:", err);
+        setError(err instanceof Error ? err.message : String(err));
+      }
     }
 
     init();
@@ -46,14 +63,18 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
       try {
         const result = await getAuthStatus();
         if (!active) return;
-        if (result.qr) setQrCode(result.qr);
+        if (result.qr) {
+          console.log("[login] Poll: got QR, length:", result.qr.length);
+          setQrCode(result.qr);
+        }
         setStatus(result.status);
         if (result.status === "connected") {
+          console.log("[login] Connected via poll!");
           pollingRef.current = false;
           onLogin();
         }
-      } catch {
-        // ignore polling errors
+      } catch (err) {
+        console.warn("[login] Poll error:", err);
       }
     }, 2000);
 
@@ -175,7 +196,13 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
             <div className="flex items-center gap-3 rounded-xl bg-surface-container-highest px-4 py-3">
               <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />
               <span className="text-sm font-medium text-on-surface-variant">
-                {status === "connected" ? "Connected!" : "Waiting for scan..."}
+                {error
+                  ? `Error: ${error}`
+                  : status === "connected"
+                    ? "Connected!"
+                    : status === "unauthenticated"
+                      ? "Waiting for scan..."
+                      : "Connecting..."}
               </span>
             </div>
 

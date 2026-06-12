@@ -35,6 +35,11 @@ func newWAManager() (*WAManager, error) {
 	wa := &WAManager{client: client, status: "unauthenticated"}
 	if device.ID != nil {
 		wa.status = "connected"
+		go func() {
+			if err := client.Connect(); err != nil {
+				log.Println("[wa] Auto-connect error:", err)
+			}
+		}()
 	}
 	client.AddEventHandler(func(evt interface{}) {
 		switch v := evt.(type) {
@@ -63,7 +68,17 @@ func newWAManager() (*WAManager, error) {
 	return wa, nil
 
 }
-func (wa *WAManager) StartPairing() error { return wa.client.Connect() }
+func (wa *WAManager) StartPairing() {
+	wa.status = "connecting"
+	go func() {
+		if err := wa.client.Connect(); err != nil {
+			log.Println("[wa] Connect error:", err)
+			wa.mu.Lock()
+			wa.status = "unauthenticated"
+			wa.mu.Unlock()
+		}
+	}()
+}
 func (wa *WAManager) GetStatus() string {
 	wa.mu.RLock()
 	defer wa.mu.RUnlock()

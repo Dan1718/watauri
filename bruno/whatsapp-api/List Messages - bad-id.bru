@@ -1,0 +1,11 @@
+meta {
+  name: List Messages - bad-id
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/chats/nonexistent
+  body: none
+  auth: none
+}

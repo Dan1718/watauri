@@ -10,7 +10,7 @@ func withCORS(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -46,4 +46,29 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(messages)
+}
+
+func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": wa.GetStatus(),
+		"qr":     wa.GetQR(),
+	})
+}
+
+func handleAuthStart(w http.ResponseWriter, r *http.Request) {
+	if err := wa.StartPairing(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": wa.GetStatus(),
+		"qr":     wa.GetQR(),
+	})
+}
+
+func handleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	wa.Disconnect()
+	w.WriteHeader(http.StatusOK)
 }

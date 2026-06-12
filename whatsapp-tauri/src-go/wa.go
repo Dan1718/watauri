@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"log"
 	"sync"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -20,24 +22,24 @@ type WAManager struct {
 
 func newWAManager() (*WAManager, error) {
 
-	storeContainer, err := sqlstore.New("sqlite3", "file:wa-session.db?_foreign_keys=on", nil)
+	storeContainer, err := sqlstore.New(context.Background(), "sqlite3", "file:wa-session.db?_foreign_keys=on", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	device, err := storeContainer.GetFirstDevice()
+	device, err := storeContainer.GetFirstDevice(context.Background())
 	if err != nil {
 		return nil, err
 	}
 	client := whatsmeow.NewClient(device, nil)
-	wa := &WAManager{client: client}
+	wa := &WAManager{client: client, status: "unauthenticated"}
 	if device.ID != nil {
 		wa.status = "connected"
 	}
 	client.AddEventHandler(func(evt interface{}) {
 		switch v := evt.(type) {
 		case *events.QR:
-			png, _ := qrcode.Encode(v.Code, qrcode.Medium, 256)
+			png, _ := qrcode.Encode(v.Codes[0], qrcode.Medium, 256)
 			dataURL := "data:image/png;base64" + base64.StdEncoding.EncodeToString(png)
 			wa.mu.Lock()
 			wa.qrCode = dataURL

@@ -1,0 +1,17 @@
+# Go compiled binaries
+whatsapp-tauri/src-go/backend-x86_64-unknown-linux-gnu
+whatsapp-tauri/src-go/backend
+
+# WhatsApp session database
+whatsapp-tauri/src-go/wa-session.db
+
+# Node
+node_modules/
+dist/
+
+# Rust build
+whatsapp-tauri/src-tauri/target/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,11 +1,68 @@
+import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { ExternalLink, LayoutGrid, Lock, MoreVertical, Settings } from "lucide-react";
+import { getAuthStatus, startAuth } from "../backend/client";
 
 interface LoginScreenProps {
   onLogin: () => void;
 }
 
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [status, setStatus] = useState("connecting");
+  const pollingRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+
+    async function init() {
+      const initial = await getAuthStatus();
+      if (!active) return;
+
+      if (initial.status === "connected") {
+        onLogin();
+        return;
+      }
+
+      if (initial.qr) {
+        setQrCode(initial.qr);
+        setStatus(initial.status);
+      }
+
+      if (initial.status === "unauthenticated") {
+        const started = await startAuth();
+        if (!active) return;
+        if (started.qr) setQrCode(started.qr);
+        setStatus(started.status);
+      }
+
+      pollingRef.current = true;
+    }
+
+    init();
+
+    const interval = setInterval(async () => {
+      if (!active || !pollingRef.current) return;
+      try {
+        const result = await getAuthStatus();
+        if (!active) return;
+        if (result.qr) setQrCode(result.qr);
+        setStatus(result.status);
+        if (result.status === "connected") {
+          pollingRef.current = false;
+          onLogin();
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }, 2000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [onLogin]);
+
   return (
     <div className="flex min-h-screen flex-col bg-surface selection:bg-primary/30">
       <header className="z-50 flex w-full items-center justify-between px-12 py-8">
@@ -94,25 +151,32 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
           </div>
 
           <div className="relative z-10 flex flex-col items-center justify-center space-y-6">
-            <button className="cursor-pointer rounded-xl bg-primary-container p-2 shadow-ambient" type="button" onClick={onLogin}>
+            <div className="rounded-xl bg-primary-container p-2 shadow-ambient">
               <div className="relative rounded-lg bg-white p-4">
-                <img
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuDRRIBsL3i7d_Q2wPoDVAEfMuZ5u2wkC_rKKBNQ3BzVz2TGZ0j0V5LZcS0JhAoQuWMsxIAii26eg7i7OO1oMaNCDrIyodmaiop21WVTxhu0Qyq674Z0-6tZ_zcMLR6iKT4PgK_6bAGhTHbDZPjcFf5TvwgmVMCpM3P9HBS5LxEJ5J5Qq8ijmf8Hii8ToQ4qqJNqxSOkIJ_573BWVDLU0RDfCSqjBlx_EQFsqgVLLKB8ZgP94j7abrwaqz-cj7GEW_PWRgV-gyLENS8"
-                  alt="QR Code"
-                  className="block h-64 w-64"
-                  referrerPolicy="no-referrer"
-                />
-                <div className="absolute inset-0 flex items-center justify-center">
+                {qrCode ? (
+                  <img
+                    src={qrCode}
+                    alt="QR Code"
+                    className="block h-64 w-64"
+                  />
+                ) : (
+                  <div className="flex h-64 w-64 items-center justify-center">
+                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                  </div>
+                )}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="rounded-lg border border-gray-100 bg-white p-2 shadow-md">
                     <LayoutGrid size={32} className="text-primary-container" fill="currentColor" />
                   </div>
                 </div>
               </div>
-            </button>
+            </div>
 
             <div className="flex items-center gap-3 rounded-xl bg-surface-container-highest px-4 py-3">
               <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-              <span className="text-sm font-medium text-on-surface-variant">Waiting for scan...</span>
+              <span className="text-sm font-medium text-on-surface-variant">
+                {status === "connected" ? "Connected!" : "Waiting for scan..."}
+              </span>
             </div>
 
             <label className="group flex cursor-pointer items-center gap-2">

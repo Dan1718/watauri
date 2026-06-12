@@ -3,30 +3,7 @@
   "name": "whatsapp-tauri API",
   "type": "collection",
   "ignore": [],
-  "items": [
-    {
-      "name": "Health",
-      "request": {
-        "url": "{{base_url}}/health",
-        "method": "GET",
-        "headers": []
-      }
-    },
-    {
-      "name": "List Chats",
-      "request": {
-        "url": "{{base_url}}/api/chats",
-        "method": "GET",
-        "headers": []
-      }
-    },
-    {
-      "name": "List Messages",
-      "request": {
-        "url": "{{base_url}}/api/chats/c1",
-        "method": "GET",
-        "headers": []
-      }
-    }
-  ]
+  "vars": {
+    "base_url": "http://localhost:8090"
+  }
 }

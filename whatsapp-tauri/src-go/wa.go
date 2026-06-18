@@ -45,7 +45,7 @@ func newWAManager() (*WAManager, error) {
 		switch v := evt.(type) {
 		case *events.QR:
 			png, _ := qrcode.Encode(v.Codes[0], qrcode.Medium, 256)
-			dataURL := "data:image/png;base64" + base64.StdEncoding.EncodeToString(png)
+			dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
 			wa.mu.Lock()
 			wa.qrCode = dataURL
 			wa.status = "connecting"

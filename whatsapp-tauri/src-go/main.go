@@ -20,6 +20,7 @@ func main() {
 	http.HandleFunc("/api/auth/status", withCORS(handleAuthStatus))
 	http.HandleFunc("/api/auth/start", withCORS(handleAuthStart))
 	http.HandleFunc("/api/auth/logout", withCORS(handleAuthLogout))
+	http.HandleFunc("/api/auth/reset", withCORS(handleAuthReset))
 	log.Println("Backend up and running on port 8090. ")
 	log.Fatal(http.ListenAndServe(":8090", nil))
 }

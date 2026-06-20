@@ -54,13 +54,13 @@ Replace the cosmetic login screen with a real QR pairing flow.
 | Task | Detail | Status |
 |------|--------|--------|
 | 2.1 | Add `github.com/tulir/whatsmeow` to `go.mod` | ✅ Done |
-| 2.2 | Implement QR provisioning endpoint: `POST /api/auth/start` — triggers whatsmeow connect, returns QR code | ⚠️ Done — needs concurrency fix and QR rotation |
+| 2.2 | Implement QR provisioning endpoint: `POST /api/auth/start` — triggers whatsmeow connect, returns QR code with rotation | ✅ Done |
 | 2.3 | Replace the static QR image in `LoginScreen.tsx` with real QR from the Go API | ✅ Done |
 | 2.4 | Polling endpoint: `GET /api/auth/status` — frontend waits for phone scan | ✅ Done |
 | 2.5 | Store session credentials on success (whatsmeow auto-saves to SQLite) | ✅ Done |
-| 2.6 | Update health endpoint to return `mode: "whatsmeow"` after auth | ❌ Not started |
+| 2.6 | Update health endpoint to return `mode: "whatsmeow"` after auth | ✅ Done |
 
-**Deliverable**: Real QR code on login screen, phone scan authenticates, session persists across restarts.
+**Deliverable**: Real QR code on login screen with auto-rotation, phone scan authenticates, session persists across restarts, logout revokes device, reset for dev testing.
 
 ---
 
@@ -127,13 +127,6 @@ Each risky feature should be behind a **feature flag** and isolated from core pr
 
 ---
 
-## Current codebase issues to address
-
-- [x] `src-go/backend` is a compiled binary sitting alongside source — gitignored, naming fixed
-- [ ] `mock data duplicated across `constants.ts` and `mock_data.go` (intentional for now)
-- [x] `client.ts` mock fallback removed — throws on failure
-- [ ] Go backend port `:8090` is hardcoded — should use dynamic port discovery for sidecar
-- [ ] No tests anywhere in the project
 
 ## Tooling decisions
 

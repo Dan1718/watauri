@@ -75,6 +75,7 @@ func (wa *WAManager) StartPairing() {
 			wa.mu.Lock()
 			wa.status = "unauthenticated"
 			wa.mu.Unlock()
+			return
 		}
 		if err := wa.client.Connect(); err != nil {
 			log.Println("[wa] Connect error:", err)
@@ -117,3 +118,22 @@ func (wa *WAManager) GetQR() string {
 	return wa.qrCode
 }
 func (wa *WAManager) Disconnect() { wa.client.Disconnect() }
+
+func (wa *WAManager) Logout() error {
+	err := wa.client.Logout(context.Background())
+	wa.mu.Lock()
+	wa.status = "unauthenticated"
+	wa.qrCode = ""
+	wa.mu.Unlock()
+	return err
+}
+
+func (wa *WAManager) ResetSession() {
+	wa.client.Disconnect()
+	_ = wa.client.Store.Delete(context.Background())
+	wa.client.Store.ID = nil
+	wa.mu.Lock()
+	wa.status = "unauthenticated"
+	wa.qrCode = ""
+	wa.mu.Unlock()
+}

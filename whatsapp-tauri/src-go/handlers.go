@@ -20,11 +20,15 @@ func withCORS(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
+	mode := "go"
+	if wa.GetStatus() == "connected" {
+		mode = "whatsmeow"
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"name":   "whatsapp-tauri",
 		"status": "ok",
-		"mode":   "go",
+		"mode":   mode,
 	})
 }
 
@@ -66,6 +70,15 @@ func handleAuthStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAuthLogout(w http.ResponseWriter, r *http.Request) {
-	wa.Disconnect()
+	err := wa.Logout()
+	if err != nil {
+		http.Error(w, `{"error":"logout failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func handleAuthReset(w http.ResponseWriter, r *http.Request) {
+	wa.ResetSession()
 	w.WriteHeader(http.StatusOK)
 }

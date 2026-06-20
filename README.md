@@ -1,5 +1,13 @@
 # WhatsApp Tauri
 
+## Compiling the backend seperately
+
+```bash
+cd src-go && go build -o backend .
+```
+
+This has been changed to now run automatically when tauri is called, however it does not recompile on every save.
+
 ## Running the dev environment
 
 Prerequisites: [Bun](https://bun.sh), the [Rust toolchain](https://www.rust-lang.org/tools/install), and the [Tauri system dependencies](https://tauri.app/start/prerequisites/) for your OS.

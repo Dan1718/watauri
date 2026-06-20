@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 )
 
 var (
@@ -11,17 +12,23 @@ var (
 )
 
 func main() {
+	log.Println("[main] Starting WhatsApp Tauri backend...")
+
 	var err error
 
+	log.Println("[main] Initializing user data store...")
 	store, err = newUserDataStore()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("[main] Failed to open userdata.db: %v", err)
 	}
+	log.Println("[main] User data store ready")
 
+	log.Println("[main] Initializing WhatsApp manager...")
 	wa, err = newWAManager(store)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("[main] Failed to create WAManager: %v", err)
 	}
+	log.Printf("[main] WhatsApp manager ready (status: %s)", wa.GetStatus())
 
 	http.HandleFunc("/health", withCORS(handleHealth))
 	http.HandleFunc("/api/chats", withCORS(handleChats))
@@ -30,6 +37,8 @@ func main() {
 	http.HandleFunc("/api/auth/start", withCORS(handleAuthStart))
 	http.HandleFunc("/api/auth/logout", withCORS(handleAuthLogout))
 	http.HandleFunc("/api/auth/reset", withCORS(handleAuthReset))
-	log.Println("Backend up and running on port 8090. ")
+	log.Println("[main] Registered 7 HTTP handlers")
+
+	log.Printf("[main] Listening on :8090 at %s", time.Now().Format(time.RFC3339))
 	log.Fatal(http.ListenAndServe(":8090", nil))
 }

@@ -32,19 +32,18 @@
 
 The Go backend exists and compiles, but isn't connected to the Tauri shell.
 
-| Task | Detail |
-|------|--------|
-| 1.1 | Add `"bundle": { "externalBin": ["src-go/backend"] }` to `tauri.conf.json` |
-| 1.2 | Add `tauri-plugin-shell` dependency for sidecar process management |
-| 1.3 | Update `client.ts` to `fetch("http://localhost:8090/api/...")` instead of Tauri `invoke()` |
-| 1.4 | Drop the Rust `backend_health` command (moves to Go) |
-| 1.5 | Remove the mock fallback in `client.ts` — no more silent error swallowing |
-| 1.6 | Update `package.json` scripts to build Go binary before `tauri dev` / `tauri build` |
-| 1.7 | Resolve the `src-go/backend` naming confusion (binary vs source directory) |
+| Task | Detail | Status |
+|------|--------|--------|
+| 1.1 | Add `"bundle": { "externalBin": ["src-go/backend"] }` to `tauri.conf.json` | ✅ Done |
+| 1.2 | Add `tauri-plugin-shell` dependency for sidecar process management | ✅ Done |
+| 1.3 | Update `client.ts` to `fetch("http://localhost:8090/api/...")` instead of Tauri `invoke()` | ✅ Done |
+| 1.4 | Drop the Rust `backend_health` command (moves to Go) | ✅ Done |
+| 1.5 | Remove the mock fallback in `client.ts` — no more silent error swallowing | ✅ Done |
+| 1.6 | Update `package.json` scripts to build Go binary before `tauri dev` / `tauri build` | ✅ Done |
+| 1.7 | Resolve the `src-go/backend` naming confusion (binary vs source directory) | ✅ Done |
 
 **Deliverable**: App starts, spawns Go sidecar, frontend fetches mock data from Go over HTTP. `mode` badge in title bar reads `"go"` or `"mock"`.
 
-**File changes**: `tauri.conf.json`, `client.ts`, `package.json`, `TitleBar.tsx`
 
 ---
 
@@ -52,14 +51,14 @@ The Go backend exists and compiles, but isn't connected to the Tauri shell.
 
 Replace the cosmetic login screen with a real QR pairing flow.
 
-| Task | Detail |
-|------|--------|
-| 2.1 | Add `github.com/tulir/whatsmeow` to `go.mod` |
-| 2.2 | Implement QR provisioning endpoint: `POST /api/auth/qr` — triggers whatsmeow connect, returns QR code |
-| 2.3 | Replace the static QR image in `LoginScreen.tsx` with real QR from the Go API |
-| 2.4 | Polling endpoint: `GET /api/auth/status` — frontend waits for phone scan |
-| 2.5 | Store session credentials on success (encrypted file or `tauri-plugin-store`) |
-| 2.6 | Update health endpoint to return `mode: "whatsmeow"` after auth |
+| Task | Detail | Status |
+|------|--------|--------|
+| 2.1 | Add `github.com/tulir/whatsmeow` to `go.mod` | ✅ Done |
+| 2.2 | Implement QR provisioning endpoint: `POST /api/auth/start` — triggers whatsmeow connect, returns QR code | ⚠️ Done — needs concurrency fix and QR rotation |
+| 2.3 | Replace the static QR image in `LoginScreen.tsx` with real QR from the Go API | ✅ Done |
+| 2.4 | Polling endpoint: `GET /api/auth/status` — frontend waits for phone scan | ✅ Done |
+| 2.5 | Store session credentials on success (whatsmeow auto-saves to SQLite) | ✅ Done |
+| 2.6 | Update health endpoint to return `mode: "whatsmeow"` after auth | ❌ Not started |
 
 **Deliverable**: Real QR code on login screen, phone scan authenticates, session persists across restarts.
 
@@ -130,10 +129,9 @@ Each risky feature should be behind a **feature flag** and isolated from core pr
 
 ## Current codebase issues to address
 
-- [ ] `src-go/backend` is a compiled binary sitting alongside source — rename or restructure
-- [ ] `src-go/backend/` is an unresolved path (possibly a submodule placeholder)
-- [ ] Mock data duplicated across `constants.ts` and `mock_data.go` (intentional for now)
-- [ ] `client.ts` silently swallows errors in the mock fallback
+- [x] `src-go/backend` is a compiled binary sitting alongside source — gitignored, naming fixed
+- [ ] `mock data duplicated across `constants.ts` and `mock_data.go` (intentional for now)
+- [x] `client.ts` mock fallback removed — throws on failure
 - [ ] Go backend port `:8090` is hardcoded — should use dynamic port discovery for sidecar
 - [ ] No tests anywhere in the project
 

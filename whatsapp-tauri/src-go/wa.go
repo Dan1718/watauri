@@ -21,7 +21,6 @@ type WAManager struct {
 }
 
 func newWAManager() (*WAManager, error) {
-
 	storeContainer, err := sqlstore.New(context.Background(), "sqlite3", "file:wa-session.db?_foreign_keys=on", nil)
 	if err != nil {
 		return nil, err
@@ -45,7 +44,7 @@ func newWAManager() (*WAManager, error) {
 		switch v := evt.(type) {
 		case *events.QR:
 			png, _ := qrcode.Encode(v.Codes[0], qrcode.Medium, 256)
-			dataURL := "data:image/png;base64" + base64.StdEncoding.EncodeToString(png)
+			dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
 			wa.mu.Lock()
 			wa.qrCode = dataURL
 			wa.status = "connecting"
@@ -66,8 +65,8 @@ func newWAManager() (*WAManager, error) {
 	})
 
 	return wa, nil
-
 }
+
 func (wa *WAManager) StartPairing() {
 	wa.status = "connecting"
 	go func() {
@@ -79,11 +78,13 @@ func (wa *WAManager) StartPairing() {
 		}
 	}()
 }
+
 func (wa *WAManager) GetStatus() string {
 	wa.mu.RLock()
 	defer wa.mu.RUnlock()
 	return wa.status
 }
+
 func (wa *WAManager) GetQR() string {
 	wa.mu.RLock()
 	defer wa.mu.RUnlock()

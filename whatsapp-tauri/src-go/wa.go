@@ -41,15 +41,7 @@ func newWAManager() (*WAManager, error) {
 		}()
 	}
 	client.AddEventHandler(func(evt interface{}) {
-		switch v := evt.(type) {
-		case *events.QR:
-			png, _ := qrcode.Encode(v.Codes[0], qrcode.Medium, 256)
-			dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
-			wa.mu.Lock()
-			wa.qrCode = dataURL
-			wa.status = "connecting"
-			wa.mu.Unlock()
-			log.Println("[wa] New QR Code generated")
+		switch evt.(type) {
 		case *events.Connected:
 			wa.mu.Lock()
 			wa.status = "connected"
@@ -68,13 +60,47 @@ func newWAManager() (*WAManager, error) {
 }
 
 func (wa *WAManager) StartPairing() {
+	wa.mu.Lock()
+	if wa.status != "unauthenticated" {
+		wa.mu.Unlock()
+		return
+	}
 	wa.status = "connecting"
+	wa.qrCode = ""
+	wa.mu.Unlock()
 	go func() {
-		if err := wa.client.Connect(); err != nil {
-			log.Println("[wa] Connect error:", err)
+		ch, err := wa.client.GetQRChannel(context.Background())
+		if err != nil {
+			log.Println("[wa] GetQRChannel err: ", err)
 			wa.mu.Lock()
 			wa.status = "unauthenticated"
 			wa.mu.Unlock()
+		}
+		if err := wa.client.Connect(); err != nil {
+			log.Println("[wa] Connect error:", err)
+		}
+		for item := range ch {
+			switch item.Event {
+			case whatsmeow.QRChannelEventCode:
+				png, _ := qrcode.Encode(item.Code, qrcode.Medium, 256)
+				dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+				wa.mu.Lock()
+				wa.qrCode = dataURL
+				wa.mu.Unlock()
+			case "success":
+				wa.mu.Lock()
+				wa.status = "connected"
+				wa.mu.Unlock()
+			case "timeout":
+				wa.mu.Lock()
+				wa.status = "unauthenticated"
+				wa.qrCode = ""
+				wa.mu.Unlock()
+			case "err-scanned-without-multidevice":
+				log.Println("[wa] Phone doesn't have multidevice enabled")
+			case whatsmeow.QRChannelEventError:
+				log.Println("[wa] Pairing error:", item.Error)
+			}
 		}
 	}()
 }

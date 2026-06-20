@@ -1,0 +1,17 @@
+meta {
+  name: POST media upload
+  method: POST
+  url: http://localhost:8090/api/media/upload
+  type: http
+}
+
+headers {
+  Content-Type: multipart/form-data
+}
+
+body {
+  multipart:form {
+    file: /path/to/file.jpg
+    caption: Optional caption text
+  }
+}

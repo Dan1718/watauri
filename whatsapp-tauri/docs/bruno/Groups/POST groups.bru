@@ -1,0 +1,16 @@
+meta {
+  name: POST groups
+  method: POST
+  url: http://localhost:8090/api/groups
+  type: http
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body {
+  text {
+    {"name": "Work", "chatIds": ["c1", "c2"], "color": "#4CAF50", "icon": "briefcase"}
+  }
+}

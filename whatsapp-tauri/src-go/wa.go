@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"log"
 	"sync"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/skip2/go-qrcode"
@@ -17,10 +18,11 @@ type WAManager struct {
 	client *whatsmeow.Client
 	status string // "unauthenticated" | "connecting" | "connected"
 	qrCode string // base64 PNG data URL of the current QR
+	store  *UserDataStore
 	mu     sync.RWMutex
 }
 
-func newWAManager() (*WAManager, error) {
+func newWAManager(store *UserDataStore) (*WAManager, error) {
 	storeContainer, err := sqlstore.New(context.Background(), "sqlite3", "file:wa-session.db?_foreign_keys=on", nil)
 	if err != nil {
 		return nil, err
@@ -31,7 +33,7 @@ func newWAManager() (*WAManager, error) {
 		return nil, err
 	}
 	client := whatsmeow.NewClient(device, nil)
-	wa := &WAManager{client: client, status: "unauthenticated"}
+	wa := &WAManager{client: client, status: "unauthenticated", store: store}
 	if device.ID != nil {
 		wa.status = "connected"
 		go func() {
@@ -41,12 +43,49 @@ func newWAManager() (*WAManager, error) {
 		}()
 	}
 	client.AddEventHandler(func(evt interface{}) {
-		switch evt.(type) {
+		switch v := evt.(type) {
 		case *events.Connected:
 			wa.mu.Lock()
 			wa.status = "connected"
 			wa.mu.Unlock()
 			log.Println("[wa] Connected to Whatsapp")
+		case *events.Message:
+			if wa.store == nil {
+				break
+			}
+			text := v.Message.GetConversation()
+			if text == "" {
+				if ext := v.Message.GetExtendedTextMessage(); ext != nil {
+					text = ext.GetText()
+				}
+			}
+			status := "received"
+			if v.Info.IsFromMe {
+				status = "sent"
+			}
+			mediaType := ""
+			if v.Message.GetImageMessage() != nil {
+				mediaType = "image"
+			} else if v.Message.GetVideoMessage() != nil {
+				mediaType = "video"
+			} else if v.Message.GetAudioMessage() != nil {
+				mediaType = "audio"
+			} else if v.Message.GetDocumentMessage() != nil {
+				mediaType = "document"
+			}
+			ourMsg := Message{
+				ID:        v.Info.ID,
+				ChatJID:   v.Info.Chat.String(),
+				SenderID:  v.Info.Sender.String(),
+				Text:      text,
+				Timestamp: v.Info.Timestamp.Format(time.RFC3339),
+				Status:    status,
+				MediaType: mediaType,
+				IsFromMe:  v.Info.IsFromMe,
+			}
+			if err := wa.store.InsertMessage(ourMsg); err != nil {
+				log.Println("[wa] Failed to store message:", err)
+			}
 		case *events.LoggedOut:
 			wa.mu.Lock()
 			wa.status = "unauthenticated"

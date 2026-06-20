@@ -5,11 +5,20 @@ import (
 	"net/http"
 )
 
-var wa *WAManager
+var (
+	wa    *WAManager
+	store *UserDataStore
+)
 
 func main() {
 	var err error
-	wa, err = newWAManager()
+
+	store, err = newUserDataStore()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	wa, err = newWAManager(store)
 	if err != nil {
 		log.Fatal(err)
 	}

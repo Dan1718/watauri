@@ -9,10 +9,13 @@ export interface User {
 
 export interface Message {
   id: string;
+  chatJid?: string;
   senderId: string;
   text: string;
   timestamp: string;
   status: "sent" | "delivered" | "read";
+  mediaType?: string;
+  isFromMe?: boolean;
 }
 
 export interface Chat {

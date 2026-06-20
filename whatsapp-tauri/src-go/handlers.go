@@ -34,7 +34,16 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func handleChats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(mockChats)
+
+	chats, err := store.GetChats()
+	if err != nil {
+		http.Error(w, `{"error":"failed to fetch chats"}`, http.StatusInternalServerError)
+		return
+	}
+	if chats == nil {
+		chats = []Chat{}
+	}
+	json.NewEncoder(w).Encode(chats)
 }
 
 func handleMessages(w http.ResponseWriter, r *http.Request) {
@@ -44,11 +53,16 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	chatID := parts[2]
-	messages, ok := mockMessages[chatID]
-	if !ok {
+
+	w.Header().Set("Content-Type", "application/json")
+	messages, err := store.GetMessages(chatID)
+	if err != nil {
+		http.Error(w, `{"error":"failed to fetch messages"}`, http.StatusInternalServerError)
+		return
+	}
+	if messages == nil {
 		messages = []Message{}
 	}
-	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(messages)
 }
 

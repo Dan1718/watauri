@@ -1,31 +1,65 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { listChats } from "./backend/client";
+import { listChats, subscribeToEvents } from "./backend/client";
 import LoginScreen from "./components/LoginScreen";
 import MessageArea from "./components/MessageArea";
 import NavigationRail from "./components/NavigationRail";
 import Sidebar from "./components/Sidebar";
 import TitleBar from "./components/TitleBar";
-import type { AppScreen, Chat } from "./types";
+import type { AppScreen, Chat, Message } from "./types";
 
 export default function App() {
   const [screen, setScreen] = useState<AppScreen>("login");
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
+  const liveMessages = useRef<Map<string, Message[]>>(new Map());
+  const [messageVersion, setMessageVersion] = useState(0);
+
+  const refreshChats = useCallback(() => {
+    void listChats().then(setChats);
+  }, []);
 
   useEffect(() => {
-    let active = true;
+    refreshChats();
+  }, [refreshChats]);
 
-    void listChats().then((nextChats) => {
-      if (active) {
-        setChats(nextChats);
+  useEffect(() => {
+    if (screen === "login") return;
+
+    const es = subscribeToEvents((type, data) => {
+      if (type === "message") {
+        const msg = data as Message;
+        const cid = msg.chatJid;
+        if (cid) {
+          const existing = liveMessages.current.get(cid) || [];
+          if (!existing.find((m) => m.id === msg.id)) {
+            liveMessages.current.set(cid, [...existing, msg]);
+            setMessageVersion((v) => v + 1);
+          }
+        }
+        refreshChats();
+      } else if (type === "receipt") {
+        const r = data as { messageIds: string[]; status: string; chatJid: string };
+        const msgs = liveMessages.current.get(r.chatJid);
+        if (msgs) {
+          liveMessages.current.set(
+            r.chatJid,
+            msgs.map((m) =>
+              r.messageIds.includes(m.id) ? { ...m, status: r.status as Message["status"] } : m,
+            ),
+          );
+          setMessageVersion((v) => v + 1);
+        }
+        refreshChats();
+      } else if (type === "logged_out") {
+        setScreen("login");
       }
     });
 
     return () => {
-      active = false;
+      es.close();
     };
-  }, []);
+  }, [screen, refreshChats]);
 
   const activeChat = chats.find((chat) => chat.id === activeChatId) || null;
 
@@ -44,6 +78,8 @@ export default function App() {
       ),
     );
   };
+
+  const activeLiveMessages = activeChatId ? liveMessages.current.get(activeChatId) || [] : [];
 
   if (screen === "login") {
     return <LoginScreen onLogin={handleLogin} />;
@@ -73,7 +109,13 @@ export default function App() {
             onBack={() => setScreen("chats")}
           />
 
-          <MessageArea screen={screen} chat={activeChat} onUnarchive={handleUnarchive} />
+          <MessageArea
+            screen={screen}
+            chat={activeChat}
+            liveMessages={activeLiveMessages}
+            messageVersion={messageVersion}
+            onUnarchive={handleUnarchive}
+          />
         </main>
 
         <AnimatePresence>

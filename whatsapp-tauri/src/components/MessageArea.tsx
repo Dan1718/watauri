@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { CheckCheck, Info, Mic, MoreVertical, Paperclip, Phone, Search, Smile, Video } from "lucide-react";
 import { listMessages } from "../backend/client";
@@ -7,10 +7,12 @@ import type { AppScreen, Chat, Message } from "../types";
 interface MessageAreaProps {
   screen: AppScreen;
   chat: Chat | null;
+  liveMessages?: Message[];
+  messageVersion?: number;
   onUnarchive?: (id: string) => void;
 }
 
-export default function MessageArea({ screen, chat, onUnarchive }: MessageAreaProps) {
+export default function MessageArea({ screen, chat, liveMessages = [], messageVersion = 0, onUnarchive }: MessageAreaProps) {
   const [inputText, setInputText] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -36,12 +38,18 @@ export default function MessageArea({ screen, chat, onUnarchive }: MessageAreaPr
     };
   }, [chat]);
 
+  const mergedMessages = useMemo(() => {
+    if (liveMessages.length === 0) return messages;
+    const seen = new Set(liveMessages.map((m) => m.id));
+    return [...messages.filter((m) => !seen.has(m.id)), ...liveMessages];
+  }, [messages, liveMessages, messageVersion]);
+
   useLayoutEffect(() => {
     const container = scrollRef.current;
     if (container) {
       container.scrollTop = container.scrollHeight;
     }
-  }, [messages]);
+  }, [mergedMessages]);
 
   if (!chat) {
     const emptyState =
@@ -142,8 +150,8 @@ export default function MessageArea({ screen, chat, onUnarchive }: MessageAreaPr
           </span>
         </div>
 
-        {messages.map((message) => {
-          const isMe = message.senderId === "me";
+        {mergedMessages.map((message) => {
+          const isMe = message.isFromMe ?? message.senderId === "me";
 
           return (
             <motion.div

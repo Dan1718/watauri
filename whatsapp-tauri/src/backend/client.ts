@@ -47,3 +47,24 @@ export async function logout(): Promise<void> {
   const res = await fetch(`${BASE}/api/auth/logout`, { method: "POST" });
   if (!res.ok) throw new Error(`logout failed: ${res.status}`);
 }
+
+export function subscribeToEvents(
+  onEvent: (type: string, data: unknown) => void,
+  onDisconnect?: () => void,
+): EventSource {
+  const es = new EventSource(`${BASE}/api/events`);
+
+  es.addEventListener("connected", (event) => onEvent("connected", JSON.parse(event.data)));
+  es.addEventListener("message", (event) => onEvent("message", JSON.parse(event.data)));
+  es.addEventListener("receipt", (event) => onEvent("receipt", JSON.parse(event.data)));
+  es.addEventListener("contact", (event) => onEvent("contact", JSON.parse(event.data)));
+  es.addEventListener("presence", (event) => onEvent("presence", JSON.parse(event.data)));
+  es.addEventListener("logged_out", (event) => onEvent("logged_out", JSON.parse(event.data)));
+
+  es.onerror = () => {
+    es.close();
+    onDisconnect?.();
+  };
+
+  return es;
+}

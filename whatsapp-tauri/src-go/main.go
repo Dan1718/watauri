@@ -37,6 +37,7 @@ func main() {
 	http.HandleFunc("/api/auth/start", withCORS(handleAuthStart))
 	http.HandleFunc("/api/auth/logout", withCORS(handleAuthLogout))
 	http.HandleFunc("/api/auth/reset", withCORS(handleAuthReset))
+	http.HandleFunc("/api/contacts", withCORS(handleContacts))
 	log.Println("[main] Registered 7 HTTP handlers")
 
 	log.Printf("[main] Listening on :8090 at %s", time.Now().Format(time.RFC3339))

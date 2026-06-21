@@ -121,3 +121,19 @@ func handleAuthReset(w http.ResponseWriter, r *http.Request) {
 	log.Println("[http] POST /api/auth/reset -> 200 (session cleared)")
 	w.WriteHeader(http.StatusOK)
 }
+
+func handleContacts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	contacts, err := store.GetContacts()
+	if err != nil {
+		log.Printf("[http] GET /api/contacts error: %v", err)
+		http.Error(w, `{"error":"failed to fetch contacts"}`, http.StatusInternalServerError)
+		return
+	}
+	if contacts == nil {
+		contacts = []User{}
+	}
+	json.NewEncoder(w).Encode(contacts)
+	log.Printf("[http] GET /api/contacts -> %d contacts", len(contacts))
+}

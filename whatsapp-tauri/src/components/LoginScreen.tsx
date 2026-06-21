@@ -12,73 +12,103 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef(false);
+  const pollCount = useRef(0);
+  const lastQrRef = useRef<string | null>(null);
+
+  console.log(`[login] 🔄 Render: status=${status} qrPresent=${!!qrCode} qrLength=${qrCode?.length || 0} error=${error}`);
 
   useEffect(() => {
     let active = true;
+    const mountTime = performance.now();
+    console.log("[login] ⚡ Mounted");
 
     async function init() {
       try {
-        console.log("[login] Fetching initial auth status...");
+        console.log("[login] 📡 Fetching initial auth status...");
         const initial = await getAuthStatus();
-        console.log("[login] Initial status:", initial);
+        console.log("[login] 📡 Initial response:", JSON.stringify({ ...initial, qr: initial.qr ? `data:image/png;base64,${initial.qr.slice(0, 40)}... (${initial.qr.length} chars)` : "none" }));
         if (!active) return;
 
         if (initial.status === "connected") {
-          console.log("[login] Already connected, navigating to chats");
+          console.log("[login] ✅ Already connected, navigating to chats");
           onLogin();
           return;
         }
 
         if (initial.qr) {
-          console.log("[login] QR from initial status, length:", initial.qr.length);
+          console.log(`[login] 🖼️ QR from initial status: ${initial.qr.length} chars`);
+          lastQrRef.current = initial.qr;
           setQrCode(initial.qr);
           setStatus(initial.status);
         }
 
         if (initial.status === "unauthenticated") {
-          console.log("[login] Starting auth pairing...");
+          console.log("[login] 🚀 Starting auth pairing...");
+          const startTime = performance.now();
           const started = await startAuth();
-          console.log("[login] Auth start response:", started);
+          console.log(`[login] 🚀 startAuth took ${(performance.now() - startTime).toFixed(1)}ms`);
           if (!active) return;
           if (started.qr) {
-            console.log("[login] QR from start, length:", started.qr.length, "starts with:", started.qr.substring(0, 50));
+            console.log(`[login] 🖼️ QR from start: ${started.qr.length} chars, preview=${started.qr.substring(0, 60)}...`);
+            lastQrRef.current = started.qr;
             setQrCode(started.qr);
           } else {
-            console.warn("[login] No QR in start response");
+            console.warn("[login] ⚠️ No QR in start response");
           }
           setStatus(started.status);
+        } else {
+          console.log(`[login] Status is "${initial.status}", not starting pairing`);
         }
 
         pollingRef.current = true;
+        console.log("[login] ⏱️ Polling started");
       } catch (err) {
-        console.error("[login] Init error:", err);
+        console.error("[login] ❌ Init error:", err);
+        if (err instanceof Error) {
+          console.error("[login] ❌ Stack:", err.stack);
+        }
         setError(err instanceof Error ? err.message : String(err));
       }
     }
 
     init();
 
+    console.log("[login] ⏱️ Setting up 2s poll interval");
     const interval = setInterval(async () => {
       if (!active || !pollingRef.current) return;
+      pollCount.current++;
+      const pollStart = performance.now();
       try {
         const result = await getAuthStatus();
+        const elapsed = (performance.now() - pollStart).toFixed(1);
         if (!active) return;
-        if (result.qr) {
-          console.log("[login] Poll: got QR, length:", result.qr.length);
+        const qrChanged = result.qr && result.qr !== lastQrRef.current;
+        console.log(`[login] 🔄 Poll #${pollCount.current} (${elapsed}ms): status=${result.status} qrLength=${result.qr?.length || 0} qrChanged=${qrChanged}`);
+
+        if (qrChanged) {
+          console.log(`[login] 🖼️ QR updated in poll #${pollCount.current}: ${result.qr.length} chars`);
+          lastQrRef.current = result.qr;
           setQrCode(result.qr);
         }
-        setStatus(result.status);
+        setStatus((prev) => {
+          if (prev !== result.status) {
+            console.log(`[login] 🔀 Status changed: ${prev} -> ${result.status}`);
+          }
+          return result.status;
+        });
         if (result.status === "connected") {
-          console.log("[login] Connected via poll!");
+          console.log(`[login] ✅ Connected via poll #${pollCount.current}! Total time: ${(performance.now() - mountTime).toFixed(0)}ms`);
           pollingRef.current = false;
           onLogin();
         }
       } catch (err) {
-        console.warn("[login] Poll error:", err);
+        console.warn(`[login] ⚠️ Poll #${pollCount.current} error:`, err);
       }
     }, 2000);
 
     return () => {
+      const lifetime = (performance.now() - mountTime).toFixed(0);
+      console.log(`[login] 🧹 Unmounting after ${lifetime}ms, ${pollCount.current} polls`);
       active = false;
       clearInterval(interval);
     };

@@ -5,16 +5,30 @@ import { backendHealth } from "../backend/client";
 import { Maximize2, Minimize2, X } from "lucide-react";
 
 export default function TitleBar() {
-  const appWindow = useMemo(() => getCurrentWindow(), []);
+  const appWindow = useMemo(() => {
+    try {
+      return getCurrentWindow();
+    } catch {
+      return null;
+    }
+  }, []);
   const [maximized, setMaximized] = useState(false);
   const [mode, setMode] = useState("mock");
 
+  console.log(`[titlebar] 🔄 Render: mode=${mode} maximized=${maximized} tauri=${!!appWindow}`);
+
   useEffect(() => {
     let active = true;
+    const start = performance.now();
+    console.log("[titlebar] ⚡ Health check starting...");
 
     void backendHealth().then((health) => {
+      const elapsed = (performance.now() - start).toFixed(1);
       if (active) {
+        console.log(`[titlebar] ✅ Health check: mode=${health.mode} status=${health.status} (${elapsed}ms)`);
         setMode(health.mode);
+      } else {
+        console.log(`[titlebar] ⏭️ Health check completed but unmounted (${elapsed}ms)`);
       }
     });
 
@@ -24,16 +38,21 @@ export default function TitleBar() {
   }, []);
 
   const handleMinimize = async () => {
-    await appWindow.minimize();
+    console.log("[titlebar] ➖ Minimize");
+    await appWindow?.minimize();
   };
 
   const handleToggleMaximize = async () => {
+    if (!appWindow) return;
+    const wasMaximized = await appWindow.isMaximized();
+    console.log(`[titlebar] 🔲 Toggle maximize: ${wasMaximized} -> ${!wasMaximized}`);
     await appWindow.toggleMaximize();
     setMaximized(await appWindow.isMaximized());
   };
 
   const handleClose = async () => {
-    await appWindow.close();
+    console.log("[titlebar] ❌ Close");
+    await appWindow?.close();
   };
 
   return (

@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, CheckCheck, MessageSquarePlus, MoreVertical, Search } from "lucide-react";
 import type { AppScreen, Chat } from "../types";
+import { chatName } from "../types";
 
 type ChatFilter = "all" | "unread" | "groups";
 
@@ -15,6 +16,7 @@ interface SidebarProps {
 export default function Sidebar({ chats, screen, activeChatId, onSelectChat, onBack }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [chatFilter, setChatFilter] = useState<ChatFilter>("all");
+  const lastLog = useRef({ chatsLen: 0, filter: "", visibleLen: 0 });
 
   const isArchivedView = screen === "archived";
   const isCommunitiesView = screen === "communities";
@@ -52,11 +54,19 @@ export default function Sidebar({ chats, screen, activeChatId, onSelectChat, onB
       return true;
     });
 
-    return byFilter.filter((chat) => {
-      const name = chat.isGroup ? chat.name : chat.participants.find((participant) => participant.id !== "me")?.name;
-      return name?.toLowerCase().includes(searchQuery.toLowerCase());
+    const result = byFilter.filter((chat) => {
+      return chatName(chat).toLowerCase().includes(searchQuery.toLowerCase());
     });
-  }, [chatFilter, chats, isArchivedView, isCommunitiesView, isStarredView, searchQuery, showSubfilters]);
+
+    if (lastLog.current.chatsLen !== chats.length || lastLog.current.filter !== `${screen}_${chatFilter}` || lastLog.current.visibleLen !== result.length) {
+      const groupCount = result.filter((c) => c.isGroup).length;
+      const unreadCount = result.filter((c) => c.unreadCount > 0).length;
+      console.log(`[sidebar] screen=${screen} filter=${chatFilter} search="${searchQuery}" total=${chats.length} visible=${result.length} groups=${groupCount} unread=${unreadCount} active=${activeChatId}`);
+      lastLog.current = { chatsLen: chats.length, filter: `${screen}_${chatFilter}`, visibleLen: result.length };
+    }
+
+    return result;
+  }, [chatFilter, chats, isArchivedView, isCommunitiesView, isStarredView, searchQuery, showSubfilters, activeChatId]);
 
   return (
     <section className="flex h-full w-[320px] shrink-0 flex-col border-r border-outline-variant/10 bg-surface-container">
@@ -128,55 +138,9 @@ export default function Sidebar({ chats, screen, activeChatId, onSelectChat, onB
           </div>
         ) : null}
 
-        {visibleChats.map((chat) => {
-          const participant = chat.participants.find((item) => item.id !== "me");
-          const name = chat.isGroup ? chat.name : participant?.name;
-          const avatar = chat.isGroup
-            ? chat.avatar || "https://images.unsplash.com/photo-1522071823991-b96767a1c56f?q=80&w=100&auto=format&fit=crop"
-            : participant?.avatar;
-          const isActive = activeChatId === chat.id;
-
-          return (
-            <button
-              key={chat.id}
-              type="button"
-              onClick={() => onSelectChat(chat.id)}
-              className={`group relative flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${isActive ? "bg-surface-container-highest" : "hover:bg-surface-container-high"}`}
-            >
-              <div className="relative shrink-0">
-                <img className="h-12 w-12 rounded-full object-cover" src={avatar} alt={name} referrerPolicy="no-referrer" />
-                {!chat.isGroup && participant?.status === "online" ? (
-                  <div className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-surface-container-low bg-primary" />
-                ) : null}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="mb-0.5 flex items-baseline justify-between">
-                  <h3 className="truncate font-medium text-on-surface">{name}</h3>
-                  <span className={`text-[10px] ${chat.unreadCount > 0 ? "font-semibold text-primary" : "text-outline"}`}>
-                    {chat.lastMessage?.timestamp}
-                  </span>
-                </div>
-                <div className="flex h-5 items-center justify-between">
-                  <div className="flex min-w-0 flex-1 items-center gap-1">
-                    {chat.lastMessage?.senderId === "me" ? (
-                      chat.lastMessage.status === "read" ? (
-                        <CheckCheck size={14} className="shrink-0 text-primary" />
-                      ) : (
-                        <Check size={14} className="shrink-0 text-outline" />
-                      )
-                    ) : null}
-                    <p className="truncate pr-4 text-sm text-on-surface-variant">{chat.lastMessage?.text}</p>
-                  </div>
-                  {chat.unreadCount > 0 ? (
-                    <div className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-on-primary-container">
-                      {chat.unreadCount}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </button>
-          );
-        })}
+        {visibleChats.map((chat) => (
+          <ChatListItem key={chat.id} chat={chat} isActive={activeChatId === chat.id} onSelect={onSelectChat} />
+        ))}
 
         {visibleChats.length === 0 ? (
           <div className="px-8 py-14 text-center text-sm text-on-surface-variant">
@@ -193,3 +157,57 @@ export default function Sidebar({ chats, screen, activeChatId, onSelectChat, onB
     </section>
   );
 }
+
+const ChatListItem = memo(function ChatListItem({ chat, isActive, onSelect }: { chat: Chat; isActive: boolean; onSelect: (id: string) => void }) {
+  const participant = useMemo(() => (chat.participants || []).find((item) => item.id !== "me"), [chat.participants]);
+  const name = useMemo(() => chatName(chat), [chat]);
+  const avatar = chat.isGroup
+    ? chat.avatar || "https://images.unsplash.com/photo-1522071823991-b96767a1c56f?q=80&w=100&auto=format&fit=crop"
+    : participant?.avatar;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(chat.id)}
+      className={`group relative flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${isActive ? "bg-surface-container-highest" : "hover:bg-surface-container-high"}`}
+    >
+      <div className="relative shrink-0">
+        {avatar ? (
+          <img className="h-12 w-12 rounded-full object-cover" src={avatar} alt={name} referrerPolicy="no-referrer" />
+        ) : (
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-container text-lg font-bold text-on-primary-container">
+            {name[0]?.toUpperCase()}
+          </div>
+        )}
+        {!chat.isGroup && participant?.status === "online" ? (
+          <div className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-surface-container-low bg-primary" />
+        ) : null}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="mb-0.5 flex items-baseline justify-between">
+          <h3 className="truncate font-medium text-on-surface">{name}</h3>
+          <span className={`text-[10px] ${chat.unreadCount > 0 ? "font-semibold text-primary" : "text-outline"}`}>
+            {chat.lastMessage?.timestamp}
+          </span>
+        </div>
+        <div className="flex h-5 items-center justify-between">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            {chat.lastMessage?.senderId === "me" ? (
+              chat.lastMessage.status === "read" ? (
+                <CheckCheck size={14} className="shrink-0 text-primary" />
+              ) : (
+                <Check size={14} className="shrink-0 text-outline" />
+              )
+            ) : null}
+            <p className="truncate pr-4 text-sm text-on-surface-variant">{chat.lastMessage?.text}</p>
+          </div>
+          {chat.unreadCount > 0 ? (
+            <div className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-on-primary-container">
+              {chat.unreadCount}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </button>
+  );
+});

@@ -31,4 +31,21 @@ export interface Chat {
   isCommunity?: boolean;
 }
 
-export type AppScreen = "login" | "chats" | "communities" | "starred" | "archived";
+export interface Contact {
+  id: string;
+  name: string;
+  avatar?: string;
+}
+
+export type AppScreen = "login" | "chats" | "communities" | "starred" | "archived" | "settings";
+
+function stripJid(jid: string): string {
+  return jid.split("@")[0] || jid;
+}
+
+export function chatName(chat: Chat): string {
+  if (chat.name) return chat.name;
+  const p = (chat.participants || []).find((u) => u.id !== "me");
+  if (p?.name) return p.name;
+  return stripJid(chat.id);
+}

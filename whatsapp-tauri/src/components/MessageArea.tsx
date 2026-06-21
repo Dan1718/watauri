@@ -1,55 +1,99 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { motion } from "motion/react";
-import { CheckCheck, Info, Mic, MoreVertical, Paperclip, Phone, Search, Smile, Video } from "lucide-react";
-import { listMessages } from "../backend/client";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { CheckCheck, Info, Loader2, Mic, MoreVertical, Paperclip, Phone, Search, Smile, Video } from "lucide-react";
 import type { AppScreen, Chat, Message } from "../types";
+import { chatName } from "../types";
+
+function formatTime(ts: string): string {
+  const d = new Date(ts);
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function dateLabel(ts: string): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (sameDay(d, now)) return "Today";
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (sameDay(d, yesterday)) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+}
+
+function dateKey(ts: string): string {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+type VirtualRow =
+  | { type: "date"; label: string }
+  | { type: "message"; message: Message };
 
 interface MessageAreaProps {
   screen: AppScreen;
   chat: Chat | null;
+  dbMessages: Message[];
   liveMessages?: Message[];
-  messageVersion?: number;
+  loadingMessages?: boolean;
+  loadingOlder?: boolean;
+  hasMoreOlder?: boolean;
+  onLoadOlder?: () => void;
   onUnarchive?: (id: string) => void;
 }
 
-export default function MessageArea({ screen, chat, liveMessages = [], messageVersion = 0, onUnarchive }: MessageAreaProps) {
+export default function MessageArea({ screen, chat, dbMessages, liveMessages = [], loadingMessages = false, loadingOlder = false, hasMoreOlder = false, onLoadOlder, onUnarchive }: MessageAreaProps) {
   const [inputText, setInputText] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    let active = true;
-
-    if (!chat) {
-      setMessages([]);
-      return () => {
-        active = false;
-      };
-    }
-
-    void listMessages(chat.id).then((nextMessages) => {
-      if (active) {
-        setMessages(nextMessages);
-      }
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [chat]);
-
   const mergedMessages = useMemo(() => {
-    if (liveMessages.length === 0) return messages;
+    if (liveMessages.length === 0) return dbMessages;
     const seen = new Set(liveMessages.map((m) => m.id));
-    return [...messages.filter((m) => !seen.has(m.id)), ...liveMessages];
-  }, [messages, liveMessages, messageVersion]);
+    const deduped = dbMessages.filter((m) => !seen.has(m.id));
+    return [...deduped, ...liveMessages];
+  }, [dbMessages, liveMessages]);
 
-  useLayoutEffect(() => {
-    const container = scrollRef.current;
-    if (container) {
-      container.scrollTop = container.scrollHeight;
+  const rows = useMemo(() => {
+    const msgs = mergedMessages;
+    const result: VirtualRow[] = [];
+    let lastKey = "";
+    for (const m of msgs) {
+      const k = dateKey(m.timestamp);
+      if (k !== lastKey) {
+        result.push({ type: "date", label: dateLabel(m.timestamp) });
+        lastKey = k;
+      }
+      result.push({ type: "message", message: m });
     }
+    return result;
   }, [mergedMessages]);
+
+  const loadOlderRef = useRef(hasMoreOlder && !loadingOlder ? onLoadOlder : undefined);
+  loadOlderRef.current = hasMoreOlder && !loadingOlder ? onLoadOlder : undefined;
+
+  const rowCount = rows.length;
+
+  const virtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => (rows[index]?.type === "date" ? 40 : 72),
+    overscan: 20,
+  });
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !loadOlderRef.current) return;
+
+    const handler = () => {
+      if (!loadOlderRef.current) return;
+      const items = virtualizer.getVirtualItems();
+      if (items.length > 0 && items[0].index <= 5) {
+        loadOlderRef.current();
+      }
+    };
+    el.addEventListener("scroll", handler, { passive: true });
+    return () => el.removeEventListener("scroll", handler);
+  }, [virtualizer]);
 
   if (!chat) {
     const emptyState =
@@ -75,10 +119,6 @@ export default function MessageArea({ screen, chat, liveMessages = [], messageVe
 
     return (
       <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-surface">
-        <div
-          className="pointer-events-none absolute inset-0 opacity-5 mix-blend-overlay"
-          style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/carbon-fibre.png')" }}
-        />
         <div className="z-10 max-w-md space-y-4 px-6 text-center">
           <div className="mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-full bg-surface-container-highest">
             <LaptopIcon size={48} className="text-outline" />
@@ -94,8 +134,8 @@ export default function MessageArea({ screen, chat, liveMessages = [], messageVe
     );
   }
 
-  const participant = chat.participants.find((item) => item.id !== "me");
-  const name = chat.isGroup ? chat.name : participant?.name;
+  const participant = (chat.participants || []).find((item) => item.id !== "me");
+  const name = chatName(chat);
   const avatar = chat.isGroup
     ? chat.avatar || "https://images.unsplash.com/photo-1522071823991-b96767a1c56f?q=80&w=100&auto=format&fit=crop"
     : participant?.avatar;
@@ -104,7 +144,13 @@ export default function MessageArea({ screen, chat, liveMessages = [], messageVe
     <section className="relative flex flex-1 flex-col overflow-hidden bg-surface">
       <header className="sticky top-0 right-0 z-40 flex h-[60px] w-full items-center justify-between bg-surface-container-high px-4">
         <div className="flex cursor-pointer items-center gap-3 transition-opacity active:opacity-80">
-          <img className="h-10 w-10 rounded-full object-cover" src={avatar} alt={name} referrerPolicy="no-referrer" />
+          {avatar ? (
+            <img className="h-10 w-10 rounded-full object-cover" src={avatar} alt={name} referrerPolicy="no-referrer" />
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-container text-sm font-bold text-on-primary-container">
+              {name[0]?.toUpperCase()}
+            </div>
+          )}
           <div className="flex flex-col">
             <span className="font-medium tracking-tight text-on-surface">{name}</span>
             <span className={`text-[11px] ${chat.isArchived ? "text-outline" : "text-primary"}`}>
@@ -135,14 +181,7 @@ export default function MessageArea({ screen, chat, liveMessages = [], messageVe
 
       <div
         ref={scrollRef}
-        key={chat.id}
-        className="relative flex flex-1 flex-col gap-4 overflow-y-auto px-[60px] py-6"
-        style={{
-          backgroundImage:
-            "linear-gradient(to bottom, var(--color-surface), var(--color-surface)), url('https://www.transparenttextures.com/patterns/carbon-fibre.png')",
-          backgroundSize: "cover",
-          backgroundBlendMode: "overlay",
-        }}
+        className="relative flex-1 overflow-y-auto bg-surface px-[60px] py-6"
       >
         <div className="mb-4 flex justify-center">
           <span className="rounded-lg bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-outline">
@@ -150,40 +189,76 @@ export default function MessageArea({ screen, chat, liveMessages = [], messageVe
           </span>
         </div>
 
-        {mergedMessages.map((message) => {
-          const isMe = message.isFromMe ?? message.senderId === "me";
+        {loadingMessages && rowCount === 0 ? (
+          <div className="flex flex-1 items-center justify-center">
+            <Loader2 size={24} className="animate-spin text-outline" />
+          </div>
+        ) : null}
 
-          return (
-            <motion.div
-              key={message.id}
-              initial={{ opacity: 0, x: isMe ? 20 : -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className={`flex max-w-[70%] flex-col ${isMe ? "self-end" : "self-start"}`}
-            >
+        {loadingOlder ? (
+          <div className="flex justify-center py-2">
+            <Loader2 size={16} className="animate-spin text-outline" />
+          </div>
+        ) : null}
+
+        <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+          {virtualizer.getVirtualItems().map((virtualItem) => {
+            const row = rows[virtualItem.index];
+            if (row.type === "date") {
+              return (
+                <div
+                  key={row.label}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualItem.start}px)`,
+                    height: `${virtualItem.size}px`,
+                  }}
+                  className="flex items-center justify-center"
+                >
+                  <span className="rounded-lg bg-surface-container-high px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-outline">
+                    {row.label}
+                  </span>
+                </div>
+              );
+            }
+            const message = row.message;
+            const isMe = message.isFromMe ?? message.senderId === "me";
+            return (
               <div
-                className={`rounded-lg p-3 shadow-sm ${isMe ? "rounded-tr-none bg-primary-container text-on-primary-container" : "rounded-tl-none bg-surface-container-highest text-on-surface"}`}
+                key={message.id}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: isMe ? "auto" : 0,
+                  right: isMe ? 0 : "auto",
+                  transform: `translateY(${virtualItem.start}px)`,
+                }}
+                className={`flex max-w-[70%] flex-col ${isMe ? "items-end" : "items-start"}`}
               >
-                <p className="text-sm">{message.text}</p>
-                <div className={`mt-1 flex items-center justify-end gap-1 ${isMe ? "text-on-primary-container/70" : "text-outline"}`}>
-                  <span className="text-[10px]">{message.timestamp}</span>
-                  {isMe ? (
-                    <CheckCheck
-                      size={14}
-                      className={message.status === "read" ? "text-on-primary-container" : "text-on-primary-container/50"}
-                    />
-                  ) : null}
+                <div
+                  className={`rounded-lg p-3 shadow-sm ${isMe ? "rounded-tr-none bg-primary-container text-on-primary-container" : "rounded-tl-none bg-surface-container-highest text-on-surface"}`}
+                >
+                  <p className="text-sm">{message.text}</p>
+                  <div className={`mt-1 flex items-center justify-end gap-1 ${isMe ? "text-on-primary-container/70" : "text-outline"}`}>
+                    <span className="text-[10px]">{formatTime(message.timestamp)}</span>
+                    {isMe ? (
+                      <CheckCheck
+                        size={14}
+                        className={message.status === "read" ? "text-on-primary-container" : "text-on-primary-container/50"}
+                      />
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </motion.div>
-          );
-        })}
+            );
+          })}
+        </div>
 
         {chat.isArchived ? (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-8 rounded-xl border-l-4 border-primary bg-surface-container-high p-4"
-          >
+          <div className="mt-8 rounded-xl border-l-4 border-primary bg-surface-container-high p-4">
             <div className="flex items-start gap-3">
               <Info className="shrink-0 text-primary" size={20} />
               <div>
@@ -196,7 +271,7 @@ export default function MessageArea({ screen, chat, liveMessages = [], messageVe
                 </button>
               </div>
             </div>
-          </motion.div>
+          </div>
         ) : null}
       </div>
 

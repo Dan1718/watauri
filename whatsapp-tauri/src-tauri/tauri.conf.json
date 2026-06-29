@@ -4,16 +4,16 @@
   "version": "0.1.0",
   "identifier": "com.whatsapp-tauri.app",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "bun run build:backend && bun run dev:tauri",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
-    "frontendDist": "../dist"
+    "beforeBuildCommand": "bun run build:backend && bun run build",
+    "frontendDist": "../out"
   },
   "app": {
     "windows": [
       {
         "title": "whatsapp-tauri",
-        "decorations": false,
+        "decorations": true,
         "width": 800,
         "height": 600
       }

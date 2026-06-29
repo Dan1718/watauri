@@ -35,7 +35,7 @@ func handleChats(w http.ResponseWriter, r *http.Request) {
 
 func handleMessages(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) < 4 {
+	if len(parts) < 3 {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}

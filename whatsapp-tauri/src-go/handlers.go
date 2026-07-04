@@ -57,7 +57,7 @@ func handleChats(w http.ResponseWriter, r *http.Request) {
 
 func handleMessages(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) < 4 {
+	if len(parts) < 3 {
 		log.Printf("[http] GET %s -> 400 bad request (path parts: %v)", r.URL.Path, parts)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return

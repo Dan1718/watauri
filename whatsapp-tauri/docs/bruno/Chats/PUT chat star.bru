@@ -1,0 +1,16 @@
+meta {
+  name: PUT chat star
+  method: PUT
+  url: http://localhost:8090/api/chats/c1/star
+  type: http
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body {
+  text {
+    {"starred": true}
+  }
+}

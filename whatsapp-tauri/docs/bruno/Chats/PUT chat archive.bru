@@ -1,0 +1,16 @@
+meta {
+  name: PUT chat archive
+  method: PUT
+  url: http://localhost:8090/api/chats/c1/archive
+  type: http
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body {
+  text {
+    {"archived": true}
+  }
+}

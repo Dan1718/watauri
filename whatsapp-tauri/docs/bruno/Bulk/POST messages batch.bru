@@ -1,0 +1,16 @@
+meta {
+  name: POST messages batch
+  method: POST
+  url: http://localhost:8090/api/messages/batch
+  type: http
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body {
+  text {
+    {"messageIds": ["m1_1", "m1_2", "m1_3"], "action": "star"}
+  }
+}

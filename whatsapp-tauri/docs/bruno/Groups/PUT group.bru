@@ -1,0 +1,16 @@
+meta {
+  name: PUT group
+  method: PUT
+  url: http://localhost:8090/api/groups/group-1
+  type: http
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body {
+  text {
+    {"name": "Updated Name", "chatIds": ["c1", "c2", "c3"], "color": "#2196F3"}
+  }
+}

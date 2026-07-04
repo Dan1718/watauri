@@ -1,0 +1,10 @@
+{
+  "version": "1",
+  "name": "WhatsApp Tauri API",
+  "type": "collection",
+  "ignore": [],
+  "presets": {
+    "requestType": "http",
+    "requestUrl": "http://localhost:8090"
+  }
+}

@@ -26,3 +26,7 @@ next-env.d.ts
 *.njsproj
 *.sln
 *.sw?
+
+# Go binaries
+src-go/backend
+src-go/backend-*

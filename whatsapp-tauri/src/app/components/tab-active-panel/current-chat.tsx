@@ -67,7 +67,7 @@ export default function CurrentChat() {
               key={index}
             >
               <div
-                className={`flex justify-between gap-2 items-center ${getMessageSpacing(
+                className={`flex max-w-full min-w-0 justify-between gap-2 items-center ${getMessageSpacing(
                   index,
                   message.reactions?.length
                 )} relative`}

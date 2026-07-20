@@ -33,10 +33,15 @@ export default function ProfileProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     const fetchProfile = async () => {
       setProfile((prev) => ({ ...prev, isLoading: true }));
-      const chats = await listBackendChats();
-      const user = chats
-        .flatMap((chat) => chat.participants)
-        .find((participant) => participant.id === "me");
+      let user;
+      try {
+        const chats = await listBackendChats();
+        user = chats
+          .flatMap((chat) => chat.participants ?? [])
+          .find((participant) => participant.id === "me");
+      } catch {
+        user = undefined;
+      }
       const data = {
         id: user?.id ?? "me",
         name: user?.name ?? "Me",

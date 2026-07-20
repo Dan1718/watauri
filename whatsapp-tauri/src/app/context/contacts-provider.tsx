@@ -1,5 +1,6 @@
 import { createContext, PropsWithChildren, useEffect, useState } from "react";
-import { BackendUser, listBackendChats } from "../backend";
+import { BackendUser, listBackendContacts } from "../backend";
+import { getDisplayNameFromJid } from "../utils";
 
 export type Contact = {
   id: string;
@@ -13,6 +14,7 @@ export type Contacts = {
   contacts: Contact[];
   dictionary: [string, Contact[]][];
   isLoading: boolean;
+  error: string | null;
   filteredContacts: Contact[];
   search: string;
 };
@@ -30,9 +32,9 @@ export const ContactsContext = createContext<ContactsContextType | undefined>(
 function toContact(user: BackendUser): Contact {
   return {
     id: user.id,
-    displayName: user.name,
-    contactAvatar: user.avatar,
-    statusMessage: user.status,
+    displayName: user.name || getDisplayNameFromJid(user.id),
+    contactAvatar: user.avatar ?? "",
+    statusMessage: user.status ?? "",
   };
 }
 
@@ -41,6 +43,7 @@ export default function ContactsProvider({ children }: PropsWithChildren) {
     contacts: [],
     dictionary: [["", []]],
     isLoading: false,
+    error: null,
     filteredContacts: [],
     search: "",
   });
@@ -49,12 +52,12 @@ export default function ContactsProvider({ children }: PropsWithChildren) {
     data: Contacts["contacts"]
   ): [string, Contact[]][] => {
     const map: Map<string, Contact[]> = new Map();
-    data
+    [...data]
       .sort((a: Contact, b: Contact) =>
         a.displayName.localeCompare(b.displayName)
       )
       .forEach((contact: Contact) => {
-        const firstLetter = contact.displayName.charAt(0);
+        const firstLetter = contact.displayName.charAt(0).toUpperCase() || "#";
         if (map.has(firstLetter)) {
           const existing = map.get(firstLetter);
           existing?.push(contact);
@@ -71,24 +74,28 @@ export default function ContactsProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     const fetchContacts = async () => {
       setContacts((prev) => ({ ...prev, isLoading: true }));
-      const chats = await listBackendChats();
-      const users = new Map<string, BackendUser>();
-      chats.forEach((chat) => {
-        chat.participants.forEach((participant) => users.set(participant.id, participant));
-      });
-      const data = Array.from(users.values()).map(toContact);
-      const dictionary = generateDictionary(data);
+      try {
+        const data = (await listBackendContacts()).map(toContact);
+        const dictionary = generateDictionary(data);
 
-      setContacts((prev) => ({
-        ...prev,
-        contacts: data,
-        filteredContacts: data,
-        dictionary,
-        isLoading: false,
-      }));
+        setContacts((prev) => ({
+          ...prev,
+          contacts: data,
+          filteredContacts: data,
+          dictionary,
+          isLoading: false,
+          error: null,
+        }));
+      } catch (error) {
+        setContacts((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Failed to load contacts",
+        }));
+      }
     };
 
-    fetchContacts();
+    void fetchContacts();
   }, []);
 
   useEffect(() => {

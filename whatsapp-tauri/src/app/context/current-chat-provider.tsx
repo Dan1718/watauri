@@ -3,8 +3,8 @@ import { Chat, Message } from "./chats-provider";
 import { useChats } from "../hooks/use-chats";
 import { useContacts } from "../hooks/use-contacts";
 import { Contact } from "./contacts-provider";
-import { getTimestamp } from "../utils";
-import { BackendMessage, listBackendMessages } from "../backend";
+import { getDisplayNameFromJid } from "../utils";
+import { BackendMessage, listBackendMessages, sendBackendMessage } from "../backend";
 
 export type CurrentChatContacts = {
   [contactId: string]: Contact | undefined;
@@ -23,11 +23,13 @@ export type CurrentChatData = {
   group: CurrentChatContactsGroup | null;
   page: number;
   isLoading: boolean;
+  error: string | null;
+  isSending: boolean;
 };
 
 export type CurrentChat = CurrentChatData & {
   loadCurrentChat: (chat: Partial<CurrentChatData>) => void;
-  addNewMessage: () => void;
+  sendMessage: (text: string) => Promise<boolean>;
 };
 
 export const CurrentChatContext = createContext<undefined | CurrentChat>(
@@ -35,11 +37,12 @@ export const CurrentChatContext = createContext<undefined | CurrentChat>(
 );
 
 function toMessage(message: BackendMessage, fallbackContactId: string): Message {
+  const isFromMe = Boolean(message.isFromMe);
   return {
-    contactId: message.senderId === "me" ? fallbackContactId : message.senderId,
+    contactId: isFromMe ? fallbackContactId : message.senderId,
     message: message.text,
     timestamp: message.timestamp,
-    isSentFromUser: message.senderId === "me",
+    isSentFromUser: isFromMe,
     sent: true,
     delivered: message.status === "delivered" || message.status === "read",
     read: message.status === "read",
@@ -54,32 +57,57 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     group: null,
     page: 0,
     isLoading: false,
+    error: null,
+    isSending: false,
   });
   const {
     chats: { complete },
   } = useChats();
-  const { contacts, setIsContactTyping } = useContacts();
+  const { contacts } = useContacts();
 
   useEffect(() => {
+    let active = true;
+
     const fetchMessages = async () => {
       const chatId = currentChat.chatId;
       if (!chatId) return;
-      setCurrentChat((prev) => ({ ...prev, isLoading: true }));
-      const data = await listBackendMessages(chatId);
-      const chat = complete.find((chat: Chat) => chat.id === chatId);
-      const fallbackContactId = typeof chat?.contactId === "string" ? chat.contactId : "me";
-      setCurrentChat((prev) =>
-        prev.chatId === chatId
-          ? {
-              ...prev,
-              messages: data.map((message) => toMessage(message, fallbackContactId)),
-              isLoading: false,
-            }
-          : prev
-      );
+      setCurrentChat((prev) => ({ ...prev, isLoading: prev.messages.length === 0 }));
+      try {
+        const data = await listBackendMessages(chatId);
+        if (!active) return;
+        const chat = complete.find((chat: Chat) => chat.id === chatId);
+        const fallbackContactId = typeof chat?.contactId === "string" ? chat.contactId : chatId;
+        setCurrentChat((prev) =>
+          prev.chatId === chatId
+            ? {
+                ...prev,
+                messages: data.map((message) => toMessage(message, fallbackContactId)),
+                isLoading: false,
+                error: null,
+              }
+            : prev
+        );
+      } catch (error) {
+        if (!active) return;
+        setCurrentChat((prev) =>
+          prev.chatId === chatId
+            ? {
+                ...prev,
+                isLoading: false,
+                error: error instanceof Error ? error.message : "Failed to load messages",
+              }
+            : prev
+        );
+      }
     };
 
-    fetchMessages();
+    void fetchMessages();
+    const interval = setInterval(() => void fetchMessages(), 3000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [complete, currentChat.chatId, currentChat.page]);
 
   useEffect(() => {
@@ -89,14 +117,17 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
         const contactId = chat.contactId;
         const contact = contacts.find(
           (contact: Contact) => contact.id === contactId
-        );
-        if (contact) {
-          setCurrentChat((prev) => ({
-            ...prev,
-            contact,
-            group: null,
-          }));
-        }
+        ) ?? {
+          id: contactId,
+          displayName: getDisplayNameFromJid(contactId),
+          contactAvatar: "",
+          statusMessage: "",
+        };
+        setCurrentChat((prev) => ({
+          ...prev,
+          contact,
+          group: null,
+        }));
       } else {
         const groupContacts: CurrentChatContacts = {};
         chat.contactId.forEach((groupContact: string) => {
@@ -108,7 +139,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
           ...prev,
           contact: null,
           group: {
-            name: chat.groupName ?? "",
+            name: chat.groupName ?? getDisplayNameFromJid(chat.id),
             avatar: chat.groupAvatar ?? "",
             contacts: groupContacts,
           },
@@ -117,7 +148,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     }
   }, [complete, contacts, currentChat.chatId]);
 
-  const loadCurrentChat = (chat: Partial<CurrentChat>) => {
+  const loadCurrentChat = (chat: Partial<CurrentChatData>) => {
     setCurrentChat((prev) => {
       const isNewChat = chat.chatId !== undefined && chat.chatId !== prev.chatId;
       return {
@@ -128,30 +159,39 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     });
   };
 
-  const addNewMessage = () => {
-    if (currentChat.contact) {
-      const contactId = currentChat.contact?.id;
+  const sendMessage = async (text: string) => {
+    const trimmedText = text.trim();
+    if (!currentChat.chatId || !trimmedText) return false;
 
-      setIsContactTyping(contactId, true);
+    setCurrentChat((prev) => ({ ...prev, isSending: true, error: null }));
+    try {
+      const sentMessage = await sendBackendMessage(currentChat.chatId, trimmedText);
+      const chat = complete.find((chat: Chat) => chat.id === currentChat.chatId);
+      const fallbackContactId = typeof chat?.contactId === "string" ? chat.contactId : currentChat.chatId;
+      setCurrentChat((prev) =>
+        prev.chatId === currentChat.chatId
+          ? {
+              ...prev,
+              messages: [...prev.messages, toMessage(sentMessage, fallbackContactId)],
+              isSending: false,
+              error: null,
+            }
+          : prev
+      );
+      return true;
+    } catch (error) {
       setCurrentChat((prev) => ({
         ...prev,
-        messages: [
-          ...prev.messages,
-          {
-            contactId,
-            message: "Hey!",
-            timestamp: getTimestamp(),
-            isSentFromUser: false,
-          },
-        ],
+        isSending: false,
+        error: error instanceof Error ? error.message : "Failed to send message",
       }));
-      setIsContactTyping(contactId, false);
+      return false;
     }
   };
 
   return (
     <CurrentChatContext.Provider
-      value={{ ...currentChat, loadCurrentChat, addNewMessage }}
+      value={{ ...currentChat, loadCurrentChat, sendMessage }}
     >
       {children}
     </CurrentChatContext.Provider>

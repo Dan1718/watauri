@@ -10,39 +10,27 @@ import { Chat, Filters, Message } from "@/app/context/chats-provider";
 import Profile from "../profile";
 import { useContacts } from "@/app/hooks/use-contacts";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
-import { formatTime } from "@/app/utils";
+import { formatTime, getDisplayNameFromJid } from "@/app/utils";
 import MessageStatusIcon from "../message-status-icon";
 
 export default function Chats({ selectedTab }: { selectedTab: string }) {
-  const { openNewChatWindow, isNewChatWindowOpen } = useNewChat();
+  const { openNewChatWindow } = useNewChat();
   const {
     filter,
     search,
     updateFilter,
     updateSearch,
-    chats: { filtered, isLoading },
+    chats: { filtered, isLoading, error },
   } = useChats();
-  const { getContact, setIsContactTyping } = useContacts();
-  const { loadCurrentChat, contact, addNewMessage } = useCurrentChat();
-
-  const handleTyping = () => {
-    if (contact) {
-      setIsContactTyping(contact.id, true);
-    }
-  };
-
-  const handleOnline = () => {
-    if (contact) {
-      setIsContactTyping(contact.id, false);
-    }
-  };
+  const { getContact } = useContacts();
+  const { loadCurrentChat, contact, chatId } = useCurrentChat();
 
   const getMetaMessage = (
     chat: Chat,
     { message, contactId }: Message
   ): string => {
     if (chat.group) {
-      return `${getContact(contactId)?.displayName}: ${message}`;
+      return `${getContact(contactId)?.displayName ?? getDisplayNameFromJid(contactId)}: ${message}`;
     }
     if (contact?.typing && contact.id === contactId) {
       return "typing...";
@@ -56,17 +44,16 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
     );
     const name =
       typeof chat.contactId === "string"
-        ? currentContact?.displayName
-        : chat.groupName;
+        ? currentContact?.displayName ?? getDisplayNameFromJid(chat.contactId)
+        : chat.groupName ?? getDisplayNameFromJid(chat.id);
     const lastMessage = chat.messages[chat.messages.length - 1];
-    if (!lastMessage) return null;
 
     return (
       <button
         key={chat.id}
         onClick={() => loadCurrentChat({ chatId: chat.id, page: 0 })}
         className={`outline-none grid grid-cols-6 w-full gap-4 p-2.5 hover:bg-white/10 rounded-xl cursor-pointer ${
-          typeof chat.contactId === "string" && chat.contactId === contact?.id
+          chat.id === chatId
             ? "bg-white/10"
             : ""
         }`}
@@ -85,20 +72,20 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
         <div className="col-span-3 flex flex-col justify-center items-start w-full">
           <p className="text-white">{name}</p>
           <div className="flex justify-start items-center gap-1 w-full">
-            <MessageStatusIcon message={lastMessage} />
-            {contact?.typing && contact.id === lastMessage.contactId ? (
+            {lastMessage && <MessageStatusIcon message={lastMessage} />}
+            {lastMessage && contact?.typing && contact.id === lastMessage.contactId ? (
               <p className="text-emerald-500 text-sm">
                 {getMetaMessage(chat, lastMessage)}
               </p>
             ) : (
               <p
                 className={`text-sm ${
-                  chat.read || lastMessage.isSentFromUser
+                  !lastMessage || chat.read || lastMessage.isSentFromUser
                     ? "text-white/55"
                     : "text-white font-semibold"
                 } whitespace-nowrap truncate text-ellipsis overflow-hidden`}
               >
-                {getMetaMessage(chat, lastMessage)}
+                {lastMessage ? getMetaMessage(chat, lastMessage) : "No messages yet"}
               </p>
             )}
           </div>
@@ -106,12 +93,12 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
         <div className="col-span-2 flex flex-col justify-center items-end">
           <p
             className={`text-xs font-semibold ${
-              chat.read || lastMessage.isSentFromUser
+              !lastMessage || chat.read || lastMessage.isSentFromUser
                 ? "text-white/55"
                 : "text-emerald-400"
             }`}
           >
-            {formatTime(lastMessage.timestamp)}
+            {lastMessage ? formatTime(lastMessage.timestamp) : ""}
           </p>
         </div>
       </button>
@@ -127,17 +114,31 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
       );
     }
 
+    if (error) {
+      return (
+        <div className="w-full h-full flex justify-center items-center text-red-300 text-sm text-center px-4">
+          {error}
+        </div>
+      );
+    }
+
     const normalizedSearch = search.toLowerCase();
-    return filtered
+    const renderedChats = filtered
       .filter((chat) => {
         if (!normalizedSearch) return true;
         const name =
           typeof chat.contactId === "string"
-            ? getContact(chat.contactId)?.displayName
-            : chat.groupName;
+            ? getContact(chat.contactId)?.displayName ?? getDisplayNameFromJid(chat.contactId)
+            : chat.groupName ?? getDisplayNameFromJid(chat.id);
         return name?.toLowerCase().includes(normalizedSearch);
       })
       .map(renderChat);
+
+    if (renderedChats.length === 0) {
+      return <div className="text-white/50 text-sm px-2 py-4">No chats found</div>;
+    }
+
+    return renderedChats;
   };
 
   return (
@@ -184,28 +185,6 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
       <section className="w-full overflow-y-scroll flex flex-col gap-1">
         {renderChats()}
       </section>
-      {!isNewChatWindowOpen && (
-        <section className="absolute flex justify-start items-center gap-2 z-40 bottom-4 left-4">
-          <button
-            className="rounded-full p-1 px-3 bg-emerald-700 text-white text-xs cursor-pointer"
-            onClick={handleTyping}
-          >
-            Typing
-          </button>
-          <button
-            className="rounded-full p-1 px-3 bg-emerald-700 text-white text-xs cursor-pointer"
-            onClick={handleOnline}
-          >
-            Online
-          </button>
-          <button
-            className="rounded-full p-1 px-3 bg-emerald-700 text-white text-xs cursor-pointer"
-            onClick={addNewMessage}
-          >
-            New Message
-          </button>
-        </section>
-      )}
     </section>
   );
 }

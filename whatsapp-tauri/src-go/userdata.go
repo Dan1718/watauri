@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -179,19 +180,94 @@ func (s *UserDataStore) InsertMessage(msg Message) error {
 	defer s.mu.Unlock()
 
 	start := time.Now()
-	result, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+
+	result, err := tx.Exec(
 		`INSERT OR IGNORE INTO messages (id, chat_jid, sender_jid, text, timestamp, status, media_type, is_from_me) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		msg.ID, msg.ChatJID, msg.SenderID, msg.Text, msg.Timestamp, msg.Status, msg.MediaType, boolToInt(msg.IsFromMe),
 	)
 	if err != nil {
+		tx.Rollback()
 		log.Printf("[store] InsertMessage(%s) error: %v (%v)", msg.ID, err, time.Since(start))
 		return err
 	}
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
-		log.Printf("[store] InsertMessage(%s) skipped (duplicate) (%v)", msg.ID, time.Since(start))
-	} else {
-		log.Printf("[store] InsertMessage(%s) inserted into chat %s (%v)", msg.ID, msg.ChatJID, time.Since(start))
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	if rows > 0 {
+		unreadIncrement := 0
+		if !msg.IsFromMe {
+			unreadIncrement = 1
+		}
+		_, err = tx.Exec(`
+    INSERT INTO chats (
+        jid,
+        last_message_id,
+        last_message_text,
+        last_message_timestamp,
+        last_message_sender,
+        unread_count,
+        is_group,
+        updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(jid) DO UPDATE SET
+        last_message_id = CASE
+            WHEN chats.last_message_timestamp IS NULL
+                OR excluded.last_message_timestamp >= chats.last_message_timestamp
+            THEN excluded.last_message_id
+            ELSE chats.last_message_id
+        END,
+        last_message_text = CASE
+            WHEN chats.last_message_timestamp IS NULL
+                OR excluded.last_message_timestamp >= chats.last_message_timestamp
+            THEN excluded.last_message_text
+            ELSE chats.last_message_text
+        END,
+        last_message_timestamp = CASE
+            WHEN chats.last_message_timestamp IS NULL
+                OR excluded.last_message_timestamp >= chats.last_message_timestamp
+            THEN excluded.last_message_timestamp
+            ELSE chats.last_message_timestamp
+        END,
+        last_message_sender = CASE
+            WHEN chats.last_message_timestamp IS NULL
+                OR excluded.last_message_timestamp >= chats.last_message_timestamp
+            THEN excluded.last_message_sender
+            ELSE chats.last_message_sender
+        END,
+        unread_count = chats.unread_count + excluded.unread_count,
+        is_group = excluded.is_group,
+        updated_at = CASE
+            WHEN chats.last_message_timestamp IS NULL
+                OR excluded.last_message_timestamp >= chats.last_message_timestamp
+            THEN excluded.updated_at
+            ELSE chats.updated_at
+        END
+		`,
+			msg.ChatJID,
+			msg.ID,
+			msg.Text,
+			msg.Timestamp,
+			msg.SenderID,
+			unreadIncrement,
+			boolToInt(strings.HasSuffix(msg.ChatJID, "@g.us")),
+			time.Now().Format(time.RFC3339),
+		)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
 	}
 	return nil
 }

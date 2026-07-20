@@ -1,3 +1,4 @@
+import { FormEvent, useState } from "react";
 import { Message } from "@/app/context/chats-provider";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
 import Reaction from "../message/reaction";
@@ -6,7 +7,8 @@ import ChatMessage from "./chat-message";
 import MessageReactions from "./message-reactions";
 
 export default function CurrentChat() {
-  const { chatId, messages, isLoading } = useCurrentChat();
+  const { chatId, messages, isLoading, error, isSending, sendMessage } = useCurrentChat();
+  const [messageText, setMessageText] = useState("");
 
   if (!chatId) {
     return (
@@ -33,6 +35,14 @@ export default function CurrentChat() {
     return "mb-4";
   };
 
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const text = messageText.trim();
+    if (!text || isSending) return;
+    const sent = await sendMessage(text);
+    if (sent) setMessageText("");
+  };
+
   return (
     <section className="w-full h-full flex flex-col">
       <ContactHeader />
@@ -47,6 +57,7 @@ export default function CurrentChat() {
               </p>
             </div>
           </div>
+          {error && <div className="text-red-300 text-sm py-2">{error}</div>}
           {isLoading && <div className="text-white">Loading...</div>}
           {messages.map((message: Message, index: number) => (
             <div
@@ -75,16 +86,19 @@ export default function CurrentChat() {
           ))}
         </section>
 
-        <section className="w-full z-50 h-auto p-4">
+        <form className="w-full z-50 h-auto p-4" onSubmit={handleSubmit}>
           <div className="bg-black rounded-full overflow-hidden">
             <div className="bg-white/15 rounded-full">
               <input
                 className="w-full outline-none p-3 px-4 text-white placeholder-white/60 caret-green-400 text-sm rounded-full"
-                placeholder="Type a message"
+                disabled={isSending}
+                placeholder={isSending ? "Sending..." : "Type a message"}
+                value={messageText}
+                onChange={(event) => setMessageText(event.target.value)}
               />
             </div>
           </div>
-        </section>
+        </form>
       </div>
     </section>
   );

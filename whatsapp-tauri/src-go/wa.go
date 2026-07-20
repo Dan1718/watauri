@@ -11,6 +11,7 @@ import (
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
@@ -148,9 +149,101 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 		case *events.Presence:
 			log.Printf("[wa] Event: presence from=%s unavailable=%v lastSeen=%v", v.From, v.Unavailable, v.LastSeen)
 		case *events.HistorySync:
+
 			data := v.Data
 			if data != nil {
 				log.Printf("[wa] Event: historySync conversations=%d messages=%d", len(data.GetConversations()), len(data.GetStatusV3Messages()))
+			}
+			if data == nil {
+				log.Printf("[wa] history sync skipped: nil data")
+				break
+			}
+			for _, conv := range data.GetConversations() {
+				chatJID, err := types.ParseJID(conv.GetID())
+				if err != nil {
+					log.Printf("[wa] history sync invalid chat jid %q : %v", conv.GetID(), err)
+					continue
+				}
+
+				name := conv.GetName()
+				if name == "" {
+					name = conv.GetDisplayName()
+				}
+				chat := Chat{
+					ID:          chatJID.String(),
+					UnreadCount: int(conv.GetUnreadCount()),
+					IsGroup:     chatJID.Server == "g.us",
+					IsArchived:  conv.GetArchived(),
+					IsCommunity: conv.GetIsParentGroup(),
+				}
+
+				if name != "" {
+					chat.Name = &name
+				}
+				if err := wa.store.UpsertChat(chat); err != nil {
+					log.Printf("[wa] failed to upsert history chat %s: %v", chatJID, err)
+					continue
+				}
+
+				for _, historymsg := range conv.GetMessages() {
+					evt, err := client.ParseWebMessage(chatJID, historymsg.GetMessage())
+					if err != nil {
+						log.Printf("[wa] failed to parse history message in %s: %v ", chatJID, err)
+						continue
+					}
+					if evt == nil {
+						log.Printf("[wa] skipped nil parsed history message in %s", chatJID)
+						continue
+					}
+
+					text := evt.Message.GetConversation()
+
+					if text == "" {
+						if ext := evt.Message.GetExtendedTextMessage(); ext != nil {
+							text = ext.GetText()
+						}
+					}
+					mediaType := ""
+					if evt.Message.GetImageMessage() != nil {
+						mediaType = "image"
+					} else if evt.Message.GetVideoMessage() != nil {
+						mediaType = "video"
+					} else if evt.Message.GetAudioMessage() != nil {
+						mediaType = "audio"
+					} else if evt.Message.GetDocumentMessage() != nil {
+						mediaType = "document"
+					}
+					if text == "" && mediaType == "" {
+						log.Printf("[wa] Skipping message %s: empty text, no media (reaction/receipt)", evt.Info.ID)
+						continue
+					}
+
+					status := "received"
+
+					if evt.Info.IsFromMe {
+						status = "sent"
+					}
+					log.Printf("[wa] Event: message id = %s chat = %s sender = %s text = %q media = %s isFromMe = %v ",
+						evt.Info.ID, evt.Info.Chat, evt.Info.Sender, text, mediaType, evt.Info.IsFromMe)
+
+					chatJID := evt.Info.Chat.String()
+
+					ourMsg := Message{
+						ID:        evt.Info.ID,
+						ChatJID:   chatJID,
+						SenderID:  evt.Info.Sender.String(),
+						Text:      text,
+						Timestamp: evt.Info.Timestamp.Format(time.RFC3339),
+						Status:    status,
+						MediaType: mediaType,
+						IsFromMe:  evt.Info.IsFromMe,
+					}
+					if err := wa.store.InsertMessage(ourMsg); err != nil {
+						log.Printf("[wa] Failed to store message %s: %v", evt.Info.ID, err)
+					} else {
+						log.Printf("[wa] Stored message %s in chat %s", evt.Info.ID, chatJID)
+					}
+				}
 			}
 		case *events.PushName:
 			log.Printf("[wa] Event: pushName jid=%s old=%q new=%q", v.JID, v.OldPushName, v.NewPushName)

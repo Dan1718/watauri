@@ -25,7 +25,7 @@ export default function ChatMessage({ message }: { message: Message }) {
 
   if (group) {
     return (
-      <div className="flex max-w-[60%] min-w-0 justify-between items-start gap-2">
+      <div className="flex max-w-full min-w-0 justify-between items-start gap-2">
         {!message.isSentFromUser && (
           <Profile url={getContact(message.contactId)?.contactAvatar} />
         )}

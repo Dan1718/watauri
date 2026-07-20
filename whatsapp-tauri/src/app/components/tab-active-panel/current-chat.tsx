@@ -7,7 +7,7 @@ import ChatMessage from "./chat-message";
 import MessageReactions from "./message-reactions";
 
 export default function CurrentChat() {
-  const { chatId, messages, isLoading, error, isSending, sendMessage } = useCurrentChat();
+  const { chatId, group, messages, isLoading, error, isSending, sendMessage } = useCurrentChat();
   const [messageText, setMessageText] = useState("");
 
   if (!chatId) {
@@ -70,7 +70,9 @@ export default function CurrentChat() {
               key={index}
             >
               <div
-                className={`flex max-w-full min-w-0 justify-between gap-2 items-center ${getMessageSpacing(
+                className={`flex min-w-0 gap-2 items-center ${
+                  group ? "w-[60%]" : "max-w-full"
+                } ${message.isSentFromUser ? "justify-end" : "justify-start"} ${getMessageSpacing(
                   index,
                   message.reactions?.length
                 )} relative`}

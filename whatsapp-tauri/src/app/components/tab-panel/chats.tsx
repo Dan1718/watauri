@@ -52,13 +52,13 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
       <button
         key={chat.id}
         onClick={() => loadCurrentChat({ chatId: chat.id, page: 0 })}
-        className={`outline-none grid grid-cols-6 w-full gap-4 p-2.5 hover:bg-white/10 rounded-xl cursor-pointer ${
+        className={`outline-none flex items-center text-left w-full gap-4 p-2.5 hover:bg-white/10 rounded-xl cursor-pointer ${
           chat.id === chatId
             ? "bg-white/10"
             : ""
         }`}
       >
-        <div className="col-span-1">
+        <div className="shrink-0">
           {!chat.group ? (
             <Profile size="12" url={currentContact?.contactAvatar} />
           ) : (
@@ -69,8 +69,10 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
             </Profile>
           )}
         </div>
-        <div className="col-span-3 flex flex-col justify-center items-start w-full">
-          <p className="text-white">{name}</p>
+        <div className="min-w-0 flex-1 flex flex-col justify-center items-start">
+          <p className="text-white break-words whitespace-normal w-full" style={{ textAlign: "left" }}>
+            {name}
+          </p>
           <div className="flex justify-start items-center gap-1 w-full">
             {lastMessage && <MessageStatusIcon message={lastMessage} />}
             {lastMessage && contact?.typing && contact.id === lastMessage.contactId ? (
@@ -90,7 +92,7 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
             )}
           </div>
         </div>
-        <div className="col-span-2 flex flex-col justify-center items-end">
+        <div className="shrink-0 flex flex-col justify-center items-end">
           <p
             className={`text-xs font-semibold ${
               !lastMessage || chat.read || lastMessage.isSentFromUser

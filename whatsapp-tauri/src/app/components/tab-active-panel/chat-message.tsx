@@ -41,7 +41,7 @@ export default function ChatMessage({ message }: { message: Message }) {
               </p>
             )}
             <div className="flex max-w-full min-w-0 justify-between items-end gap-2">
-              <p className="min-w-0 break-words text-white text-sm">{message.message}</p>
+              <p className="min-w-0 whitespace-pre-wrap break-words text-white text-sm">{message.message}</p>
               <p className="shrink-0 text-white/80 text-xs">
                 {formatTime(message.timestamp)}
               </p>
@@ -61,7 +61,7 @@ export default function ChatMessage({ message }: { message: Message }) {
           message.isSentFromUser ? "bg-emerald-900" : "bg-white/20"
         }`}
       >
-        <p className="min-w-0 break-words text-white text-sm">{message.message}</p>
+        <p className="min-w-0 whitespace-pre-wrap break-words text-white text-sm">{message.message}</p>
         <p className="shrink-0 text-white/80 text-xs">{formatTime(message.timestamp)}</p>
         {message.isSentFromUser && (
           <MessageStatusIcon message={message} isInMessage />

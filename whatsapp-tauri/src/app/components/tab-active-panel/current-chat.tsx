@@ -235,7 +235,7 @@ function Composer({
       <input
         aria-label="Message"
         className="w-full rounded-full bg-white/15 p-3 px-4 text-sm text-white caret-green-400 outline-none placeholder:text-white/60"
-        disabled={isSending}
+        readOnly={isSending}
         placeholder={isSending ? "Sending..." : "Type a message"}
         value={messageText}
         onChange={(event) => setMessageText(event.target.value)}

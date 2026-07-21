@@ -1,0 +1,49 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: whatsapp-tauri
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: whatsapp-tauri/src-go/go.mod
+          cache-dependency-path: whatsapp-tauri/src-go/go.sum
+
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check conflict markers
+        working-directory: .
+        run: |
+          if rg '<<<<<<<|>>>>>>>' .; then
+            exit 1
+          fi
+
+      - name: Test backend
+        run: go -C src-go test ./...
+
+      - name: Build backend
+        run: bun run build:backend
+
+      - name: Build frontend
+        run: bun run build

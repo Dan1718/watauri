@@ -73,11 +73,11 @@
 **3.2 details**:
 | Event | Handled | Notes |
 |-------|---------|-------|
-| `*events.Message` | ✅ | Text + media stored, placeholder chat upserted, reactions/receipts skipped |
+| `*events.Message` | ✅ | Text + media stored, chat metadata updated transactionally, reactions skipped |
 | `*events.Receipt` | ✅ | Status updated (delivered → read) |
 | `*events.PushName` | ✅ | Upserted to `contacts` table |
 | `*events.Presence` | ⚠️ | Logged only, no status persisted |
-| `*events.HistorySync` | ❌ | **Skipped** — contains all group names, bulk messages, participant lists, avatars |
+| `*events.HistorySync` | ⚠️ | Conversations/messages persisted; group participants, avatars, push names incomplete |
 | `*events.GroupInfo` | ❌ | Skipped — group name/topic changes not persisted |
 | `*events.JoinedGroup` | ❌ | Skipped |
 | `*events.LoggedOut` | ✅ | Status + QR reset |
@@ -89,8 +89,8 @@
 
 **Known issues in Phase 3**:
 - `GetChats()` never joins with `contacts` → 1-on-1 chats have `participants: null` and no display name (frontend works around with `chatName()` deriving from JID)
-- `UpsertChat()` only inserts bare JID — no name/avatar — groups show as bare JIDs until HistorySync is processed
-- `HistorySync` skipped → no bulk offline-history insert after pairing
+- `GetChats()` lastMessage does not yet expose the full message contract (`chatJid`, `status`, `mediaType`, `isFromMe`)
+- History sync persists conversations/messages, but group participants, avatars, push names, and group update events are incomplete
 
 **SSE scope**:
 
@@ -112,7 +112,7 @@
 
 | Task | Detail                                                                        | Status |
 | ---- | ----------------------------------------------------------------------------- | ------ |
-| 4.1  | Send messages: `POST /api/chats/{id}/send` → `client.SendMessage()`           | 🔜 Planned |
+| 4.1  | Send messages: `POST /api/chats/{id}/send` → `client.SendMessage()`           | ✅ Done |
 | 4.2  | Typing indicators: `PUT /api/chats/{id}/typing` → `client.SendChatPresence()` | 🔜 Planned |
 | 4.3  | Read receipts: mark read on chat open                                         | 🔜 Planned |
 | 4.4  | Attachments: Tauri file dialog → whatsmeow media upload                       | 🔜 Planned |
@@ -182,3 +182,8 @@ Each risky feature should be behind a **feature flag** and isolated from core pr
 | Blank-screen fixes | `getCurrentWindow()` try-catch, null-participant guards, message URL path fix |
 | SSE deferred | `GET /api/events` was dropped earlier; polling remains as the temporary replacement until SSE is reintroduced |
 | Chat display name | `chatName()` helper — derives from JID when name/participants are null |
+| Message pagination | Cursor-based `GET /api/chats/{id}` pagination with older-page and delta polling support |
+| Message send hardening | JSON validation, max text size, structured errors, local persistence, and status update after send |
+| History sync persistence | Initial conversation/message history sync is parsed and stored through the live-message persistence path |
+| Auth utilities | `POST /api/auth/logout`, `POST /api/auth/reset`, and `GET /api/profile` are implemented |
+| Backend tests | Go tests cover pagination/cursors, route matching, send validation/errors, receipt deltas, and migration backfills |

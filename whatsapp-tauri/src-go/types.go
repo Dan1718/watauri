@@ -20,6 +20,13 @@ type Message struct {
 	IsFromMe  bool   `json:"isFromMe"`
 }
 
+type MessagePage struct {
+	Messages     []Message `json:"messages"`
+	NextCursor   *string   `json:"nextCursor"`
+	LatestCursor *string   `json:"latestCursor"`
+	HasMore      bool      `json:"hasMore"`
+}
+
 type Chat struct {
 	ID                   string   `json:"id"`
 	Participants         []User   `json:"participants"`

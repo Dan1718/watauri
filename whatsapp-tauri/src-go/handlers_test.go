@@ -2,12 +2,15 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 )
 
-func TestHandleMessagesAcceptsChatIDPath(t *testing.T) {
+func newTestStore(t *testing.T) {
+	t.Helper()
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -20,6 +23,121 @@ func TestHandleMessagesAcceptsChatIDPath(t *testing.T) {
 	if err := store.migrate(); err != nil {
 		t.Fatal(err)
 	}
+	db.SetMaxOpenConns(1)
+}
+
+func insertTestMessages(t *testing.T, messages ...Message) {
+	t.Helper()
+	for _, message := range messages {
+		message.ChatJID = "c1"
+		message.SenderID = "sender"
+		if err := store.InsertMessage(message); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func getMessagePage(t *testing.T, target string) (int, MessagePage) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	rec := httptest.NewRecorder()
+	handleMessages(rec, req)
+	var page MessagePage
+	if rec.Code == http.StatusOK {
+		if err := json.NewDecoder(rec.Body).Decode(&page); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return rec.Code, page
+}
+
+func TestHandleMessagesPaginatesAtPageBoundaries(t *testing.T) {
+	newTestStore(t)
+	insertTestMessages(t,
+		Message{ID: "m1", Timestamp: "2026-07-21T10:01:00Z"},
+		Message{ID: "m2", Timestamp: "2026-07-21T10:02:00Z"},
+		Message{ID: "m3", Timestamp: "2026-07-21T10:03:00Z"},
+		Message{ID: "m4", Timestamp: "2026-07-21T10:04:00Z"},
+		Message{ID: "m5", Timestamp: "2026-07-21T10:05:00Z"},
+	)
+
+	status, first := getMessagePage(t, "/api/chats/c1?limit=2")
+	if status != http.StatusOK || !first.HasMore || first.NextCursor == nil || ids(first.Messages) != "m4,m5" {
+		t.Fatalf("first page = status %d, ids %q, hasMore %v, cursor %v", status, ids(first.Messages), first.HasMore, first.NextCursor)
+	}
+	_, second := getMessagePage(t, "/api/chats/c1?limit=2&before="+url.QueryEscape(*first.NextCursor))
+	if !second.HasMore || second.NextCursor == nil || ids(second.Messages) != "m2,m3" {
+		t.Fatalf("second page = ids %q, hasMore %v, cursor %v", ids(second.Messages), second.HasMore, second.NextCursor)
+	}
+	_, last := getMessagePage(t, "/api/chats/c1?limit=2&before="+url.QueryEscape(*second.NextCursor))
+	if last.HasMore || last.NextCursor != nil || ids(last.Messages) != "m1" {
+		t.Fatalf("last page = ids %q, hasMore %v, cursor %v", ids(last.Messages), last.HasMore, last.NextCursor)
+	}
+}
+
+func TestHandleMessagesOrdersEqualTimestampsByIDAndFetchesDeltas(t *testing.T) {
+	newTestStore(t)
+	ts := "2026-07-21T10:00:00Z"
+	insertTestMessages(t,
+		Message{ID: "a", Timestamp: ts},
+		Message{ID: "b", Timestamp: ts},
+		Message{ID: "c", Timestamp: ts},
+	)
+
+	_, first := getMessagePage(t, "/api/chats/c1?limit=2")
+	if ids(first.Messages) != "b,c" || first.NextCursor == nil {
+		t.Fatalf("first page ids = %q, cursor = %v", ids(first.Messages), first.NextCursor)
+	}
+	_, older := getMessagePage(t, "/api/chats/c1?before="+url.QueryEscape(*first.NextCursor))
+	if ids(older.Messages) != "a" {
+		t.Fatalf("older page ids = %q", ids(older.Messages))
+	}
+	if first.LatestCursor == nil {
+		t.Fatal("first page has no latest cursor")
+	}
+	insertTestMessages(t, Message{ID: "d", Timestamp: ts}, Message{ID: "e", Timestamp: ts})
+	_, delta := getMessagePage(t, "/api/chats/c1?limit=1&after="+url.QueryEscape(*first.LatestCursor))
+	if ids(delta.Messages) != "d" || !delta.HasMore || delta.NextCursor == nil {
+		t.Fatalf("delta = ids %q, hasMore %v, cursor %v", ids(delta.Messages), delta.HasMore, delta.NextCursor)
+	}
+}
+
+func TestHandleMessagesRejectsInvalidPagination(t *testing.T) {
+	newTestStore(t)
+	valid := encodeMessageCursor(messageCursor{Timestamp: "2026-07-21T10:00:00Z", ID: "m1"})
+	tests := []string{
+		"/api/chats/c1?limit=",
+		"/api/chats/c1?limit=0",
+		"/api/chats/c1?limit=201",
+		"/api/chats/c1?limit=nope",
+		"/api/chats/c1?limit=1&limit=2",
+		"/api/chats/c1?before=not-base64!",
+		"/api/chats/c1?after=",
+		"/api/chats/c1?before=" + valid + "&after=" + valid,
+	}
+	for _, target := range tests {
+		t.Run(target, func(t *testing.T) {
+			status, _ := getMessagePage(t, target)
+			if status != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", status, http.StatusBadRequest)
+			}
+		})
+	}
+}
+
+func ids(messages []Message) string {
+	result := ""
+	for i, message := range messages {
+		if i > 0 {
+			result += ","
+		}
+		result += message.ID
+	}
+	return result
+}
+
+func TestHandleMessagesAcceptsChatIDPath(t *testing.T) {
+	newTestStore(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/chats/c1", nil)
 	rec := httptest.NewRecorder()

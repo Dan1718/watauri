@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -60,6 +61,7 @@ func (s *UserDataStore) migrate() error {
 			is_from_me INTEGER DEFAULT 0,
 			FOREIGN KEY (chat_jid) REFERENCES chats(jid)
 		)`,
+		`CREATE INDEX IF NOT EXISTS messages_chat_newest_idx ON messages(chat_jid, timestamp DESC, id DESC)`,
 		`CREATE TABLE IF NOT EXISTS contacts (
 			jid TEXT PRIMARY KEY,
 			name TEXT,
@@ -272,15 +274,38 @@ func (s *UserDataStore) InsertMessage(msg Message) error {
 	return nil
 }
 
-func (s *UserDataStore) GetMessages(chatJID string) ([]Message, error) {
+type messageCursor struct {
+	Timestamp string `json:"timestamp"`
+	ID        string `json:"id"`
+}
+
+func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *messageCursor) ([]Message, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	start := time.Now()
-	rows, err := s.db.Query(`SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me FROM messages WHERE chat_jid = ? ORDER BY timestamp ASC`, chatJID)
+	query := `SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me FROM messages WHERE chat_jid = ?`
+	args := []any{chatJID}
+	ascending := after != nil
+	if before != nil {
+		query += ` AND (timestamp < ? OR (timestamp = ? AND id < ?))`
+		args = append(args, before.Timestamp, before.Timestamp, before.ID)
+	} else if after != nil {
+		query += ` AND (timestamp > ? OR (timestamp = ? AND id > ?))`
+		args = append(args, after.Timestamp, after.Timestamp, after.ID)
+	}
+	if ascending {
+		query += ` ORDER BY timestamp ASC, id ASC`
+	} else {
+		query += ` ORDER BY timestamp DESC, id DESC`
+	}
+	query += ` LIMIT ?`
+	args = append(args, limit+1)
+
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		log.Printf("[store] GetMessages(%s) query error: %v (%v)", chatJID, err, time.Since(start))
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 
@@ -292,7 +317,7 @@ func (s *UserDataStore) GetMessages(chatJID string) ([]Message, error) {
 
 		if err := rows.Scan(&m.ID, &m.SenderID, &m.Text, &m.Timestamp, &m.Status, &mediaType, &isFromMe); err != nil {
 			log.Printf("[store] GetMessages(%s) row scan error: %v (%v)", chatJID, err, time.Since(start))
-			return nil, err
+			return nil, false, err
 		}
 		if mediaType.Valid {
 			m.MediaType = mediaType.String
@@ -303,10 +328,17 @@ func (s *UserDataStore) GetMessages(chatJID string) ([]Message, error) {
 	}
 	if err := rows.Err(); err != nil {
 		log.Printf("[store] GetMessages(%s) rows iteration error: %v (%v)", chatJID, err, time.Since(start))
-		return nil, err
+		return nil, false, err
+	}
+	hasMore := len(messages) > limit
+	if hasMore {
+		messages = messages[:limit]
+	}
+	if !ascending {
+		slices.Reverse(messages)
 	}
 	log.Printf("[store] GetMessages(%s) -> %d messages (%v)", chatJID, len(messages), time.Since(start))
-	return messages, nil
+	return messages, hasMore, nil
 }
 
 func (s *UserDataStore) UpdateMessageStatus(messageIDs []string, status string) error {

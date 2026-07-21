@@ -1,11 +1,19 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	defaultMessageLimit = 100
+	maxMessageLimit     = 200
 )
 
 func withCORS(h http.HandlerFunc) http.HandlerFunc {
@@ -66,7 +74,12 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[http] GET /api/chats/%s/messages", chatID)
 
 	w.Header().Set("Content-Type", "application/json")
-	messages, err := store.GetMessages(chatID)
+	limit, before, after, err := messagePageParams(r)
+	if err != nil {
+		http.Error(w, `{"error":"invalid pagination parameters"}`, http.StatusBadRequest)
+		return
+	}
+	messages, hasMore, err := store.GetMessages(chatID, limit, before, after)
 	if err != nil {
 		log.Printf("[http] GET /api/chats/%s error: %v", chatID, err)
 		http.Error(w, `{"error":"failed to fetch messages"}`, http.StatusInternalServerError)
@@ -75,8 +88,76 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	if messages == nil {
 		messages = []Message{}
 	}
-	json.NewEncoder(w).Encode(messages)
+	var nextCursor *string
+	var latestCursor *string
+	if len(messages) > 0 {
+		cursor := encodeMessageCursor(messageCursor{Timestamp: messages[len(messages)-1].Timestamp, ID: messages[len(messages)-1].ID})
+		latestCursor = &cursor
+	}
+	if hasMore && len(messages) > 0 {
+		message := messages[0]
+		if after != nil {
+			message = messages[len(messages)-1]
+		}
+		cursor := encodeMessageCursor(messageCursor{Timestamp: message.Timestamp, ID: message.ID})
+		nextCursor = &cursor
+	}
+	json.NewEncoder(w).Encode(MessagePage{Messages: messages, NextCursor: nextCursor, LatestCursor: latestCursor, HasMore: hasMore})
 	log.Printf("[http] GET /api/chats/%s -> %d messages", chatID, len(messages))
+}
+
+func messagePageParams(r *http.Request) (int, *messageCursor, *messageCursor, error) {
+	limit := defaultMessageLimit
+	query := r.URL.Query()
+	if values, ok := query["limit"]; ok {
+		if len(values) != 1 {
+			return 0, nil, nil, errors.New("invalid limit")
+		}
+		parsed, err := strconv.Atoi(values[0])
+		if err != nil || parsed < 1 || parsed > maxMessageLimit {
+			return 0, nil, nil, errors.New("invalid limit")
+		}
+		limit = parsed
+	}
+
+	if _, hasBefore := query["before"]; hasBefore {
+		if _, hasAfter := query["after"]; hasAfter {
+			return 0, nil, nil, errors.New("before and after are mutually exclusive")
+		}
+	}
+	before, err := decodeMessageCursorParam(query, "before")
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	after, err := decodeMessageCursorParam(query, "after")
+	return limit, before, after, err
+}
+
+func decodeMessageCursorParam(query map[string][]string, name string) (*messageCursor, error) {
+	values, ok := query[name]
+	if !ok {
+		return nil, nil
+	}
+	if len(values) != 1 || values[0] == "" {
+		return nil, errors.New("invalid cursor")
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(values[0])
+	if err != nil {
+		return nil, errors.New("invalid cursor")
+	}
+	var cursor messageCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Timestamp == "" || cursor.ID == "" {
+		return nil, errors.New("invalid cursor")
+	}
+	if _, err := time.Parse(time.RFC3339, cursor.Timestamp); err != nil {
+		return nil, errors.New("invalid cursor")
+	}
+	return &cursor, nil
+}
+
+func encodeMessageCursor(cursor messageCursor) string {
+	payload, _ := json.Marshal(cursor)
+	return base64.RawURLEncoding.EncodeToString(payload)
 }
 
 func handleAuthStatus(w http.ResponseWriter, r *http.Request) {

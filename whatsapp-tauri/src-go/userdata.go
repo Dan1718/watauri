@@ -78,6 +78,15 @@ func (s *UserDataStore) migrate() error {
 			push_name TEXT,
 			status TEXT
 		)`,
+		`CREATE TABLE IF NOT EXISTS chat_participants (
+			chat_jid TEXT NOT NULL,
+			user_jid TEXT NOT NULL,
+			rank INTEGER DEFAULT 0,
+			updated_at TEXT,
+			PRIMARY KEY (chat_jid, user_jid),
+			FOREIGN KEY (chat_jid) REFERENCES chats(jid),
+			FOREIGN KEY (user_jid) REFERENCES contacts(jid)
+		)`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
 			text,
 			content=messages,
@@ -114,6 +123,7 @@ func (s *UserDataStore) migrate() error {
 		`DROP INDEX IF EXISTS messages_chat_newest_idx`,
 		`CREATE INDEX IF NOT EXISTS messages_chat_newest_idx ON messages(chat_jid, timestamp_epoch DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS messages_chat_revision_idx ON messages(chat_jid, revision)`,
+		`CREATE INDEX IF NOT EXISTS chat_participants_user_idx ON chat_participants(user_jid)`,
 		`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`,
 		`CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
 			INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);

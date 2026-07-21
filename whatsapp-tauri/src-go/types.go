@@ -18,6 +18,12 @@ type Message struct {
 	Status    string `json:"status"`
 	MediaType string `json:"mediaType,omitempty"`
 	IsFromMe  bool   `json:"isFromMe"`
+	Revision  int64  `json:"-"`
+}
+
+type Profile struct {
+	ID       string `json:"id"`
+	PushName string `json:"pushName"`
 }
 
 type MessagePage struct {

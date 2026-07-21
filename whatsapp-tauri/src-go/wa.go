@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -10,9 +11,11 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
+	"google.golang.org/protobuf/proto"
 )
 
 type WAManager struct {
@@ -43,9 +46,8 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 		log.Println("[wa] No stored device found, will need QR pairing")
 	}
 
-	device.PushName = "WhatsApp Tauri"
 	device.Platform = "Tauri"
-	log.Printf("[wa] Device name set to %q (platform: %s)", device.PushName, device.Platform)
+	log.Printf("[wa] Device platform set to %s", device.Platform)
 
 	client := whatsmeow.NewClient(device, nil)
 	wa := &WAManager{client: client, status: "unauthenticated", store: store}
@@ -314,6 +316,59 @@ func (wa *WAManager) GetQR() string {
 	defer wa.mu.RUnlock()
 	return wa.qrCode
 }
+
+func (wa *WAManager) GetProfile() Profile {
+	wa.mu.RLock()
+	defer wa.mu.RUnlock()
+	if wa.client == nil || wa.client.Store == nil {
+		return Profile{}
+	}
+	profile := Profile{PushName: wa.client.Store.PushName}
+	if wa.client.Store.ID != nil {
+		profile.ID = wa.client.Store.ID.String()
+	}
+	return profile
+}
+
+func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message, error) {
+	to, err := types.ParseJID(chatID)
+	if err != nil {
+		return Message{}, err
+	}
+	wa.mu.RLock()
+	client := wa.client
+	wa.mu.RUnlock()
+	if client == nil {
+		return Message{}, errors.New("WhatsApp client is unavailable")
+	}
+	id := client.GenerateMessageID()
+	response, err := client.SendMessage(ctx, to, &waE2E.Message{Conversation: proto.String(text)}, whatsmeow.SendRequestExtra{ID: id})
+	if err != nil {
+		return Message{}, err
+	}
+	timestamp := response.Timestamp
+	if timestamp.IsZero() {
+		timestamp = time.Now()
+	}
+	senderID := response.Sender.String()
+	if senderID == "" && client.Store.ID != nil {
+		senderID = client.Store.ID.String()
+	}
+	message := Message{
+		ID:        string(response.ID),
+		ChatJID:   chatID,
+		SenderID:  senderID,
+		Text:      text,
+		Timestamp: timestamp.UTC().Format(time.RFC3339Nano),
+		Status:    "sent",
+		IsFromMe:  true,
+	}
+	if err := wa.store.InsertMessage(message); err != nil {
+		return Message{}, err
+	}
+	return message, nil
+}
+
 func (wa *WAManager) Disconnect() { wa.client.Disconnect() }
 
 func (wa *WAManager) Logout() error {

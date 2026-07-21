@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -104,7 +105,8 @@ func TestHandleMessagesOrdersEqualTimestampsByIDAndFetchesDeltas(t *testing.T) {
 
 func TestHandleMessagesRejectsInvalidPagination(t *testing.T) {
 	newTestStore(t)
-	valid := encodeMessageCursor(messageCursor{Timestamp: "2026-07-21T10:00:00Z", ID: "m1"})
+	valid := encodeMessageCursor(messageCursor{Version: 1, Mode: "before", TimestampEpoch: 1, ID: "m1"})
+	after := encodeMessageCursor(messageCursor{Version: 1, Mode: "after", Revision: 1})
 	tests := []string{
 		"/api/chats/c1?limit=",
 		"/api/chats/c1?limit=0",
@@ -114,6 +116,8 @@ func TestHandleMessagesRejectsInvalidPagination(t *testing.T) {
 		"/api/chats/c1?before=not-base64!",
 		"/api/chats/c1?after=",
 		"/api/chats/c1?before=" + valid + "&after=" + valid,
+		"/api/chats/c1?after=" + valid,
+		"/api/chats/c1?before=" + after,
 	}
 	for _, target := range tests {
 		t.Run(target, func(t *testing.T) {
@@ -146,5 +150,125 @@ func TestHandleMessagesAcceptsChatIDPath(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestHandleMessagesReturnsReceiptChanges(t *testing.T) {
+	newTestStore(t)
+	insertTestMessages(t, Message{ID: "m1", Timestamp: "2026-07-21T10:00:00Z", Status: "sent"})
+	_, initial := getMessagePage(t, "/api/chats/c1")
+	if err := store.UpdateMessageStatus([]string{"m1"}, "read"); err != nil {
+		t.Fatal(err)
+	}
+	_, delta := getMessagePage(t, "/api/chats/c1?after="+url.QueryEscape(*initial.LatestCursor))
+	if len(delta.Messages) != 1 || delta.Messages[0].ID != "m1" || delta.Messages[0].Status != "read" {
+		t.Fatalf("receipt delta = %#v", delta.Messages)
+	}
+}
+
+func TestHandleMessagesReturnsBackfilledChanges(t *testing.T) {
+	newTestStore(t)
+	insertTestMessages(t, Message{ID: "new", Timestamp: "2026-07-21T10:00:00Z"})
+	_, initial := getMessagePage(t, "/api/chats/c1")
+	insertTestMessages(t, Message{ID: "old", Timestamp: "2020-01-01T00:00:00Z"})
+	_, delta := getMessagePage(t, "/api/chats/c1?after="+url.QueryEscape(*initial.LatestCursor))
+	if ids(delta.Messages) != "old" {
+		t.Fatalf("backfill delta ids = %q", ids(delta.Messages))
+	}
+}
+
+func TestHandleMessagesOrdersEqualInstantsWithMixedOffsets(t *testing.T) {
+	newTestStore(t)
+	insertTestMessages(t,
+		Message{ID: "a", Timestamp: "2026-07-21T12:00:00+02:00"},
+		Message{ID: "b", Timestamp: "2026-07-21T10:00:00Z"},
+		Message{ID: "c", Timestamp: "2026-07-21T10:01:00Z"},
+	)
+	_, first := getMessagePage(t, "/api/chats/c1?limit=2")
+	if ids(first.Messages) != "b,c" || first.NextCursor == nil {
+		t.Fatalf("first page ids = %q", ids(first.Messages))
+	}
+	_, older := getMessagePage(t, "/api/chats/c1?before="+url.QueryEscape(*first.NextCursor))
+	if ids(older.Messages) != "a" {
+		t.Fatalf("older page ids = %q", ids(older.Messages))
+	}
+}
+
+func TestChatRoutesAreExactAndMethodSpecific(t *testing.T) {
+	newTestStore(t)
+	tests := []struct {
+		method string
+		path   string
+		want   int
+	}{
+		{http.MethodGet, "/api/chats/c1", http.StatusOK},
+		{http.MethodPost, "/api/chats/c1", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/api/chats/c1/send", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/api/chats/c1/messages", http.StatusNotFound},
+		{http.MethodPost, "/api/chats/c1/send/extra", http.StatusNotFound},
+	}
+	for _, test := range tests {
+		t.Run(test.method+" "+test.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handleMessages(rec, httptest.NewRequest(test.method, test.path, nil))
+			if rec.Code != test.want {
+				t.Fatalf("status = %d, want %d", rec.Code, test.want)
+			}
+		})
+	}
+}
+
+func TestSendMessageValidatesBeforeNetworkCall(t *testing.T) {
+	oldWA := wa
+	wa = nil
+	t.Cleanup(func() { wa = oldWA })
+	tests := []string{
+		`{}`,
+		`{"text":"   "}`,
+		`{"text":`,
+		`{"text":"ok","extra":true}`,
+		`{"text":"` + strings.Repeat("x", maxMessageTextBytes+1) + `"}`,
+	}
+	for _, body := range tests {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/chats/c1/send", strings.NewReader(body))
+		handleMessages(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("body length %d: status = %d, want %d", len(body), rec.Code, http.StatusBadRequest)
+		}
+	}
+}
+
+func TestMigrateBackfillsExistingMessageMetadata(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	for _, query := range []string{
+		`CREATE TABLE chats (jid TEXT PRIMARY KEY, last_message_timestamp TEXT)`,
+		`CREATE TABLE messages (id TEXT PRIMARY KEY, chat_jid TEXT NOT NULL, sender_jid TEXT NOT NULL, text TEXT, timestamp TEXT, status TEXT, media_type TEXT, is_from_me INTEGER)`,
+		`INSERT INTO chats (jid, last_message_timestamp) VALUES ('c1', '2026-07-21T12:00:00+02:00')`,
+		`INSERT INTO messages (id, chat_jid, sender_jid, text, timestamp, status, is_from_me) VALUES ('m1', 'c1', 'sender', 'hello', '2026-07-21T12:00:00+02:00', 'sent', 0)`,
+	} {
+		if _, err := db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &UserDataStore{db: db}
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	messages, _, revision, err := s.GetMessages("c1", 10, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids(messages) != "m1" || revision == 0 {
+		t.Fatalf("messages = %q, revision = %d", ids(messages), revision)
+	}
+	var epoch int64
+	if err := db.QueryRow(`SELECT timestamp_epoch FROM messages WHERE id = 'm1'`).Scan(&epoch); err != nil || epoch == 0 {
+		t.Fatalf("epoch = %d, err = %v", epoch, err)
 	}
 }

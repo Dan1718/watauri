@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 const (
 	defaultMessageLimit = 100
 	maxMessageLimit     = 200
+	maxMessageTextBytes = 4096
 )
 
 func withCORS(h http.HandlerFunc) http.HandlerFunc {
@@ -48,6 +50,14 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleChats(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/api/chats" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 
 	chats, err := store.GetChats()
@@ -64,13 +74,25 @@ func handleChats(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleMessages(w http.ResponseWriter, r *http.Request) {
-	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) < 3 {
-		log.Printf("[http] GET %s -> 400 bad request (path parts: %v)", r.URL.Path, parts)
-		http.Error(w, "Bad request", http.StatusBadRequest)
+	path := strings.TrimPrefix(r.URL.Path, "/api/chats/")
+	parts := strings.Split(path, "/")
+	if path == r.URL.Path || parts[0] == "" || len(parts) > 2 || (len(parts) == 2 && parts[1] != "send") {
+		http.NotFound(w, r)
 		return
 	}
-	chatID := parts[2]
+	chatID := parts[0]
+	if len(parts) == 2 {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		handleSendMessage(w, r, chatID)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
 	log.Printf("[http] GET /api/chats/%s/messages", chatID)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -79,7 +101,7 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid pagination parameters"}`, http.StatusBadRequest)
 		return
 	}
-	messages, hasMore, err := store.GetMessages(chatID, limit, before, after)
+	messages, hasMore, latestRevision, err := store.GetMessages(chatID, limit, before, after)
 	if err != nil {
 		log.Printf("[http] GET /api/chats/%s error: %v", chatID, err)
 		http.Error(w, `{"error":"failed to fetch messages"}`, http.StatusInternalServerError)
@@ -89,18 +111,27 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		messages = []Message{}
 	}
 	var nextCursor *string
-	var latestCursor *string
-	if len(messages) > 0 {
-		cursor := encodeMessageCursor(messageCursor{Timestamp: messages[len(messages)-1].Timestamp, ID: messages[len(messages)-1].ID})
-		latestCursor = &cursor
+	revision := latestRevision
+	if after != nil && (hasMore || len(messages) == 0) {
+		revision = after.Revision
+		if len(messages) > 0 {
+			revision = messages[len(messages)-1].Revision
+		}
 	}
+	latest := encodeMessageCursor(messageCursor{Version: 1, Mode: "after", Revision: revision})
+	latestCursor := &latest
 	if hasMore && len(messages) > 0 {
 		message := messages[0]
+		cursor := messageCursor{Version: 1, Mode: "before", ID: message.ID}
 		if after != nil {
 			message = messages[len(messages)-1]
+			cursor = messageCursor{Version: 1, Mode: "after", Revision: message.Revision}
+		} else {
+			epoch, _ := timestampEpoch(message.Timestamp)
+			cursor.TimestampEpoch = epoch
 		}
-		cursor := encodeMessageCursor(messageCursor{Timestamp: message.Timestamp, ID: message.ID})
-		nextCursor = &cursor
+		encoded := encodeMessageCursor(cursor)
+		nextCursor = &encoded
 	}
 	json.NewEncoder(w).Encode(MessagePage{Messages: messages, NextCursor: nextCursor, LatestCursor: latestCursor, HasMore: hasMore})
 	log.Printf("[http] GET /api/chats/%s -> %d messages", chatID, len(messages))
@@ -125,15 +156,15 @@ func messagePageParams(r *http.Request) (int, *messageCursor, *messageCursor, er
 			return 0, nil, nil, errors.New("before and after are mutually exclusive")
 		}
 	}
-	before, err := decodeMessageCursorParam(query, "before")
+	before, err := decodeMessageCursorParam(query, "before", "before")
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	after, err := decodeMessageCursorParam(query, "after")
+	after, err := decodeMessageCursorParam(query, "after", "after")
 	return limit, before, after, err
 }
 
-func decodeMessageCursorParam(query map[string][]string, name string) (*messageCursor, error) {
+func decodeMessageCursorParam(query map[string][]string, name, mode string) (*messageCursor, error) {
 	values, ok := query[name]
 	if !ok {
 		return nil, nil
@@ -146,10 +177,13 @@ func decodeMessageCursorParam(query map[string][]string, name string) (*messageC
 		return nil, errors.New("invalid cursor")
 	}
 	var cursor messageCursor
-	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Timestamp == "" || cursor.ID == "" {
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Version != 1 || cursor.Mode != mode {
 		return nil, errors.New("invalid cursor")
 	}
-	if _, err := time.Parse(time.RFC3339, cursor.Timestamp); err != nil {
+	if mode == "before" && (cursor.ID == "" || cursor.Revision != 0) {
+		return nil, errors.New("invalid cursor")
+	}
+	if mode == "after" && (cursor.ID != "" || cursor.TimestampEpoch != 0 || cursor.Revision < 0) {
 		return nil, errors.New("invalid cursor")
 	}
 	return &cursor, nil
@@ -158,6 +192,57 @@ func decodeMessageCursorParam(query map[string][]string, name string) (*messageC
 func encodeMessageCursor(cursor messageCursor) string {
 	payload, _ := json.Marshal(cursor)
 	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func handleSendMessage(w http.ResponseWriter, r *http.Request, chatID string) {
+	var body struct {
+		Text string `json:"text"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxMessageTextBytes+1024)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(body.Text) == "" || len([]byte(body.Text)) > maxMessageTextBytes {
+		http.Error(w, `{"error":"text must be between 1 and 4096 bytes"}`, http.StatusBadRequest)
+		return
+	}
+	if wa == nil {
+		http.Error(w, `{"error":"WhatsApp is unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+	message, err := wa.SendText(r.Context(), chatID, body.Text)
+	if err != nil {
+		log.Printf("[http] POST /api/chats/%s/send error: %v", chatID, err)
+		http.Error(w, `{"error":"failed to send message"}`, http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(message)
+}
+
+func methodNotAllowed(w http.ResponseWriter, methods ...string) {
+	w.Header().Set("Allow", strings.Join(methods, ", "))
+	http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+}
+
+func handleProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	profile := Profile{}
+	if wa != nil {
+		profile = wa.GetProfile()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(profile)
 }
 
 func handleAuthStatus(w http.ResponseWriter, r *http.Request) {

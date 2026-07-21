@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -16,6 +17,12 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
+)
+
+var (
+	errInvalidChatID  = errors.New("invalid chat ID")
+	errWAUnavailable  = errors.New("WhatsApp client is unavailable")
+	errPersistMessage = errors.New("failed to store message")
 )
 
 type WAManager struct {
@@ -333,38 +340,40 @@ func (wa *WAManager) GetProfile() Profile {
 func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message, error) {
 	to, err := types.ParseJID(chatID)
 	if err != nil {
-		return Message{}, err
+		return Message{}, fmt.Errorf("%w: %v", errInvalidChatID, err)
+	}
+	if to.User == "" || to.Server == "" {
+		return Message{}, errInvalidChatID
 	}
 	wa.mu.RLock()
 	client := wa.client
 	wa.mu.RUnlock()
 	if client == nil {
-		return Message{}, errors.New("WhatsApp client is unavailable")
+		return Message{}, errWAUnavailable
 	}
 	id := client.GenerateMessageID()
-	response, err := client.SendMessage(ctx, to, &waE2E.Message{Conversation: proto.String(text)}, whatsmeow.SendRequestExtra{ID: id})
-	if err != nil {
-		return Message{}, err
-	}
-	timestamp := response.Timestamp
-	if timestamp.IsZero() {
-		timestamp = time.Now()
-	}
-	senderID := response.Sender.String()
-	if senderID == "" && client.Store.ID != nil {
+	senderID := ""
+	if client.Store.ID != nil {
 		senderID = client.Store.ID.String()
 	}
 	message := Message{
-		ID:        string(response.ID),
+		ID:        string(id),
 		ChatJID:   chatID,
 		SenderID:  senderID,
 		Text:      text,
-		Timestamp: timestamp.UTC().Format(time.RFC3339Nano),
-		Status:    "sent",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Status:    "pending",
 		IsFromMe:  true,
 	}
 	if err := wa.store.InsertMessage(message); err != nil {
-		log.Printf("[wa] Failed to store sent message %s: %v", message.ID, err)
+		return Message{}, fmt.Errorf("%w: %v", errPersistMessage, err)
+	}
+	if _, err := client.SendMessage(ctx, to, &waE2E.Message{Conversation: proto.String(text)}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		return Message{}, fmt.Errorf("failed to send message: %w", err)
+	}
+	message.Status = "sent"
+	if err := wa.store.UpdateMessageStatus([]string{message.ID}, message.Status); err != nil {
+		return Message{}, fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
 	return message, nil
 }

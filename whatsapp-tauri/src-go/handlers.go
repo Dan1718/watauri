@@ -180,7 +180,7 @@ func decodeMessageCursorParam(query map[string][]string, name, mode string) (*me
 	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Version != 1 || cursor.Mode != mode {
 		return nil, errors.New("invalid cursor")
 	}
-	if mode == "before" && (cursor.ID == "" || cursor.Revision != 0) {
+	if mode == "before" && (cursor.ID == "" || cursor.TimestampEpoch == 0 || cursor.Revision != 0) {
 		return nil, errors.New("invalid cursor")
 	}
 	if mode == "after" && (cursor.ID != "" || cursor.TimestampEpoch != 0 || cursor.Revision < 0) {
@@ -202,29 +202,44 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&body); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		writeJSONError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		writeJSONError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 	if strings.TrimSpace(body.Text) == "" || len([]byte(body.Text)) > maxMessageTextBytes {
-		http.Error(w, `{"error":"text must be between 1 and 4096 bytes"}`, http.StatusBadRequest)
+		writeJSONError(w, "text must be between 1 and 4096 bytes", http.StatusBadRequest)
 		return
 	}
 	if wa == nil {
-		http.Error(w, `{"error":"WhatsApp is unavailable"}`, http.StatusServiceUnavailable)
+		writeJSONError(w, "WhatsApp is unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	message, err := wa.SendText(r.Context(), chatID, body.Text)
 	if err != nil {
 		log.Printf("[http] POST /api/chats/%s/send error: %v", chatID, err)
-		http.Error(w, `{"error":"failed to send message"}`, http.StatusBadGateway)
+		switch {
+		case errors.Is(err, errInvalidChatID):
+			writeJSONError(w, "invalid chat ID", http.StatusBadRequest)
+		case errors.Is(err, errWAUnavailable):
+			writeJSONError(w, "WhatsApp is unavailable", http.StatusServiceUnavailable)
+		case errors.Is(err, errPersistMessage):
+			writeJSONError(w, "failed to store message", http.StatusInternalServerError)
+		default:
+			writeJSONError(w, "failed to send message", http.StatusBadGateway)
+		}
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(message)
+}
+
+func writeJSONError(w http.ResponseWriter, message string, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
 func methodNotAllowed(w http.ResponseWriter, methods ...string) {

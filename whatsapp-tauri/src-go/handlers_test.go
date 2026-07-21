@@ -106,6 +106,7 @@ func TestHandleMessagesOrdersEqualTimestampsByIDAndFetchesDeltas(t *testing.T) {
 func TestHandleMessagesRejectsInvalidPagination(t *testing.T) {
 	newTestStore(t)
 	valid := encodeMessageCursor(messageCursor{Version: 1, Mode: "before", TimestampEpoch: 1, ID: "m1"})
+	missingEpoch := encodeMessageCursor(messageCursor{Version: 1, Mode: "before", ID: "m1"})
 	after := encodeMessageCursor(messageCursor{Version: 1, Mode: "after", Revision: 1})
 	tests := []string{
 		"/api/chats/c1?limit=",
@@ -116,6 +117,7 @@ func TestHandleMessagesRejectsInvalidPagination(t *testing.T) {
 		"/api/chats/c1?before=not-base64!",
 		"/api/chats/c1?after=",
 		"/api/chats/c1?before=" + valid + "&after=" + valid,
+		"/api/chats/c1?before=" + missingEpoch,
 		"/api/chats/c1?after=" + valid,
 		"/api/chats/c1?before=" + after,
 	}
@@ -236,6 +238,36 @@ func TestSendMessageValidatesBeforeNetworkCall(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("body length %d: status = %d, want %d", len(body), rec.Code, http.StatusBadRequest)
 		}
+	}
+}
+
+func TestSendMessageReturnsInformativeJSONErrors(t *testing.T) {
+	oldWA := wa
+	t.Cleanup(func() { wa = oldWA })
+	tests := []struct {
+		name   string
+		chatID string
+		setup  func()
+		status int
+		error  string
+	}{
+		{"unavailable", "123@s.whatsapp.net", func() { wa = nil }, http.StatusServiceUnavailable, "WhatsApp is unavailable"},
+		{"invalid chat ID", "invalid chat id", func() { wa = &WAManager{} }, http.StatusBadRequest, "invalid chat ID"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			test.setup()
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/chats/c1/send", strings.NewReader(`{"text":"hello"}`))
+			handleSendMessage(rec, req, test.chatID)
+			if rec.Code != test.status || rec.Header().Get("Content-Type") != "application/json" {
+				t.Fatalf("status = %d, content-type = %q", rec.Code, rec.Header().Get("Content-Type"))
+			}
+			var body map[string]string
+			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil || body["error"] != test.error {
+				t.Fatalf("body = %#v, err = %v", body, err)
+			}
+		})
 	}
 }
 

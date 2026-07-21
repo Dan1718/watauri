@@ -17,7 +17,7 @@ export type BackendMessage = {
   senderId: string;
   text: string;
   timestamp: string;
-  status: "received" | "sent" | "delivered" | "read";
+  status: "pending" | "received" | "sent" | "delivered" | "read";
   mediaType?: string;
   isFromMe?: boolean;
 };

@@ -62,7 +62,7 @@ Package manager: bun
 - Bun
 - Rust and Cargo
 - Tauri CLI dependencies
-- 
+
 ## Getting started 
 
 Clone the repo 

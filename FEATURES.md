@@ -1,193 +1,194 @@
-# WhatsApp Client Remake
+# Features
 
-> **AI-generated code disclaimer**: The frontend (React components, styles, mock data) and most documentation were initially generated with AI assistance. Architecture decisions, protocol integration, and backend implementation are human-directed. All generated code is reviewed and modified by a human.
+WhatsApp Tauri is a desktop-first, power-user WhatsApp client focused on better organization, search, bulk workflows, media handling, and privacy controls.
 
-A desktop-first, power-user WhatsApp client focused on better organization, bulk actions, automation, and privacy controls.
+This file tracks user-facing product features. For implementation details, architecture phases, and developer tasks, see [DEV_ROADMAP.md](./DEV_ROADMAP.md).
 
-This project is intended to explore a non-browser WhatsApp client experience with stronger UX than the official client, especially for people managing a lot of chats, media, and accounts.
+## Status Legend
 
-## Goals
+- `done`: implemented
+- `in-progress`: actively being built
+- `planned`: intended but not started
+- `experimental`: exploratory or uncertain
+- `blocked`: waiting on another feature or technical decision
 
-- Make chat organization dramatically better than the default WhatsApp client.
-- Support workflows the official client makes difficult or impossible.
-- Build a fast, reliable desktop experience.
-- Keep risky and protocol-sensitive behavior clearly separated from normal client features.
+## Core Client
 
-## Feature List
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| WhatsApp QR pairing | done | Pair account using the WhatsApp Web QR flow |
+| Persistent session | done | Session survives app restart |
+| Local SQLite storage | done | Stores chats and messages locally |
+| Chat list | done | Loaded from local database |
+| Message history view | done | Opens stored messages for a chat |
+| History sync persistence | in-progress | Backfills historical chats and messages after pairing |
+| Contact names | in-progress | Push names and inline contacts still need improvement |
+| Group metadata | in-progress | Group names are partially supported through history sync |
+| Group participants | planned | Requires participant persistence in the local database |
+| Send text messages | planned | Composer endpoint and whatsmeow send path |
+| Message pagination | planned | Avoid loading entire chats at once |
+| Read receipts | planned | Risky: protocol-sensitive behavior |
+| Typing indicators | planned | Risky: protocol-sensitive behavior |
+| Attachments | planned | Media upload and download flow |
 
-### Better Grouping
+## Desktop Experience
 
-Create custom chat groups and filters with their own behavior.
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Desktop notifications | planned | Native notifications for incoming messages |
+| Keyboard shortcuts | planned | Faster desktop navigation |
+| Fast startup from local cache | planned | Load local data before remote sync |
+| Window/session restore | planned | Better desktop behavior across restarts |
+| Native file picker | planned | Attachment selection through Tauri |
+| Better offline behavior | planned | App should remain useful from local data when disconnected |
 
-Examples:
+## Organization
 
-- User-defined chat groups
-- Saved filters
-- Per-group notification priority
-- Per-group ping behavior
-- Mute or badge-only modes
-- Rules for how different categories of chats behave on desktop
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Custom chat groups | planned | User-defined chat groupings |
+| Saved filters | planned | Reusable filters for chats and messages |
+| Per-group notification priority | planned | Desktop-side notification rules |
+| Mute or badge-only modes | planned | Local notification behavior |
+| Chat tags or labels | planned | Local organization layer |
+| Archive/star workflows | planned | Depends on local and protocol behavior |
 
-Tag: `safe`
+## Search
 
-### Actions on Multiple Items
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Full-text message search | planned | SQLite FTS-backed search |
+| Search by sender | planned | Filter messages by sender |
+| Search by date | planned | Time-based filtering |
+| Search by media type | planned | Images, videos, audio, and documents |
+| Search across groups/filters | planned | Search scoped to custom organization |
+| Search voice transcripts | planned | Depends on voice note transcription |
 
-Support bulk actions across messages, media, and possibly chats.
+## Bulk Actions
 
-Examples:
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Multi-select messages | planned | Select many messages at once |
+| Multi-select media | planned | Select many media items |
+| Bulk forward | planned | Risky: can become automation-like |
+| Bulk download | planned | Risky: privacy and data-handling implications |
+| Bulk export | planned | Risky: privacy and data-handling implications |
+| Bulk archive/delete | planned | Depends on local and protocol behavior |
 
-- Multi-select messages
-- Multi-select media
-- Bulk forward
-- Bulk share/export
-- Bulk download
-- Bulk archive/delete where supported
+## Media
 
-Tag: `safe`
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Better media previews | planned | Improved viewing experience |
+| Bulk media download | planned | Risky: data handling and retention concerns |
+| Organized media exports | planned | Risky: export workflows need clear boundaries |
+| Media retention handling | planned | Needs protocol and storage investigation |
+| View-once media UX | experimental | Risky: must avoid violating expected platform behavior |
 
-### One-Time Media
+## Voice Notes
 
-Handle view-once images, videos, and similar temporary media more cleanly in the client UX.
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Local voice transcription | planned | Prefer local model/runtime |
+| Searchable transcripts | planned | Store transcript text for search |
+| Export transcripts | planned | Include transcript in export workflow |
 
-Examples:
+## Privacy Controls
 
-- Clear identification of view-once content
-- Better viewing flow
-- Better metadata and state tracking
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Suppress typing indicators | experimental | Risky: protocol-sensitive behavior |
+| Suppress read receipts | experimental | Risky: protocol-sensitive behavior |
+| Per-chat privacy rules | experimental | Risky: requires careful protocol boundaries |
+| Per-group privacy rules | experimental | Risky: requires careful protocol boundaries |
 
-Tag: `risky`
-Reason: handling or preserving one-time media beyond intended platform behavior may violate WhatsApp TOS or expected product behavior.
+## Automation
 
-### Multiple Accounts
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Scheduled messages | experimental | Risky: automated sending may conflict with platform expectations |
+| Retry missed scheduled sends | experimental | Risky: needs clear local-only behavior |
+| Local automation rules | experimental | Risky: must avoid spam or abuse behavior |
 
-Allow multiple WhatsApp accounts in one desktop client.
+## Multiple Accounts
 
-Examples:
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Multiple WhatsApp accounts | experimental | Risky: may interact with device/account policies |
+| Account switcher | experimental | Depends on multi-account architecture |
+| Separate local state per account | experimental | Requires account-scoped local databases |
+| Unified inbox | experimental | Depends on multi-account support |
 
-- Fast switching between accounts
-- Separate local state per account
-- Unified inbox or split mode
+## Risky Features
 
-Tag: `risky`
-Reason: technically feasible, but multi-account behavior may interact with WhatsApp account/device policies in ways that increase product risk.
+Some planned features may depend on fragile protocol behavior or conflict with WhatsApp platform expectations. These are marked with `Risky:` in the notes column.
 
-### Scheduling Messages
-
-Compose a message now and send it later at a specific time.
-
-Examples:
-
-- Local scheduled send when this client is online
-- Optional relay through another trusted device
-- Optional relay through a phone or server when the current device is offline
-- Retry and failure handling for missed schedules
-
-Tag: `risky`
-Reason: automated or deferred sending may violate WhatsApp TOS depending on how it is implemented, especially when routing through background services or remote relays.
-
-### Transcribing Voice Messages
-
-Generate transcripts for voice notes.
-
-Examples:
-
-- Local transcription
-- Searchable transcript text
-- Export with transcript attached
-
-Tag: `safe`
-
-### Better Downloading
-
-Make it easier to download and export everything the client can access.
-
-Examples:
-
-- Download messages and media in bulk
-- Better organization of downloaded files
-- Export attachments from a chat or filter
-- Better handling of media retention and re-download where possible
-
-Tag: `risky`
-Reason: aggressive downloading, bulk export, or retention of content may create TOS, privacy, or data-handling risk depending on implementation.
-
-### Disable Typing and View Status
-
-Provide privacy controls around outgoing behavioral signals.
-
-Examples:
-
-- Suppress typing indicators
-- Suppress read receipts
-- Control presence-like behavior where possible
-- Per-chat or per-group privacy rules
-
-Tag: `risky`
-Reason: intentionally suppressing protocol-level status signals may conflict with WhatsApp platform expectations or TOS.
-
-### Better Search
-
-Make chats, messages, media, and transcripts easier to search.
-
-Examples:
-
-- Fast full-text search
-- Search across filters/groups/accounts
-- Search by media type, sender, date, transcript, or attachment
-
-Tag: `safe`
-
-### Desktop Behavior
-
-Make the app feel like a real desktop client instead of a thin wrapper.
-
-Examples:
-
-- Keyboard shortcuts
-- Fast startup
-- Reliable window restore behavior
-- Consistent open state
-- Better desktop notifications
-
-Tag: `safe`
-
-## Risk Tags
-
-- `safe`: mostly client-side UX or local data features with low obvious platform risk.
-- `risky`: may depend on reverse-engineered protocol behavior, may be fragile, or may violate WhatsApp TOS.
-
-## Risk Notes
-
-The following categories should be treated carefully:
+Risky areas include:
 
 - Message automation
-- Remote relay or proxy sending
-- Read receipt or typing suppression
-- View-once media handling beyond official behavior
-- Large-scale export or download workflows
+- Multiple accounts
+- Typing/read receipt suppression
+- View-once media handling
+- Large-scale export/download workflows
 - Any feature that changes or hides protocol-level behavior from WhatsApp
 
-These features may be technically possible while still being operationally fragile or in conflict with WhatsApp's Terms of Service.
+Risky does not always mean impossible, but it means the feature needs extra review, clear boundaries, and careful implementation.
 
-## Product Direction
+## Issue Tracking
 
-This project is aiming for a power-user client with:
+Each feature should eventually map to a GitHub issue.
 
-- Better organization
-- Better desktop UX
-- Better media workflows
-- Better privacy controls
-- Better automation
+Suggested labels:
 
-The safest product path is to keep the architecture split between:
+- `feature`
+- `frontend`
+- `backend`
+- `desktop`
+- `database`
+- `experimental`
+- `risky`
+- `blocked`
+- `good first issue`
+- `docs`
 
-- core client UX features
-- protocol-sensitive features
-- explicitly risky features
+Suggested issue title format:
 
-## Current Priorities
+```text
+Feature: Send text messages
+Feature: Add custom chat groups
+Feature: Implement full-text search
+Feature: Store group participants
+Feature: Bulk download media from a chat
+```
 
-- Define the protocol/core architecture
-- Build the desktop-first client shell
-- Implement grouping, search, and bulk actions first
-- Isolate risky features behind clear boundaries
+Suggested issue body:
+
+```md
+## Feature
+
+Short description of the feature.
+
+## User Value
+
+Why this matters.
+
+## Scope
+
+- [ ] Frontend
+- [ ] Backend
+- [ ] Database
+- [ ] Tests
+- [ ] Documentation
+
+## Acceptance Criteria
+
+- [ ] User can ...
+- [ ] State persists after restart
+- [ ] Errors are handled clearly
+
+## Risk
+
+Risky: yes/no
+
+Notes:
+```

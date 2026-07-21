@@ -64,21 +64,32 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
 function sameMessage(a: Message, b: Message) {
   return a.id === b.id && a.contactId === b.contactId && a.message === b.message &&
     a.timestamp === b.timestamp && a.isSentFromUser === b.isSentFromUser &&
-    a.read === b.read && a.sent === b.sent && a.delivered === b.delivered;
+    a.read === b.read && a.sent === b.sent && a.delivered === b.delivered &&
+    (a.reactions === b.reactions || Boolean(a.reactions && b.reactions &&
+      a.reactions.length === b.reactions.length && a.reactions.every((reaction, index) =>
+        reaction.emoji === b.reactions![index].emoji && reaction.count === b.reactions![index].count)));
 }
 
 export function mergeMessages(previous: Message[], incoming: Message[], prepend = false) {
   if (incoming.length === 0) return previous;
   const previousById = new Map(previous.map((message) => [message.id, message]));
-  const updates = new Map(incoming.map((message) => {
+  const previousIds = new Set(previousById.keys());
+  const incomingById = new Map(incoming.map((message) => [message.id, message]));
+  incomingById.forEach((message, id) => {
     const existing = previousById.get(message.id);
-    return [message.id, existing && sameMessage(existing, message) ? existing : message];
-  }));
-  const updated = previous.map((message) => updates.get(message.id) ?? message);
-  const added = incoming
-    .filter((message) => !previousById.has(message.id))
-    .map((message) => updates.get(message.id)!);
-  const merged = prepend ? [...added, ...updated] : [...updated, ...added];
+    previousById.set(id, existing && sameMessage(existing, message) ? existing : message);
+  });
+  const compare = (a: Message, b: Message) => {
+    const time = (typeof a.timestamp === "number" ? a.timestamp : Date.parse(a.timestamp)) -
+      (typeof b.timestamp === "number" ? b.timestamp : Date.parse(b.timestamp));
+    return time || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  };
+  const merged = prepend
+    ? [
+        ...[...incomingById.values()].filter((message) => !previousIds.has(message.id)).sort(compare),
+        ...[...previousById.values()].filter((message) => previousIds.has(message.id)),
+      ]
+    : [...previousById.values()].sort(compare);
   return merged.length === previous.length && merged.every((message, index) => message === previous[index])
     ? previous
     : merged;

@@ -1,6 +1,4 @@
-import { PlusCircleIcon, SmileyIcon } from "@phosphor-icons/react";
-
-const reactions = ["👍🏼", "❤️", "😂", "😮", "🥲", "🙏🏻"];
+import { SmileyIcon } from "@phosphor-icons/react";
 
 export default function Reaction({
   isSentFromUser,
@@ -21,28 +19,18 @@ export default function Reaction({
     >
       {isOpen ? (
         <div
+          id={`reaction-menu-${messageId}`}
           className={`absolute -top-16 z-50 flex items-center gap-2 rounded-full bg-[#252d32] px-4 py-2 ${
             isSentFromUser ? "right-0" : "left-0"
           }`}
         >
-          {reactions.map((reaction) => (
-            <button
-              key={reaction}
-              type="button"
-              aria-label={`React with ${reaction}`}
-              className="cursor-pointer text-3xl"
-            >
-              {reaction}
-            </button>
-          ))}
-          <button type="button" aria-label="More reactions" className="cursor-pointer text-white">
-            <PlusCircleIcon weight="duotone" className="size-8" />
-          </button>
+          <span className="whitespace-nowrap text-sm text-white/70">Reactions are not available yet</span>
         </div>
       ) : null}
       <button
         type="button"
-        aria-label="Add reaction"
+        aria-label={isOpen ? "Close reaction menu" : "View reaction options"}
+        aria-controls={`reaction-menu-${messageId}`}
         aria-expanded={isOpen}
         className="cursor-pointer text-white/40"
         onClick={() => onToggle(messageId)}

@@ -1,5 +1,5 @@
 import { FormEvent, memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Virtuoso } from "react-virtuoso";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Message } from "@/app/context/chats-provider";
 import { CurrentChatContacts } from "@/app/context/current-chat-provider";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
@@ -107,6 +107,7 @@ const MessageList = memo(function MessageList({
   error,
   hasMoreMessages,
   loadOlderMessages,
+  scrollToBottomRequest,
 }: {
   chatId: string;
   messages: Message[];
@@ -117,6 +118,7 @@ const MessageList = memo(function MessageList({
   error: string | null;
   hasMoreMessages: boolean;
   loadOlderMessages: () => Promise<void>;
+  scrollToBottomRequest: number;
 }) {
   const [activeReactionId, setActiveReactionId] = useState<string | null>(null);
   const messageIndexes = useMemo(
@@ -125,6 +127,7 @@ const MessageList = memo(function MessageList({
   );
   const previousMessages = useRef(messages);
   const committedFirstItemIndex = useRef(INITIAL_ITEM_INDEX);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   let firstItemIndex = committedFirstItemIndex.current;
 
   if (previousMessages.current !== messages && previousMessages.current[0]) {
@@ -138,6 +141,12 @@ const MessageList = memo(function MessageList({
     previousMessages.current = messages;
     committedFirstItemIndex.current = firstItemIndex;
   }, [firstItemIndex, messages]);
+
+  useLayoutEffect(() => {
+    if (scrollToBottomRequest) {
+      virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "smooth" });
+    }
+  }, [scrollToBottomRequest]);
 
   const toggleReactionMenu = useCallback((messageId: string) => {
     setActiveReactionId((current) => current === messageId ? null : messageId);
@@ -156,6 +165,7 @@ const MessageList = memo(function MessageList({
         </div>
       ) : null}
       <Virtuoso
+        ref={virtuosoRef}
         key={chatId}
         className="h-full w-full"
         data={messages}
@@ -202,9 +212,11 @@ const MessageList = memo(function MessageList({
 function Composer({
   isSending,
   sendMessage,
+  onSent,
 }: {
   isSending: boolean;
   sendMessage: (text: string) => Promise<boolean>;
+  onSent: () => void;
 }) {
   const [messageText, setMessageText] = useState("");
 
@@ -212,7 +224,10 @@ function Composer({
     event.preventDefault();
     const text = messageText.trim();
     if (!text || isSending) return;
-    if (await sendMessage(text)) setMessageText("");
+    if (await sendMessage(text)) {
+      setMessageText("");
+      onSent();
+    }
   };
 
   return (
@@ -230,6 +245,7 @@ function Composer({
 }
 
 export default function CurrentChat() {
+  const [scrollToBottomRequest, setScrollToBottomRequest] = useState(0);
   const {
     chatId,
     group,
@@ -266,8 +282,13 @@ export default function CurrentChat() {
           error={error}
           hasMoreMessages={hasMoreMessages}
           loadOlderMessages={loadOlderMessages}
+          scrollToBottomRequest={scrollToBottomRequest}
         />
-        <Composer isSending={isSending} sendMessage={sendMessage} />
+        <Composer
+          isSending={isSending}
+          sendMessage={sendMessage}
+          onSent={() => setScrollToBottomRequest((request) => request + 1)}
+        />
       </div>
     </section>
   );

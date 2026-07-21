@@ -7,6 +7,11 @@ export type BackendUser = {
   status?: string;
 };
 
+export type BackendProfile = {
+  id: string;
+  pushName: string;
+};
+
 export type BackendMessage = {
   id: string;
   senderId: string;
@@ -52,6 +57,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const listBackendChats = (signal?: AbortSignal) =>
   request<BackendChat[]>("/api/chats", { signal });
+
+export const getBackendProfile = (signal?: AbortSignal) =>
+  request<BackendProfile>("/api/profile", { signal });
 
 export const listBackendMessages = (
   chatId: string,

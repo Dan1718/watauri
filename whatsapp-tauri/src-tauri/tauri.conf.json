@@ -15,6 +15,7 @@
         "title": "whatsapp-tauri",
         "decorations": true,
         "width": 800,
+        "minWidth": 820,
         "height": 600
       }
     ],

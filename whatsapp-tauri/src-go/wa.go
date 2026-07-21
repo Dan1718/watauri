@@ -107,19 +107,32 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 		case *events.Presence:
 			log.Printf("[wa] Event: presence from=%s unavailable=%v lastSeen=%v", v.From, v.Unavailable, v.LastSeen)
 		case *events.HistorySync:
+			if wa.store == nil {
+				log.Println("[wa] Skipping history sync: store is nil")
+				break
+			}
 
 			data := v.Data
-			if data != nil {
-				log.Printf("[wa] Event: historySync conversations=%d messages=%d", len(data.GetConversations()), len(data.GetStatusV3Messages()))
-			}
 			if data == nil {
 				log.Printf("[wa] history sync skipped: nil data")
 				break
 			}
+
+			conversationsSeen := len(data.GetConversations())
+			conversationsStored := 0
+			conversationsSkipped := 0
+			messagesSeen := 0
+			messagesStored := 0
+			messagesSkipped := 0
+
+			log.Printf("[wa] Event: historySync type=%v chunk=%d progress=%d conversations=%d statusMessages=%d pushnames=%d inlineContacts=%d",
+				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, len(data.GetStatusV3Messages()), len(data.GetPushnames()), len(data.GetInlineContacts()))
+
 			for _, conv := range data.GetConversations() {
 				chatJID, err := types.ParseJID(conv.GetID())
 				if err != nil {
 					log.Printf("[wa] history sync invalid chat jid %q : %v", conv.GetID(), err)
+					conversationsSkipped++
 					continue
 				}
 
@@ -140,22 +153,33 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				}
 				if err := wa.store.UpsertChat(chat); err != nil {
 					log.Printf("[wa] failed to upsert history chat %s: %v", chatJID, err)
+					conversationsSkipped++
 					continue
 				}
+				conversationsStored++
 
 				for _, historymsg := range conv.GetMessages() {
+					messagesSeen++
 					evt, err := client.ParseWebMessage(chatJID, historymsg.GetMessage())
 					if err != nil {
 						log.Printf("[wa] failed to parse history message in %s: %v ", chatJID, err)
+						messagesSkipped++
 						continue
 					}
 					if evt == nil {
 						log.Printf("[wa] skipped nil parsed history message in %s", chatJID)
+						messagesSkipped++
 						continue
 					}
-					wa.storeMessageEvent(evt, "history")
+					if wa.storeMessageEvent(evt, "history") {
+						messagesStored++
+					} else {
+						messagesSkipped++
+					}
 				}
 			}
+			log.Printf("[wa] historySync done type=%v chunk=%d progress=%d conversationsSeen=%d conversationsStored=%d conversationsSkipped=%d messagesSeen=%d messagesStored=%d messagesSkipped=%d",
+				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, conversationsStored, conversationsSkipped, messagesSeen, messagesStored, messagesSkipped)
 		case *events.PushName:
 			log.Printf("[wa] Event: pushName jid=%s old=%q new=%q", v.JID, v.OldPushName, v.NewPushName)
 			if wa.store != nil {

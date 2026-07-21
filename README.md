@@ -6,6 +6,13 @@ WaTauri is an experimental, local-first desktop Whatsapp Client built with Tauri
 
 It connects to WhatsApp Web, syncs chats and messages into a local SQLite database, and exposes them through a desktop UI. The project is open source and currently under active development.
 
+## Why this exists 
+
+I have an ick for the official WhatsApp Web experience. 
+
+I'm basically trying to explore a desktop-first experience, with stronger organization, more power user features like, better search, better bulk actions, improved media workflows, and more control in general. 
+
+Obviously, this should do everything that WhatsApp Web currently does (yet to be achieved), but faster and more reliable and then some. 
 
 ## Status 
 
@@ -13,6 +20,28 @@ This project is early-stage and experimental.
 
 Core chat/message syncing is being built out, but the app is not ready yet. 
 ## Features 
+Look at [FEATURES.md](./FEATURES.md) for everything. 
+- [x] WhatsApp QR pairing
+- [x] Local SQLite message storage
+- [x] Chat list from local data
+- [x] Message history view
+- [x] History sync persistence
+- [x] Contact storage basics
+- [ ] Sending messages
+- [ ] Contact name sync
+- [ ] Group metadata
+- [ ] Group participants
+- [ ] Safer local API routing
+- [ ] Custom chat groups and filters
+- [ ] Fast full-text search
+- [ ] Bulk message/media actions
+- [ ] Better media download/export
+- [ ] Voice message transcription
+- [ ] Desktop notifications
+- [ ] Keyboard shortcuts
+- [ ] Message scheduling
+- [ ] Multiple accounts
+- [ ] Privacy controls for typing/read signals
 
 ## Screenshots
 
@@ -95,19 +124,48 @@ whatsapp-tauri/
 
 ## Roadmap 
 
-- Send messages from the frontend
-- Message pagination
-- Read receipts
-- Typing indicators
-- Search endpoint
-- Contact sync improvements
-- Group participant persistence
-- Group metadata support
-- Profile/current user endpoint
-- Safer local API exposure
-- Better error handling and API responses
-- More backend tests
- 
+### Phase 1: Reliable Core Client
+
+- [x] WhatsApp pairing
+- [x] Local message persistence
+- [x] Historical chat sync
+- [ ] Sending messages
+- [ ] Contacts and group metadata
+- [ ] Message pagination
+- [ ] Read receipts
+
+### Phase 2: Better Desktop Client
+
+- [ ] Desktop notifications
+- [ ] Keyboard shortcuts
+- [ ] Fast startup from local cache
+- [ ] Better window/session restore
+- [ ] Attachment handling
+- [ ] Media previews
+
+### Phase 3: Power-User Organization
+
+- [ ] Custom chat groups
+- [ ] Saved filters
+- [ ] Per-group notification rules
+- [ ] Archive/star workflows
+- [ ] Multi-select chats/messages
+
+### Phase 4: Search and Export
+
+- [ ] Full-text message search
+- [ ] Search by sender/date/media type
+- [ ] Voice note transcription
+- [ ] Bulk media download
+- [ ] Chat/message export
+
+### Phase 5: Experimental Features
+
+- [ ] Scheduled messages
+- [ ] Multiple accounts
+- [ ] Privacy controls
+- [ ] One-time media UX
+
 ## Security 
 
 This app runs a local backend and stores WhatsApp session data locally.

@@ -43,7 +43,7 @@ Required details:
 
 ### `GET /api/chats/:id`
 
-Return all messages for the chat for now, ordered oldest to newest. Later this should be paginated.
+Returns a cursor-paginated message page for a chat, ordered oldest-to-newest in the response.
 
 Required details:
 
@@ -51,6 +51,7 @@ Required details:
 - Include `chatJid`, `senderId`, `text`, `timestamp`, `status`, and `mediaType`.
 - Return `[]` for unknown/empty chats, not `null`.
 - Escape or route chat IDs safely because JIDs contain `@` and may contain other URL-sensitive characters.
+- Support `limit`, `before`, and `after` cursors for older-page loading and polling deltas.
 
 ### `GET /api/contacts`
 
@@ -73,7 +74,7 @@ Required details:
 - Populate names from push names, history sync, contact sync, or a readable fallback.
 - Avoid requiring chat participants for contacts. The frontend now calls this endpoint directly.
 
-### `POST /api/chats/:id/send`
+### `POST /api/chats/:id/send` - ✅ Done
 
 Frontend now calls this endpoint from the composer.
 
@@ -111,7 +112,7 @@ Required behavior:
 
 ## Critical Backend Fixes
 
-### 1. Update Chat Metadata When Inserting Messages
+### 1. Update Chat Metadata When Inserting Messages - ✅ Done
 
 Current issue:
 
@@ -138,22 +139,23 @@ Acceptance criteria:
 - The same message appears in `/api/chats/:id`.
 - Replaying the same message does not duplicate rows.
 
-### 2. Persist History Sync
+### 2. Persist History Sync - ⚠️ Partial
 
 Current issue:
 
-- `events.HistorySync` is logged but not processed.
-- Initial pairing will not backfill old chats/messages/groups.
+- `events.HistorySync` now persists conversations and parseable messages.
+- Initial pairing can backfill old chats/messages.
+- Group participants, avatars, push names, and richer group metadata are still incomplete.
 
 Required implementation:
 
-- Iterate over `v.Data.GetConversations()`.
-- For each conversation, upsert a chat using conversation ID, name/display name, unread count, archive status, and group status.
-- For each `HistorySyncMsg`, use `wa.client.ParseWebMessage(chatJID, historyMsg.GetMessage())` to convert it into the same shape used for live messages.
-- Reuse the same message persistence path used by `events.Message`.
-- Store participants for groups if available from the history sync conversation.
-- Store push names/contact names where available.
-- Log sync type, chunk order, progress, conversations inserted, messages inserted, and skipped messages.
+- ✅ Iterate over `v.Data.GetConversations()`.
+- ✅ For each conversation, upsert a chat using conversation ID, name/display name, unread count, archive status, and group status.
+- ✅ For each `HistorySyncMsg`, use `wa.client.ParseWebMessage(chatJID, historyMsg.GetMessage())` to convert it into the same shape used for live messages.
+- ✅ Reuse the same message persistence path used by `events.Message`.
+- ❌ Store participants for groups if available from the history sync conversation.
+- ❌ Store push names/contact names where available.
+- ✅ Log sync type, chunk order, progress, conversations inserted, messages inserted, and skipped messages.
 
 Files:
 
@@ -194,13 +196,14 @@ Acceptance criteria:
 
 Current issue:
 
-- Backend stores `is_from_me`, but chat `lastMessage` previously did not expose enough sender semantics.
+- Backend stores `is_from_me` and message pages expose it.
+- Chat list `lastMessage` still does not expose the full message contract.
 
 Required implementation:
 
-- Ensure `GetChats()` includes `is_from_me` when creating `LastMessage`.
-- Ensure all message responses include `isFromMe`.
-- Keep `senderId` as the real WhatsApp sender JID.
+- ❌ Ensure `GetChats()` includes `is_from_me` when creating `LastMessage`.
+- ✅ Ensure all message responses include `isFromMe`.
+- ✅ Keep `senderId` as the real WhatsApp sender JID.
 
 Files:
 
@@ -212,7 +215,7 @@ Acceptance criteria:
 - Own messages from `/api/chats` and `/api/chats/:id` contain `isFromMe: true`.
 - Incoming messages contain `isFromMe: false`.
 
-### 5. Add Real Routing And Method Validation
+### 5. Add Real Routing And Method Validation - ✅ Done
 
 Current issue:
 
@@ -265,13 +268,14 @@ Acceptance criteria:
 
 ## Important Follow-Up Work
 
-### Message Pagination
+### Message Pagination - ✅ Done
 
-Add query params to `GET /api/chats/:id`:
+Implemented query params and cursor response fields for `GET /api/chats/:id`:
 
-- `limit`, default around `50`.
-- `before` as timestamp or message ID.
-- Return newest page in a way the frontend can render oldest-to-newest after loading.
+- `limit` with a bounded maximum.
+- `before` cursor for older messages.
+- `after` cursor for polling message/status deltas.
+- Responses include `messages`, `nextCursor`, `latestCursor`, and `hasMore`.
 
 ### Read Receipts
 
@@ -306,19 +310,23 @@ Persist group details from history sync and group events:
 - Group avatar when available.
 - Group update events.
 
-### Profile/Current User Endpoint
+### Profile/Current User Endpoint - ✅ Done
 
-Add `GET /api/profile` or `GET /api/me`:
+Added `GET /api/profile`:
 
-- Return own JID, display name, avatar, and connection/session info.
-- This avoids frontend guessing the current user from chat participants.
+- Returns own JID and push name when available.
+- Frontend uses this instead of guessing the current user from chat participants.
+- Avatar and richer connection/session info are still future enhancements.
 
 ## Testing To Add
 
-- `InsertMessage` updates chat metadata.
-- Duplicate message insert does not duplicate rows.
-- `GetChats()` returns `participants: []`, not `null`.
-- `GetChats()` includes `lastMessage.isFromMe`.
-- `POST /api/chats/:id/send` validates empty text and disconnected state.
-- Router sends `/api/chats/:id/send` to the send handler, not the list-messages handler.
-- History sync sample data inserts chats/messages idempotently.
+- ✅ Message pagination boundaries, cursors, equal timestamps, deltas, and receipt-status changes.
+- ✅ Route matching sends `/api/chats/:id/send` to the send handler, not the list-messages handler.
+- ✅ `POST /api/chats/:id/send` validates malformed/empty/oversized text before network calls.
+- ✅ `POST /api/chats/:id/send` returns structured JSON errors for unavailable WhatsApp and invalid chat IDs.
+- ✅ Migration backfills existing message timestamp metadata and revisions.
+- ❌ `InsertMessage` updates chat metadata.
+- ❌ Duplicate message insert does not duplicate rows.
+- ❌ `GetChats()` returns `participants: []`, not `null`.
+- ❌ `GetChats()` includes `lastMessage.isFromMe`.
+- ❌ History sync sample data inserts chats/messages idempotently.

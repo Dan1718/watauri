@@ -12,7 +12,11 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
+<<<<<<< HEAD
+	wastore "go.mau.fi/whatsmeow/store"
+=======
 	"go.mau.fi/whatsmeow/proto/waE2E"
+>>>>>>> origin/main
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -53,8 +57,13 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 		log.Println("[wa] No stored device found, will need QR pairing")
 	}
 
+<<<<<<< HEAD
+	wastore.SetOSInfo("WaTauri", [3]uint32{0, 1, 0})
+	log.Println("[wa] Linked device name set to WaTauri")
+=======
 	device.Platform = "Tauri"
 	log.Printf("[wa] Device platform set to %s", device.Platform)
+>>>>>>> origin/main
 
 	client := whatsmeow.NewClient(device, nil)
 	wa := &WAManager{client: client, status: "unauthenticated", store: store}

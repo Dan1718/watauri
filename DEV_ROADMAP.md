@@ -180,5 +180,5 @@ Each risky feature should be behind a **feature flag** and isolated from core pr
 | Bruno collection | 24 `.bru` files under `docs/bruno/` (7 original + 17 planned) |
 | Cross-compilation | Go build script, binary naming for target triple, `modernc.org/sqlite` avoids CGo |
 | Blank-screen fixes | `getCurrentWindow()` try-catch, null-participant guards, message URL path fix |
-| SSE removed | `GET /api/events` dropped (user decision), `subscribeToEvents()` kept in code, polling (5s) as temp replacement |
+| SSE deferred | `GET /api/events` was dropped earlier; polling remains as the temporary replacement until SSE is reintroduced |
 | Chat display name | `chatName()` helper — derives from JID when name/participants are null |

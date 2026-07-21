@@ -6,13 +6,175 @@ import {
 import TooltipWrapper from "../tooltip-wrapper";
 import { useNewChat } from "@/app/hooks/use-new-chat";
 import { useChats } from "@/app/hooks/use-chats";
-import { Chat, Filters, Message } from "@/app/context/chats-provider";
+import { Chat, Filters } from "@/app/context/chats-provider";
 import Profile from "../profile";
 import { useContacts } from "@/app/hooks/use-contacts";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
 import { formatTime, getDisplayNameFromJid } from "@/app/utils";
 import MessageStatusIcon from "../message-status-icon";
 import { useProfile } from "@/app/hooks/use-profile";
+import { memo } from "react";
+
+type ChatRowProps = {
+  chat: Chat;
+  name: string;
+  avatar?: string;
+  senderName?: string;
+  isCurrent: boolean;
+  typingMatchesLastSender: boolean;
+  blueTickEnabled: boolean;
+  loadCurrentChat: (chat: { chatId: string; page: number }) => void;
+};
+
+const ChatRow = memo(function ChatRow({
+  chat,
+  name,
+  avatar,
+  senderName,
+  isCurrent,
+  typingMatchesLastSender,
+  blueTickEnabled,
+  loadCurrentChat,
+}: ChatRowProps) {
+  const lastMessage = chat.messages[chat.messages.length - 1];
+  const metaMessage = lastMessage
+    ? !chat.group && typingMatchesLastSender
+      ? "typing..."
+      : chat.group
+        ? `${senderName}: ${lastMessage.message}`
+        : lastMessage.message
+    : "No messages yet";
+
+  return (
+    <button
+      onClick={() => loadCurrentChat({ chatId: chat.id, page: 0 })}
+      className={`outline-none flex items-center text-left w-full gap-4 p-2.5 hover:bg-white/10 rounded-xl cursor-pointer ${
+        isCurrent ? "bg-white/10" : ""
+      }`}
+    >
+      <div className="shrink-0">
+        {!chat.group ? (
+          <Profile size="12" url={avatar} />
+        ) : (
+          <Profile size="12">
+            <div className="h-full w-full flex justify-center items-center bg-white/50">
+              <UsersThreeIcon className="size-7 text-white" weight="fill" />
+            </div>
+          </Profile>
+        )}
+      </div>
+      <div className="min-w-0 flex-1 flex flex-col justify-center items-start">
+        <p className="text-white break-words whitespace-normal w-full" style={{ textAlign: "left" }}>
+          {name}
+        </p>
+        <div className="flex justify-start items-center gap-1 w-full">
+          {lastMessage && (
+            <MessageStatusIcon
+              isSentFromUser={lastMessage.isSentFromUser}
+              read={lastMessage.read}
+              delivered={lastMessage.delivered}
+              sent={lastMessage.sent}
+              blueTickEnabled={blueTickEnabled}
+            />
+          )}
+          {lastMessage && typingMatchesLastSender ? (
+            <p className="text-emerald-500 text-sm">{metaMessage}</p>
+          ) : (
+            <p
+              className={`text-sm ${
+                !lastMessage || chat.read || lastMessage.isSentFromUser
+                  ? "text-white/55"
+                  : "text-white font-semibold"
+              } whitespace-nowrap truncate text-ellipsis overflow-hidden`}
+            >
+              {metaMessage}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="shrink-0 flex flex-col justify-center items-end">
+        <p
+          className={`text-xs font-semibold ${
+            !lastMessage || chat.read || lastMessage.isSentFromUser
+              ? "text-white/55"
+              : "text-emerald-400"
+          }`}
+        >
+          {lastMessage ? formatTime(lastMessage.timestamp) : ""}
+        </p>
+      </div>
+    </button>
+  );
+});
+
+const ChatList = memo(function ChatList({
+  chats,
+  search,
+  isLoading,
+  error,
+  getContact,
+  currentChatId,
+  typingContactId,
+  blueTickEnabled,
+  loadCurrentChat,
+}: {
+  chats: Chat[];
+  search: string;
+  isLoading: boolean;
+  error: string | null;
+  getContact: ReturnType<typeof useContacts>["getContact"];
+  currentChatId: string | null;
+  typingContactId?: string;
+  blueTickEnabled: boolean;
+  loadCurrentChat: ChatRowProps["loadCurrentChat"];
+}) {
+  if (isLoading) {
+    return (
+      <div className="w-full h-full flex justify-center items-center text-white/50">
+        Loading...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-full h-full flex justify-center items-center text-red-300 text-sm text-center px-4">
+        {error}
+      </div>
+    );
+  }
+
+  const normalizedSearch = search.toLowerCase();
+  const renderedChats = chats.flatMap((chat) => {
+    const contactId = typeof chat.contactId === "string" ? chat.contactId : undefined;
+    const contact = contactId ? getContact(contactId) : undefined;
+    const name = contactId
+      ? contact?.displayName ?? getDisplayNameFromJid(contactId)
+      : chat.groupName ?? getDisplayNameFromJid(chat.id);
+    if (normalizedSearch && !name.toLowerCase().includes(normalizedSearch)) return [];
+
+    const lastMessage = chat.messages[chat.messages.length - 1];
+    return [
+      <ChatRow
+        key={chat.id}
+        chat={chat}
+        name={name}
+        avatar={contact?.contactAvatar}
+        senderName={lastMessage && chat.group
+          ? getContact(lastMessage.contactId)?.displayName ?? getDisplayNameFromJid(lastMessage.contactId)
+          : undefined}
+        isCurrent={chat.id === currentChatId}
+        typingMatchesLastSender={Boolean(lastMessage && typingContactId === lastMessage.contactId)}
+        blueTickEnabled={blueTickEnabled}
+        loadCurrentChat={loadCurrentChat}
+      />,
+    ];
+  });
+
+  return renderedChats.length > 0
+    ? renderedChats
+    : <div className="text-white/50 text-sm px-2 py-4">No chats found</div>;
+});
 
 export default function Chats({ selectedTab }: { selectedTab: string }) {
   const { openNewChatWindow } = useNewChat();
@@ -26,132 +188,6 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
   const { getContact } = useContacts();
   const { loadCurrentChat, contact, chatId } = useCurrentChat();
   const { profile: { blueTickEnabled } } = useProfile();
-
-  const getMetaMessage = (
-    chat: Chat,
-    { message, contactId }: Message
-  ): string => {
-    if (chat.group) {
-      return `${getContact(contactId)?.displayName ?? getDisplayNameFromJid(contactId)}: ${message}`;
-    }
-    if (contact?.typing && contact.id === contactId) {
-      return "typing...";
-    }
-    return message;
-  };
-
-  const renderChat = (chat: Chat) => {
-    const currentContact = getContact(
-      typeof chat.contactId === "string" ? chat.contactId : ""
-    );
-    const name =
-      typeof chat.contactId === "string"
-        ? currentContact?.displayName ?? getDisplayNameFromJid(chat.contactId)
-        : chat.groupName ?? getDisplayNameFromJid(chat.id);
-    const lastMessage = chat.messages[chat.messages.length - 1];
-
-    return (
-      <button
-        key={chat.id}
-        onClick={() => loadCurrentChat({ chatId: chat.id, page: 0 })}
-        className={`outline-none flex items-center text-left w-full gap-4 p-2.5 hover:bg-white/10 rounded-xl cursor-pointer ${
-          chat.id === chatId
-            ? "bg-white/10"
-            : ""
-        }`}
-      >
-        <div className="shrink-0">
-          {!chat.group ? (
-            <Profile size="12" url={currentContact?.contactAvatar} />
-          ) : (
-            <Profile size="12">
-              <div className="h-full w-full flex justify-center items-center bg-white/50">
-                <UsersThreeIcon className="size-7 text-white" weight="fill" />
-              </div>
-            </Profile>
-          )}
-        </div>
-        <div className="min-w-0 flex-1 flex flex-col justify-center items-start">
-          <p className="text-white break-words whitespace-normal w-full" style={{ textAlign: "left" }}>
-            {name}
-          </p>
-          <div className="flex justify-start items-center gap-1 w-full">
-            {lastMessage && (
-              <MessageStatusIcon
-                isSentFromUser={lastMessage.isSentFromUser}
-                read={lastMessage.read}
-                delivered={lastMessage.delivered}
-                sent={lastMessage.sent}
-                blueTickEnabled={blueTickEnabled}
-              />
-            )}
-            {lastMessage && contact?.typing && contact.id === lastMessage.contactId ? (
-              <p className="text-emerald-500 text-sm">
-                {getMetaMessage(chat, lastMessage)}
-              </p>
-            ) : (
-              <p
-                className={`text-sm ${
-                  !lastMessage || chat.read || lastMessage.isSentFromUser
-                    ? "text-white/55"
-                    : "text-white font-semibold"
-                } whitespace-nowrap truncate text-ellipsis overflow-hidden`}
-              >
-                {lastMessage ? getMetaMessage(chat, lastMessage) : "No messages yet"}
-              </p>
-            )}
-          </div>
-        </div>
-        <div className="shrink-0 flex flex-col justify-center items-end">
-          <p
-            className={`text-xs font-semibold ${
-              !lastMessage || chat.read || lastMessage.isSentFromUser
-                ? "text-white/55"
-                : "text-emerald-400"
-            }`}
-          >
-            {lastMessage ? formatTime(lastMessage.timestamp) : ""}
-          </p>
-        </div>
-      </button>
-    );
-  };
-
-  const renderChats = () => {
-    if (isLoading) {
-      return (
-        <div className="w-full h-full flex justify-center items-center text-white/50">
-          Loading...
-        </div>
-      );
-    }
-
-    if (error) {
-      return (
-        <div className="w-full h-full flex justify-center items-center text-red-300 text-sm text-center px-4">
-          {error}
-        </div>
-      );
-    }
-
-    const normalizedSearch = search.toLowerCase();
-    const renderedChats = filtered
-      .filter((chat) => {
-        if (!normalizedSearch) return true;
-        const name =
-          typeof chat.contactId === "string"
-            ? getContact(chat.contactId)?.displayName ?? getDisplayNameFromJid(chat.contactId)
-            : chat.groupName ?? getDisplayNameFromJid(chat.id);
-        return name?.toLowerCase().includes(normalizedSearch);
-      })
-      .map(renderChat);
-
-    if (renderedChats.length === 0) {
-      return <div className="text-white/50 text-sm px-2 py-4">No chats found</div>;
-    }
-
-    return renderedChats;
-  };
 
   return (
     <section className="w-full h-full flex flex-col gap-3 p-4 relative">
@@ -195,7 +231,17 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
         </div>
       </section>
       <section className="w-full overflow-y-scroll flex flex-col gap-1">
-        {renderChats()}
+        <ChatList
+          chats={filtered}
+          search={search}
+          isLoading={isLoading}
+          error={error}
+          getContact={getContact}
+          currentChatId={chatId}
+          typingContactId={contact?.typing ? contact.id : undefined}
+          blueTickEnabled={blueTickEnabled}
+          loadCurrentChat={loadCurrentChat}
+        />
       </section>
     </section>
   );

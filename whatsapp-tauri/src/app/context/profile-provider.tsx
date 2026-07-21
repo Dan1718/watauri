@@ -1,5 +1,4 @@
-import { createContext, PropsWithChildren, useEffect, useState } from "react";
-import { listBackendChats } from "../backend";
+import { createContext, PropsWithChildren } from "react";
 
 export type Profile = {
   id: string;
@@ -16,50 +15,19 @@ export const ProfileContext = createContext<
     }
 >(undefined);
 
+const PROFILE = {
+  profile: {
+    id: "me",
+    name: "Me",
+    blueTickEnabled: true,
+    avatarUrl: "",
+  },
+  isLoading: false,
+};
+
 export default function ProfileProvider({ children }: PropsWithChildren) {
-  const [profile, setProfile] = useState<{
-    profile: Profile;
-    isLoading: boolean;
-  }>({
-    profile: {
-      id: "",
-      name: "",
-      blueTickEnabled: false,
-      avatarUrl: "",
-    },
-    isLoading: false,
-  });
-
-  useEffect(() => {
-    const fetchProfile = async () => {
-      setProfile((prev) => ({ ...prev, isLoading: true }));
-      let user;
-      try {
-        const chats = await listBackendChats();
-        user = chats
-          .flatMap((chat) => chat.participants ?? [])
-          .find((participant) => participant.id === "me");
-      } catch {
-        user = undefined;
-      }
-      const data = {
-        id: user?.id ?? "me",
-        name: user?.name ?? "Me",
-        blueTickEnabled: true,
-        avatarUrl: user?.avatar ?? "",
-      };
-      setProfile((prev) => ({
-        ...prev,
-        profile: data,
-        isLoading: false,
-      }));
-    };
-
-    fetchProfile();
-  }, []);
-
   return (
-    <ProfileContext.Provider value={{ ...profile }}>
+    <ProfileContext.Provider value={PROFILE}>
       {children}
     </ProfileContext.Provider>
   );

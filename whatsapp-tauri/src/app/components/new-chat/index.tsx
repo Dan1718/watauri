@@ -6,7 +6,6 @@ import {
   UsersThreeIcon,
 } from "@phosphor-icons/react";
 import TooltipWrapper from "../tooltip-wrapper";
-import { AnimatePresence, motion } from "motion/react";
 import Profile from "../profile";
 import { useContacts } from "@/app/hooks/use-contacts";
 import { Contact } from "@/app/context/contacts-provider";
@@ -15,15 +14,13 @@ import { useProfile } from "@/app/hooks/use-profile";
 
 export default function NewChatWindow() {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const { isNewChatWindowOpen, closeNewChatWindow } = useNewChat();
+  const { closeNewChatWindow } = useNewChat();
   const { dictionary, filterContacts, search } = useContacts();
   const { profile } = useProfile();
 
   useEffect(() => {
-    if (isNewChatWindowOpen && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [isNewChatWindowOpen]);
+    inputRef.current?.focus();
+  }, []);
 
   const renderDictionary = (entries: [string, Contact[]], index: number) => {
     return (
@@ -48,31 +45,23 @@ export default function NewChatWindow() {
   };
 
   return (
-    <AnimatePresence>
-      {isNewChatWindowOpen && (
-        <motion.section
-          className="h-full w-full absolute top-0 bg-white z-10"
-          initial={{ left: "-100%" }}
-          animate={{ left: 0 }}
-          exit={{ left: "-100%" }}
-          transition={{ duration: 0.15, ease: "easeIn" }}
-        >
-          <section className="w-full h-full bg-black/90 flex flex-col">
-            <section className="flex justify-start items-center gap-2 pt-4 px-4 w-full">
+    <section className="absolute inset-0 z-10 h-full w-full bg-white">
+      <section className="w-full h-full bg-black/90 flex flex-col">
+        <section className="flex justify-start items-center gap-2 pt-4 px-4 w-full">
               <TooltipWrapper onClick={closeNewChatWindow} showTooltip={false}>
                 <ArrowLeftIcon className="size-6 text-white" />
               </TooltipWrapper>
               <p className="text-white ml-2">New Chat</p>
-            </section>
-            <section className="pt-4 px-4 w-full">
+        </section>
+        <section className="pt-4 px-4 w-full">
               <input
                 className="rounded-full w-full p-2 px-4 outline-none bg-white/10 hover:ring-[1px] hover:ring-gray-600 focus:ring-2 focus:ring-green-500 ring-0 ring-transparent focus:bg-transparent placeholder-gray-400 focus:placeholder-gray-400 text-white"
                 placeholder="Search for name or number"
                 onChange={(event) => filterContacts(event.target.value)}
                 ref={inputRef}
               />
-            </section>
-            <section className="w-full h-full overflow-y-scroll scrollbar-hide pb-4">
+        </section>
+        <section className="w-full h-full overflow-y-scroll scrollbar-hide pb-4">
               {search.length === 0 && (
                 <section className="pt-4 px-4 w-full flex flex-col gap-1">
                   <div className="flex w-full justify-start items-center gap-4 p-2.5 hover:bg-white/10 rounded-xl cursor-pointer">
@@ -122,10 +111,8 @@ export default function NewChatWindow() {
                 )}
               </section>
               {dictionary.map(renderDictionary)}
-            </section>
-          </section>
-        </motion.section>
-      )}
-    </AnimatePresence>
+        </section>
+      </section>
+    </section>
   );
 }

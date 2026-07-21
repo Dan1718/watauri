@@ -1,36 +1,30 @@
-import {
-  CheckIcon,
-  ChecksIcon,
-  WarningCircleIcon,
-} from "@phosphor-icons/react";
-import { Message } from "../context/chats-provider";
-import { useProfile } from "../hooks/use-profile";
+import { CheckIcon, ChecksIcon, WarningCircleIcon } from "@phosphor-icons/react";
 
 export default function MessageStatusIcon({
-  message,
+  isSentFromUser,
+  read,
+  delivered,
+  sent,
+  blueTickEnabled,
   isInMessage,
 }: {
-  message: Message;
+  isSentFromUser: boolean;
+  read?: boolean;
+  delivered?: boolean;
+  sent?: boolean;
+  blueTickEnabled: boolean;
   isInMessage?: boolean;
 }) {
-  const {
-    profile: { blueTickEnabled },
-  } = useProfile();
-  const size = isInMessage ? "size-4" : "size-5";
+  if (!isSentFromUser) return null;
 
-  if (!message.isSentFromUser) {
-    return null;
-  } else {
-    if (message.read) {
-      if (blueTickEnabled) {
-        return <ChecksIcon className={`${size} text-blue-400`} />;
-      }
-      return <ChecksIcon className={`${size} text-white/40`} />;
-    } else if (message.delivered) {
-      return <ChecksIcon className={`${size} text-white/40`} />;
-    } else if (message.sent) {
-      return <CheckIcon className="size-4 text-white/40" />;
-    }
-    return <WarningCircleIcon className={`${size} text-white/40`} />;
-  }
+  const size = isInMessage ? "size-4" : "size-5";
+  const label = read ? "Read" : delivered ? "Delivered" : sent ? "Sent" : "Failed to send";
+  const icon = read
+    ? <ChecksIcon aria-hidden className={`${size} ${blueTickEnabled ? "text-blue-400" : "text-white/40"}`} />
+    : delivered
+      ? <ChecksIcon aria-hidden className={`${size} text-white/40`} />
+      : sent
+        ? <CheckIcon aria-hidden className={`${size} text-white/40`} />
+        : <WarningCircleIcon aria-hidden className={`${size} text-white/40`} />;
+  return <span aria-label={label} role="img">{icon}</span>;
 }

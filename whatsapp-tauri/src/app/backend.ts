@@ -7,14 +7,33 @@ export type BackendUser = {
   status?: string;
 };
 
+export type BackendProfile = {
+  id: string;
+  pushName: string;
+};
+
 export type BackendMessage = {
   id: string;
   senderId: string;
   text: string;
   timestamp: string;
-  status: "received" | "sent" | "delivered" | "read";
+  status: "pending" | "received" | "sent" | "delivered" | "read";
   mediaType?: string;
   isFromMe?: boolean;
+};
+
+export type MessagePage = {
+  messages: BackendMessage[];
+  nextCursor: string | null;
+  latestCursor: string | null;
+  hasMore: boolean;
+};
+
+export type MessagePageOptions = {
+  before?: string;
+  after?: string;
+  limit?: number;
+  signal?: AbortSignal;
 };
 
 export type BackendChat = {
@@ -36,10 +55,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json();
 }
 
-export const listBackendChats = () => request<BackendChat[]>("/api/chats");
+export const listBackendChats = (signal?: AbortSignal) =>
+  request<BackendChat[]>("/api/chats", { signal });
 
-export const listBackendMessages = (chatId: string) =>
-  request<BackendMessage[]>(`/api/chats/${chatId}`);
+export const getBackendProfile = (signal?: AbortSignal) =>
+  request<BackendProfile>("/api/profile", { signal });
+
+export const listBackendMessages = (
+  chatId: string,
+  { before, after, limit, signal }: MessagePageOptions = {}
+) => {
+  const query = new URLSearchParams();
+  if (before) query.set("before", before);
+  if (after) query.set("after", after);
+  if (limit !== undefined) query.set("limit", String(limit));
+  const suffix = query.size ? `?${query}` : "";
+  return request<MessagePage>(`/api/chats/${chatId}${suffix}`, { signal });
+};
 
 export const listBackendContacts = () => request<BackendUser[]>("/api/contacts");
 

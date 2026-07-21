@@ -1,4 +1,11 @@
-import { createContext, PropsWithChildren, useEffect, useState } from "react";
+import {
+  createContext,
+  PropsWithChildren,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { BackendUser, listBackendContacts } from "../backend";
 import { getDisplayNameFromJid } from "../utils";
 
@@ -38,51 +45,41 @@ function toContact(user: BackendUser): Contact {
   };
 }
 
+function generateDictionary(data: Contact[]): [string, Contact[]][] {
+  const map = new Map<string, Contact[]>();
+  [...data]
+    .sort((a, b) => a.displayName.localeCompare(b.displayName))
+    .forEach((contact) => {
+      const firstLetter = contact.displayName.charAt(0).toUpperCase() || "#";
+      const existing = map.get(firstLetter);
+      if (existing) {
+        existing.push(contact);
+      } else {
+        map.set(firstLetter, [contact]);
+      }
+    });
+  return Array.from(map);
+}
+
 export default function ContactsProvider({ children }: PropsWithChildren) {
-  const [contacts, setContacts] = useState<Contacts>({
+  const [contacts, setContacts] = useState<
+    Omit<Contacts, "dictionary" | "filteredContacts">
+  >({
     contacts: [],
-    dictionary: [["", []]],
     isLoading: false,
     error: null,
-    filteredContacts: [],
     search: "",
   });
-
-  const generateDictionary = (
-    data: Contacts["contacts"]
-  ): [string, Contact[]][] => {
-    const map: Map<string, Contact[]> = new Map();
-    [...data]
-      .sort((a: Contact, b: Contact) =>
-        a.displayName.localeCompare(b.displayName)
-      )
-      .forEach((contact: Contact) => {
-        const firstLetter = contact.displayName.charAt(0).toUpperCase() || "#";
-        if (map.has(firstLetter)) {
-          const existing = map.get(firstLetter);
-          existing?.push(contact);
-          if (existing) {
-            map.set(firstLetter, existing);
-          }
-        } else {
-          map.set(firstLetter, [contact]);
-        }
-      });
-    return Array.from(map);
-  };
 
   useEffect(() => {
     const fetchContacts = async () => {
       setContacts((prev) => ({ ...prev, isLoading: true }));
       try {
         const data = (await listBackendContacts()).map(toContact);
-        const dictionary = generateDictionary(data);
 
         setContacts((prev) => ({
           ...prev,
           contacts: data,
-          filteredContacts: data,
-          dictionary,
           isLoading: false,
           error: null,
         }));
@@ -98,54 +95,57 @@ export default function ContactsProvider({ children }: PropsWithChildren) {
     void fetchContacts();
   }, []);
 
-  useEffect(() => {
-    setContacts((prev) => {
-      const contacts = prev.contacts;
-      const search = prev.search;
-      const normalizedSearch = search.toLowerCase();
-      const filteredContacts = contacts.filter((contact: Contact) =>
-        contact.displayName.toLowerCase().includes(normalizedSearch)
-      );
-      const dictionary = generateDictionary(filteredContacts);
+  const contactMap = useMemo(
+    () => new Map(contacts.contacts.map((contact) => [contact.id, contact])),
+    [contacts.contacts]
+  );
+  const filteredContacts = useMemo(() => {
+    const normalizedSearch = contacts.search.toLowerCase();
+    return contacts.contacts.filter((contact) =>
+      contact.displayName.toLowerCase().includes(normalizedSearch)
+    );
+  }, [contacts.contacts, contacts.search]);
+  const dictionary = useMemo(
+    () => generateDictionary(filteredContacts),
+    [filteredContacts]
+  );
 
-      return {
-        ...prev,
-        filteredContacts,
-        dictionary,
-      };
-    });
-  }, [contacts.search]);
-
-  const filterContacts = (search: string) => {
+  const filterContacts = useCallback((search: string) => {
     setContacts((prev) => ({
       ...prev,
       search,
     }));
-  };
+  }, []);
 
-  const getContact = (id: string) => {
-    const contact = contacts.contacts.find((contact: Contact) => contact.id === id);
-    return contact;
-  };
+  const getContact = useCallback((id: string) => contactMap.get(id), [contactMap]);
 
-  const setIsContactTyping = (id: string, typing: boolean) => {
-    const contactIndex = contacts.contacts.findIndex(
-      (contact: Contact) => contact.id === id
-    );
-    if (contactIndex !== -1) {
-      const updatedContacts = [...contacts.contacts];
-      updatedContacts[contactIndex].typing = typing;
-      setContacts((prev) => ({
+  const setIsContactTyping = useCallback((id: string, typing: boolean) => {
+    setContacts((prev) => {
+      const contactIndex = prev.contacts.findIndex((contact) => contact.id === id);
+      if (contactIndex === -1) return prev;
+      return {
         ...prev,
-        contacts: [...updatedContacts],
-      }));
-    }
-  };
+        contacts: prev.contacts.map((contact, index) =>
+          index === contactIndex ? { ...contact, typing } : contact
+        ),
+      };
+    });
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      ...contacts,
+      dictionary,
+      filteredContacts,
+      filterContacts,
+      getContact,
+      setIsContactTyping,
+    }),
+    [contacts, dictionary, filteredContacts, filterContacts, getContact, setIsContactTyping]
+  );
 
   return (
-    <ContactsContext.Provider
-      value={{ ...contacts, filterContacts, getContact, setIsContactTyping }}
-    >
+    <ContactsContext.Provider value={value}>
       {children}
     </ContactsContext.Provider>
   );

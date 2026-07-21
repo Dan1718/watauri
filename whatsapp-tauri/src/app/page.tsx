@@ -1,15 +1,12 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
-import TabActivePanel from "./components/tab-active-panel";
-import TabIcons from "./components/tab-icons";
-import TabPanel from "./components/tab-panel";
-import ChatsProvider from "./context/chats-provider";
-import ContactsProvider from "./context/contacts-provider";
-import CurrentChatProvider from "./context/current-chat-provider";
-import NewChatProvider from "./context/new-chat-provider";
-import ProfileProvider from "./context/profile-provider";
-import TabProvider from "./context/tab-provider";
+
+const AuthenticatedShell = dynamic(() => import("./components/authenticated-shell"), {
+  ssr: false,
+  loading: () => <main className="h-full w-full bg-[#141414]" />,
+});
 
 const API_BASE = "http://localhost:8090";
 
@@ -34,33 +31,7 @@ export default function Home() {
   const [connected, setConnected] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [status, setStatus] = useState("connecting");
-  const [chatListWidth, setChatListWidth] = useState(() =>
-    typeof window === "undefined" ? 420 : Math.min(560, Math.max(320, window.innerWidth - 500))
-  );
-  const chatListRef = useRef<HTMLDivElement>(null);
-  const resizingRef = useRef(false);
   const pollingRef = useRef(false);
-
-  useEffect(() => {
-    const stopResize = () => {
-      resizingRef.current = false;
-    };
-
-    const resize = (event: PointerEvent) => {
-      if (!resizingRef.current || !chatListRef.current) return;
-      const left = chatListRef.current.getBoundingClientRect().left;
-      const max = Math.max(320, window.innerWidth - left - 420);
-      setChatListWidth(Math.min(Math.max(event.clientX - left, 320), max));
-    };
-
-    window.addEventListener("pointermove", resize);
-    window.addEventListener("pointerup", stopResize);
-
-    return () => {
-      window.removeEventListener("pointermove", resize);
-      window.removeEventListener("pointerup", stopResize);
-    };
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -124,44 +95,7 @@ export default function Home() {
     return <LoginScreen qrCode={qrCode} status={status} />;
   }
 
-  return (
-    <ProfileProvider>
-      <TabProvider>
-        <ContactsProvider>
-          <ChatsProvider>
-            <CurrentChatProvider>
-              <NewChatProvider>
-                <section className="flex h-full w-full overflow-hidden">
-                  <div className="h-full w-20 shrink-0">
-                    <TabIcons />
-                  </div>
-                  <div
-                    className="relative h-full shrink-0"
-                    ref={chatListRef}
-                    style={{ width: chatListWidth }}
-                  >
-                    <TabPanel />
-                    <div
-                      aria-orientation="vertical"
-                      className="absolute -right-1 top-0 z-50 h-full w-2 cursor-col-resize bg-transparent transition-colors hover:bg-emerald-400/20 active:bg-emerald-400/30"
-                      onPointerDown={(event) => {
-                        event.preventDefault();
-                        resizingRef.current = true;
-                      }}
-                      role="separator"
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <TabActivePanel />
-                  </div>
-                </section>
-              </NewChatProvider>
-            </CurrentChatProvider>
-          </ChatsProvider>
-        </ContactsProvider>
-      </TabProvider>
-    </ProfileProvider>
-  );
+  return <AuthenticatedShell />;
 }
 
 function LoginScreen({ qrCode, status }: { qrCode: string | null; status: string }) {

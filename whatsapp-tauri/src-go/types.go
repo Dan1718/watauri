@@ -18,6 +18,19 @@ type Message struct {
 	Status    string `json:"status"`
 	MediaType string `json:"mediaType,omitempty"`
 	IsFromMe  bool   `json:"isFromMe"`
+	Revision  int64  `json:"-"`
+}
+
+type Profile struct {
+	ID       string `json:"id"`
+	PushName string `json:"pushName"`
+}
+
+type MessagePage struct {
+	Messages     []Message `json:"messages"`
+	NextCursor   *string   `json:"nextCursor"`
+	LatestCursor *string   `json:"latestCursor"`
+	HasMore      bool      `json:"hasMore"`
 }
 
 type Chat struct {

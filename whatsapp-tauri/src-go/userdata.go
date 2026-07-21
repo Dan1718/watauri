@@ -2,7 +2,9 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +35,12 @@ func newUserDataStore() (*UserDataStore, error) {
 }
 
 func (s *UserDataStore) migrate() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS chats (
 			jid TEXT PRIMARY KEY,
@@ -41,6 +49,7 @@ func (s *UserDataStore) migrate() error {
 			last_message_id TEXT,
 			last_message_text TEXT,
 			last_message_timestamp TEXT,
+			last_message_timestamp_epoch INTEGER,
 			last_message_sender TEXT,
 			unread_count INTEGER DEFAULT 0,
 			is_group INTEGER DEFAULT 0,
@@ -55,9 +64,11 @@ func (s *UserDataStore) migrate() error {
 			sender_jid TEXT NOT NULL,
 			text TEXT,
 			timestamp TEXT,
+			timestamp_epoch INTEGER NOT NULL,
 			status TEXT DEFAULT 'sent',
 			media_type TEXT,
 			is_from_me INTEGER DEFAULT 0,
+			revision INTEGER NOT NULL,
 			FOREIGN KEY (chat_jid) REFERENCES chats(jid)
 		)`,
 		`CREATE TABLE IF NOT EXISTS contacts (
@@ -72,24 +83,126 @@ func (s *UserDataStore) migrate() error {
 			content=messages,
 			content_rowid=rowid
 		)`,
-		`CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
-			INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
-		END`,
-		`CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
-			INSERT INTO messages_fts(messages_fts, rowid, text) VALUES('delete', old.rowid, old.text);
-		END`,
-		`CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
-			INSERT INTO messages_fts(messages_fts, rowid, text) VALUES('delete', old.rowid, old.text);
-			INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
-		END`,
 	}
 	for i, q := range queries {
-		if _, err := s.db.Exec(q); err != nil {
+		if _, err := tx.Exec(q); err != nil {
 			log.Printf("[store] Migration step %d failed: %v\nQuery: %.100s", i, err, q)
 			return err
 		}
 	}
+	for _, trigger := range []string{"messages_ai", "messages_ad", "messages_au"} {
+		if _, err := tx.Exec(`DROP TRIGGER IF EXISTS ` + trigger); err != nil {
+			return err
+		}
+	}
+	if err := addColumnIfMissing(tx, "chats", "last_message_timestamp_epoch", "INTEGER"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(tx, "messages", "timestamp_epoch", "INTEGER"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(tx, "messages", "revision", "INTEGER"); err != nil {
+		return err
+	}
+	if err := backfillEpochs(tx); err != nil {
+		return err
+	}
+	for _, q := range []string{
+		`UPDATE messages SET revision = rowid WHERE revision IS NULL OR revision = 0`,
+		`CREATE TABLE IF NOT EXISTS message_revision (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), revision INTEGER NOT NULL)`,
+		`INSERT INTO message_revision (singleton, revision) SELECT 1, COALESCE(MAX(revision), 0) FROM messages WHERE true ON CONFLICT(singleton) DO UPDATE SET revision = MAX(message_revision.revision, excluded.revision)`,
+		`DROP INDEX IF EXISTS messages_chat_newest_idx`,
+		`CREATE INDEX IF NOT EXISTS messages_chat_newest_idx ON messages(chat_jid, timestamp_epoch DESC, id DESC)`,
+		`CREATE INDEX IF NOT EXISTS messages_chat_revision_idx ON messages(chat_jid, revision)`,
+		`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`,
+		`CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+			INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+		END`,
+		`CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
+			INSERT INTO messages_fts(messages_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+		END`,
+		`CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
+			INSERT INTO messages_fts(messages_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+			INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+		END`,
+	} {
+		if _, err := tx.Exec(q); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func addColumnIfMissing(tx *sql.Tx, table, column, definition string) error {
+	rows, err := tx.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, dataType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		found = found || name == column
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = tx.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + definition)
+	return err
+}
+
+func backfillEpochs(tx *sql.Tx) error {
+	for _, table := range []struct {
+		name, timestampColumn, epochColumn string
+	}{
+		{"messages", "timestamp", "timestamp_epoch"},
+		{"chats", "last_message_timestamp", "last_message_timestamp_epoch"},
+	} {
+		rows, err := tx.Query(fmt.Sprintf(`SELECT rowid, %s FROM %s WHERE %s IS NULL AND %s IS NOT NULL AND %s != ''`, table.timestampColumn, table.name, table.epochColumn, table.timestampColumn, table.timestampColumn))
+		if err != nil {
+			return err
+		}
+		var updates [][2]int64
+		for rows.Next() {
+			var rowID int64
+			var timestamp string
+			if err := rows.Scan(&rowID, &timestamp); err != nil {
+				rows.Close()
+				return err
+			}
+			epoch, err := timestampEpoch(timestamp)
+			if err != nil {
+				rows.Close()
+				return fmt.Errorf("migrate %s row %d timestamp: %w", table.name, rowID, err)
+			}
+			updates = append(updates, [2]int64{rowID, epoch})
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		for _, update := range updates {
+			if _, err := tx.Exec(fmt.Sprintf(`UPDATE %s SET %s = ? WHERE rowid = ?`, table.name, table.epochColumn), update[1], update[0]); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+func timestampEpoch(timestamp string) (int64, error) {
+	parsed, err := time.Parse(time.RFC3339Nano, timestamp)
+	if err != nil {
+		return 0, err
+	}
+	return parsed.UnixNano(), nil
 }
 
 func (s *UserDataStore) UpsertChat(chat Chat) error {
@@ -98,15 +211,24 @@ func (s *UserDataStore) UpsertChat(chat Chat) error {
 
 	start := time.Now()
 	now := time.Now().Format(time.RFC3339)
+	var lastMessageEpoch *int64
+	if chat.LastMessageTimestamp != "" {
+		epoch, err := timestampEpoch(chat.LastMessageTimestamp)
+		if err != nil {
+			return err
+		}
+		lastMessageEpoch = &epoch
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO chats (jid, name, avatar, last_message_id, last_message_text, last_message_timestamp, last_message_sender, unread_count, is_group, is_archived, is_starred, is_community, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO chats (jid, name, avatar, last_message_id, last_message_text, last_message_timestamp, last_message_timestamp_epoch, last_message_sender, unread_count, is_group, is_archived, is_starred, is_community, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(jid) DO UPDATE SET
 			name=COALESCE(NULLIF(EXCLUDED.name, ''), name),
 			avatar=COALESCE(NULLIF(EXCLUDED.avatar, ''), avatar),
 			last_message_id=COALESCE(NULLIF(EXCLUDED.last_message_id, ''), last_message_id),
 			last_message_text=COALESCE(NULLIF(EXCLUDED.last_message_text, ''), last_message_text),
 			last_message_timestamp=COALESCE(NULLIF(EXCLUDED.last_message_timestamp, ''), last_message_timestamp),
+			last_message_timestamp_epoch=COALESCE(EXCLUDED.last_message_timestamp_epoch, last_message_timestamp_epoch),
 			last_message_sender=COALESCE(NULLIF(EXCLUDED.last_message_sender, ''), last_message_sender),
 			unread_count=EXCLUDED.unread_count,
 			is_archived=EXCLUDED.is_archived,
@@ -114,7 +236,7 @@ func (s *UserDataStore) UpsertChat(chat Chat) error {
 			is_community=EXCLUDED.is_community,
 			updated_at=EXCLUDED.updated_at`,
 		chat.ID, chat.Name, chat.Avatar,
-		chat.LastMessageID, chat.LastMessageText, chat.LastMessageTimestamp, chat.LastMessageSender,
+		chat.LastMessageID, chat.LastMessageText, chat.LastMessageTimestamp, lastMessageEpoch, chat.LastMessageSender,
 		chat.UnreadCount, boolToInt(chat.IsGroup),
 		boolToInt(chat.IsArchived), boolToInt(chat.IsStarred), boolToInt(chat.IsCommunity),
 		now,
@@ -132,7 +254,7 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 	defer s.mu.RUnlock()
 
 	start := time.Now()
-	rows, err := s.db.Query(`SELECT jid, name, avatar, last_message_id, last_message_text, last_message_timestamp, last_message_sender, unread_count, is_group, is_archived, is_starred, is_community FROM chats ORDER BY last_message_timestamp DESC`)
+	rows, err := s.db.Query(`SELECT jid, name, avatar, last_message_id, last_message_text, last_message_timestamp, last_message_sender, unread_count, is_group, is_archived, is_starred, is_community FROM chats ORDER BY last_message_timestamp_epoch DESC`)
 	if err != nil {
 		log.Printf("[store] GetChats query error: %v (%v)", err, time.Since(start))
 		return nil, err
@@ -180,14 +302,18 @@ func (s *UserDataStore) InsertMessage(msg Message) error {
 	defer s.mu.Unlock()
 
 	start := time.Now()
+	epoch, err := timestampEpoch(msg.Timestamp)
+	if err != nil {
+		return err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 
 	result, err := tx.Exec(
-		`INSERT OR IGNORE INTO messages (id, chat_jid, sender_jid, text, timestamp, status, media_type, is_from_me) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		msg.ID, msg.ChatJID, msg.SenderID, msg.Text, msg.Timestamp, msg.Status, msg.MediaType, boolToInt(msg.IsFromMe),
+		`INSERT OR IGNORE INTO messages (id, chat_jid, sender_jid, text, timestamp, timestamp_epoch, status, media_type, is_from_me, revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+		msg.ID, msg.ChatJID, msg.SenderID, msg.Text, msg.Timestamp, epoch, msg.Status, msg.MediaType, boolToInt(msg.IsFromMe),
 	)
 	if err != nil {
 		tx.Rollback()
@@ -201,6 +327,15 @@ func (s *UserDataStore) InsertMessage(msg Message) error {
 		return err
 	}
 	if rows > 0 {
+		revision, err := nextMessageRevision(tx)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE messages SET revision = ? WHERE id = ?`, revision, msg.ID); err != nil {
+			tx.Rollback()
+			return err
+		}
 		unreadIncrement := 0
 		if !msg.IsFromMe {
 			unreadIncrement = 1
@@ -211,42 +346,44 @@ func (s *UserDataStore) InsertMessage(msg Message) error {
         last_message_id,
         last_message_text,
         last_message_timestamp,
+		last_message_timestamp_epoch,
         last_message_sender,
         unread_count,
         is_group,
         updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(jid) DO UPDATE SET
         last_message_id = CASE
-            WHEN chats.last_message_timestamp IS NULL
-                OR excluded.last_message_timestamp >= chats.last_message_timestamp
+	            WHEN chats.last_message_timestamp_epoch IS NULL
+	                OR excluded.last_message_timestamp_epoch >= chats.last_message_timestamp_epoch
             THEN excluded.last_message_id
             ELSE chats.last_message_id
         END,
         last_message_text = CASE
-            WHEN chats.last_message_timestamp IS NULL
-                OR excluded.last_message_timestamp >= chats.last_message_timestamp
+	            WHEN chats.last_message_timestamp_epoch IS NULL
+	                OR excluded.last_message_timestamp_epoch >= chats.last_message_timestamp_epoch
             THEN excluded.last_message_text
             ELSE chats.last_message_text
         END,
         last_message_timestamp = CASE
-            WHEN chats.last_message_timestamp IS NULL
-                OR excluded.last_message_timestamp >= chats.last_message_timestamp
+	            WHEN chats.last_message_timestamp_epoch IS NULL
+	                OR excluded.last_message_timestamp_epoch >= chats.last_message_timestamp_epoch
             THEN excluded.last_message_timestamp
-            ELSE chats.last_message_timestamp
-        END,
-        last_message_sender = CASE
-            WHEN chats.last_message_timestamp IS NULL
-                OR excluded.last_message_timestamp >= chats.last_message_timestamp
+	            ELSE chats.last_message_timestamp
+	        END,
+		last_message_timestamp_epoch = MAX(COALESCE(chats.last_message_timestamp_epoch, excluded.last_message_timestamp_epoch), excluded.last_message_timestamp_epoch),
+	        last_message_sender = CASE
+	            WHEN chats.last_message_timestamp_epoch IS NULL
+	                OR excluded.last_message_timestamp_epoch >= chats.last_message_timestamp_epoch
             THEN excluded.last_message_sender
             ELSE chats.last_message_sender
         END,
         unread_count = chats.unread_count + excluded.unread_count,
         is_group = excluded.is_group,
         updated_at = CASE
-            WHEN chats.last_message_timestamp IS NULL
-                OR excluded.last_message_timestamp >= chats.last_message_timestamp
+	            WHEN chats.last_message_timestamp_epoch IS NULL
+	                OR excluded.last_message_timestamp_epoch >= chats.last_message_timestamp_epoch
             THEN excluded.updated_at
             ELSE chats.updated_at
         END
@@ -255,6 +392,7 @@ func (s *UserDataStore) InsertMessage(msg Message) error {
 			msg.ID,
 			msg.Text,
 			msg.Timestamp,
+			epoch,
 			msg.SenderID,
 			unreadIncrement,
 			boolToInt(strings.HasSuffix(msg.ChatJID, "@g.us")),
@@ -272,15 +410,45 @@ func (s *UserDataStore) InsertMessage(msg Message) error {
 	return nil
 }
 
-func (s *UserDataStore) GetMessages(chatJID string) ([]Message, error) {
+type messageCursor struct {
+	Version        int    `json:"v"`
+	Mode           string `json:"mode"`
+	TimestampEpoch int64  `json:"timestampEpoch,omitempty"`
+	ID             string `json:"id,omitempty"`
+	Revision       int64  `json:"revision,omitempty"`
+}
+
+func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *messageCursor) ([]Message, bool, int64, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	start := time.Now()
-	rows, err := s.db.Query(`SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me FROM messages WHERE chat_jid = ? ORDER BY timestamp ASC`, chatJID)
+	var latestRevision int64
+	if err := s.db.QueryRow(`SELECT COALESCE(MAX(revision), 0) FROM messages WHERE chat_jid = ?`, chatJID).Scan(&latestRevision); err != nil {
+		return nil, false, 0, err
+	}
+	query := `SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, revision FROM messages WHERE chat_jid = ?`
+	args := []any{chatJID}
+	ascending := after != nil
+	if before != nil {
+		query += ` AND (timestamp_epoch < ? OR (timestamp_epoch = ? AND id < ?))`
+		args = append(args, before.TimestampEpoch, before.TimestampEpoch, before.ID)
+	} else if after != nil {
+		query += ` AND revision > ?`
+		args = append(args, after.Revision)
+	}
+	if ascending {
+		query += ` ORDER BY revision ASC`
+	} else {
+		query += ` ORDER BY timestamp_epoch DESC, id DESC`
+	}
+	query += ` LIMIT ?`
+	args = append(args, limit+1)
+
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		log.Printf("[store] GetMessages(%s) query error: %v (%v)", chatJID, err, time.Since(start))
-		return nil, err
+		return nil, false, 0, err
 	}
 	defer rows.Close()
 
@@ -290,9 +458,9 @@ func (s *UserDataStore) GetMessages(chatJID string) ([]Message, error) {
 		var mediaType sql.NullString
 		var isFromMe int
 
-		if err := rows.Scan(&m.ID, &m.SenderID, &m.Text, &m.Timestamp, &m.Status, &mediaType, &isFromMe); err != nil {
+		if err := rows.Scan(&m.ID, &m.SenderID, &m.Text, &m.Timestamp, &m.Status, &mediaType, &isFromMe, &m.Revision); err != nil {
 			log.Printf("[store] GetMessages(%s) row scan error: %v (%v)", chatJID, err, time.Since(start))
-			return nil, err
+			return nil, false, 0, err
 		}
 		if mediaType.Valid {
 			m.MediaType = mediaType.String
@@ -303,10 +471,23 @@ func (s *UserDataStore) GetMessages(chatJID string) ([]Message, error) {
 	}
 	if err := rows.Err(); err != nil {
 		log.Printf("[store] GetMessages(%s) rows iteration error: %v (%v)", chatJID, err, time.Since(start))
-		return nil, err
+		return nil, false, 0, err
+	}
+	hasMore := len(messages) > limit
+	if hasMore {
+		messages = messages[:limit]
+	}
+	if !ascending {
+		slices.Reverse(messages)
 	}
 	log.Printf("[store] GetMessages(%s) -> %d messages (%v)", chatJID, len(messages), time.Since(start))
-	return messages, nil
+	return messages, hasMore, latestRevision, nil
+}
+
+func nextMessageRevision(tx *sql.Tx) (int64, error) {
+	var revision int64
+	err := tx.QueryRow(`UPDATE message_revision SET revision = revision + 1 WHERE singleton = 1 RETURNING revision`).Scan(&revision)
+	return revision, err
 }
 
 func (s *UserDataStore) UpdateMessageStatus(messageIDs []string, status string) error {
@@ -319,7 +500,7 @@ func (s *UserDataStore) UpdateMessageStatus(messageIDs []string, status string) 
 		log.Printf("[store] UpdateMessageStatus begin tx error: %v (%v)", err, time.Since(start))
 		return err
 	}
-	stmt, err := tx.Prepare(`UPDATE messages SET status = ? WHERE id = ?`)
+	stmt, err := tx.Prepare(`UPDATE messages SET status = ?, revision = ? WHERE id = ? AND status != ?`)
 	if err != nil {
 		log.Printf("[store] UpdateMessageStatus prepare error: %v (%v)", err, time.Since(start))
 		tx.Rollback()
@@ -328,7 +509,12 @@ func (s *UserDataStore) UpdateMessageStatus(messageIDs []string, status string) 
 	defer stmt.Close()
 
 	for _, id := range messageIDs {
-		if _, err := stmt.Exec(status, id); err != nil {
+		revision, err := nextMessageRevision(tx)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+		if _, err := stmt.Exec(status, revision, id, status); err != nil {
 			log.Printf("[store] UpdateMessageStatus exec for %s error: %v (%v)", id, err, time.Since(start))
 			tx.Rollback()
 			return err
@@ -399,17 +585,25 @@ func (s *UserDataStore) SearchMessages(q, senderJID, mediaType, afterTS string, 
 	start := time.Now()
 	log.Printf("[store] SearchMessages q=%q sender=%q media=%q after=%q limit=%d offset=%d", q, senderJID, mediaType, afterTS, limit, offset)
 
+	var afterEpoch int64
+	if afterTS != "" {
+		var err error
+		afterEpoch, err = timestampEpoch(afterTS)
+		if err != nil {
+			return nil, err
+		}
+	}
 	query := `SELECT m.id, m.chat_jid, m.sender_jid, m.text, m.timestamp, m.status, m.media_type, m.is_from_me
 		FROM messages m
 		JOIN messages_fts fts ON m.rowid = fts.rowid
 		WHERE messages_fts MATCH ?
 		AND (? == '' OR m.sender_jid = ?)
 		AND (? == '' OR m.media_type = ?)
-		AND (? == '' OR m.timestamp >= ?)
-		ORDER BY m.timestamp DESC
+		AND (? == '' OR m.timestamp_epoch >= ?)
+		ORDER BY m.timestamp_epoch DESC
 		LIMIT ? OFFSET ?`
 
-	rows, err := s.db.Query(query, q, senderJID, senderJID, mediaType, mediaType, afterTS, afterTS, limit, offset)
+	rows, err := s.db.Query(query, q, senderJID, senderJID, mediaType, mediaType, afterTS, afterEpoch, limit, offset)
 	if err != nil {
 		log.Printf("[store] SearchMessages query error: %v (%v)", err, time.Since(start))
 		return nil, err

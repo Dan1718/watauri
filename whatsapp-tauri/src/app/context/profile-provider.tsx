@@ -1,5 +1,5 @@
 import { createContext, PropsWithChildren, useEffect, useState } from "react";
-import { listBackendChats } from "../backend";
+import { getBackendProfile } from "../backend";
 
 export type Profile = {
   id: string;
@@ -16,50 +16,40 @@ export const ProfileContext = createContext<
     }
 >(undefined);
 
+const FALLBACK_PROFILE: Profile = {
+  id: "me",
+  name: "Me",
+  blueTickEnabled: true,
+  avatarUrl: "",
+};
+
+const FALLBACK = {
+  profile: FALLBACK_PROFILE,
+  isLoading: false,
+};
+
 export default function ProfileProvider({ children }: PropsWithChildren) {
-  const [profile, setProfile] = useState<{
-    profile: Profile;
-    isLoading: boolean;
-  }>({
-    profile: {
-      id: "",
-      name: "",
-      blueTickEnabled: false,
-      avatarUrl: "",
-    },
-    isLoading: false,
-  });
+  const [value, setValue] = useState({ ...FALLBACK, isLoading: true });
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      setProfile((prev) => ({ ...prev, isLoading: true }));
-      let user;
-      try {
-        const chats = await listBackendChats();
-        user = chats
-          .flatMap((chat) => chat.participants ?? [])
-          .find((participant) => participant.id === "me");
-      } catch {
-        user = undefined;
-      }
-      const data = {
-        id: user?.id ?? "me",
-        name: user?.name ?? "Me",
-        blueTickEnabled: true,
-        avatarUrl: user?.avatar ?? "",
-      };
-      setProfile((prev) => ({
-        ...prev,
-        profile: data,
+    const controller = new AbortController();
+    getBackendProfile(controller.signal)
+      .then(({ id, pushName }) => setValue({
+        profile: {
+          ...FALLBACK_PROFILE,
+          id: id || FALLBACK_PROFILE.id,
+          name: pushName || FALLBACK_PROFILE.name,
+        },
         isLoading: false,
-      }));
-    };
-
-    fetchProfile();
+      }))
+      .catch(() => {
+        if (!controller.signal.aborted) setValue(FALLBACK);
+      });
+    return () => controller.abort();
   }, []);
 
   return (
-    <ProfileContext.Provider value={{ ...profile }}>
+    <ProfileContext.Provider value={value}>
       {children}
     </ProfileContext.Provider>
   );

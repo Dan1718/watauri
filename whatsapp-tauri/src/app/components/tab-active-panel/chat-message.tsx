@@ -1,72 +1,73 @@
 import { Message } from "@/app/context/chats-provider";
-import MessageStatusIcon from "../message-status-icon";
-import { useCurrentChat } from "@/app/hooks/use-current-chat";
-import Profile from "../profile";
-import { useContacts } from "@/app/hooks/use-contacts";
 import { formatTime } from "@/app/utils";
+import MessageStatusIcon from "../message-status-icon";
+import Profile from "../profile";
 
-const getRandomContactColor = (): string => {
-  const colors = [
-    "text-pink-400",
-    "text-sky-300",
-    "text-teal-300",
-    "text-amber-300",
-    "text-green-300",
-  ];
-  const max = Math.floor(colors.length - 1);
-  const min = Math.ceil(0);
-  const random = Math.floor(Math.random() * (max - min + 1)) + min;
-  return colors[random];
-};
+const senderColors = [
+  "text-pink-400",
+  "text-sky-300",
+  "text-teal-300",
+  "text-amber-300",
+  "text-green-300",
+];
 
-export default function ChatMessage({ message }: { message: Message }) {
-  const { getContact } = useContacts();
-  const { group } = useCurrentChat();
+function getContactColor(contactId: string) {
+  let hash = 0;
+  for (const character of contactId) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  return senderColors[hash % senderColors.length];
+}
 
-  if (group) {
-    return (
-      <div className="flex max-w-full min-w-0 justify-between items-start gap-2">
-        {!message.isSentFromUser && (
-          <Profile url={getContact(message.contactId)?.contactAvatar} />
-        )}
-        <div className="min-w-0 rounded-lg overflow-hidden bg-black z-20">
-          <div
-            className={`flex flex-col justify-center items-start px-2 p-1.5 gap-1 ${
-              message.isSentFromUser ? "bg-emerald-900" : "bg-white/20"
-            }`}
-          >
-            {!message.isSentFromUser && (
-              <p className={`text-xs font-semibold ${getRandomContactColor()}`}>
-                {group.contacts[message.contactId]?.displayName}
-              </p>
-            )}
-            <div className="flex max-w-full min-w-0 justify-between items-end gap-2">
-              <p className="min-w-0 whitespace-pre-wrap break-words text-white text-sm">{message.message}</p>
-              <p className="shrink-0 text-white/80 text-xs">
-                {formatTime(message.timestamp)}
-              </p>
-              {message.isSentFromUser && (
-                <MessageStatusIcon message={message} isInMessage />
-              )}
-            </div>
-          </div>
-        </div>
+export default function ChatMessage({
+  message,
+  isGroup,
+  senderName,
+  senderAvatar,
+  showSender,
+  blueTickEnabled,
+}: {
+  message: Message;
+  isGroup: boolean;
+  senderName?: string;
+  senderAvatar?: string;
+  showSender: boolean;
+  blueTickEnabled: boolean;
+}) {
+  const bubble = (
+    <div
+      className={`min-w-0 rounded-lg px-2 py-1.5 ${
+        message.isSentFromUser ? "bg-emerald-900" : "bg-[#30383d]"
+      }`}
+    >
+      {isGroup && !message.isSentFromUser && showSender ? (
+        <p className={`mb-1 text-xs font-semibold ${getContactColor(message.contactId)}`}>
+          {senderName}
+        </p>
+      ) : null}
+      <div className="flex min-w-0 max-w-full items-end justify-between gap-2">
+        <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-white">
+          {message.message}
+        </p>
+        <p className="shrink-0 text-xs text-white/80">{formatTime(message.timestamp)}</p>
+        <MessageStatusIcon
+          isSentFromUser={message.isSentFromUser}
+          read={message.read}
+          delivered={message.delivered}
+          sent={message.sent}
+          blueTickEnabled={blueTickEnabled}
+          isInMessage
+        />
       </div>
-    );
-  }
+    </div>
+  );
+
+  if (!isGroup || message.isSentFromUser) return bubble;
+
   return (
-    <div className="max-w-full min-w-0 rounded-lg bg-black z-10 overflow-hidden">
-      <div
-        className={`flex justify-between items-end px-2 p-1.5 gap-2 ${
-          message.isSentFromUser ? "bg-emerald-900" : "bg-white/20"
-        }`}
-      >
-        <p className="min-w-0 whitespace-pre-wrap break-words text-white text-sm">{message.message}</p>
-        <p className="shrink-0 text-white/80 text-xs">{formatTime(message.timestamp)}</p>
-        {message.isSentFromUser && (
-          <MessageStatusIcon message={message} isInMessage />
-        )}
+    <div className="flex min-w-0 max-w-full items-start gap-2">
+      <div className="h-7 w-7 shrink-0">
+        {showSender ? <Profile url={senderAvatar} /> : null}
       </div>
+      {bubble}
     </div>
   );
 }

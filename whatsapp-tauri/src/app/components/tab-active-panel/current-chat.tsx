@@ -1,4 +1,5 @@
 import { FormEvent, memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowDownIcon } from "@phosphor-icons/react";
 import dayjs from "dayjs";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Message } from "@/app/context/chats-provider";
@@ -127,6 +128,7 @@ const MessageList = memo(function MessageList({
   error,
   hasMoreMessages,
   loadOlderMessages,
+  unreadCount,
   scrollToBottomRequest,
 }: {
   chatId: string;
@@ -138,9 +140,11 @@ const MessageList = memo(function MessageList({
   error: string | null;
   hasMoreMessages: boolean;
   loadOlderMessages: () => Promise<void>;
+  unreadCount: number;
   scrollToBottomRequest: number;
 }) {
   const [activeReactionId, setActiveReactionId] = useState<string | null>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
   const [isScrolling, setIsScrolling] = useState(false);
   const [visibleTimestamp, setVisibleTimestamp] = useState<Message["timestamp"] | null>(null);
   const messageIndexes = useMemo(
@@ -149,8 +153,12 @@ const MessageList = memo(function MessageList({
   );
   const previousMessages = useRef(messages);
   const committedFirstItemIndex = useRef(INITIAL_ITEM_INDEX);
+  const positionedAtUnread = useRef(false);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   let firstItemIndex = committedFirstItemIndex.current;
+  const oldestUnreadIndex = unreadCount <= messages.length || !hasMoreMessages
+    ? Math.max(0, messages.length - unreadCount)
+    : -1;
 
   if (previousMessages.current !== messages && previousMessages.current[0]) {
     const previousFirstIndex = messages.findIndex(
@@ -169,6 +177,20 @@ const MessageList = memo(function MessageList({
       virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "smooth" });
     }
   }, [scrollToBottomRequest]);
+
+  useLayoutEffect(() => {
+    if (positionedAtUnread.current || unreadCount === 0 || messages.length === 0 || isLoading) return;
+    if (unreadCount > messages.length && hasMoreMessages) {
+      void loadOlderMessages();
+      return;
+    }
+
+    positionedAtUnread.current = true;
+    virtuosoRef.current?.scrollToIndex({
+      index: firstItemIndex + Math.max(0, messages.length - unreadCount),
+      align: "center",
+    });
+  }, [firstItemIndex, hasMoreMessages, isLoading, loadOlderMessages, messages.length, unreadCount]);
 
   const toggleReactionMenu = useCallback((messageId: string) => {
     setActiveReactionId((current) => current === messageId ? null : messageId);
@@ -203,6 +225,7 @@ const MessageList = memo(function MessageList({
         initialTopMostItemIndex={Math.max(0, messages.length - 1)}
         alignToBottom
         followOutput={(isAtBottom) => isAtBottom ? "auto" : false}
+        atBottomStateChange={setIsAtBottom}
         increaseViewportBy={{ top: 0, bottom: 200 }}
         computeItemKey={(_index, message) => message.id}
         isScrolling={setIsScrolling}
@@ -224,10 +247,18 @@ const MessageList = memo(function MessageList({
           const compact = next?.isSentFromUser === message.isSentFromUser &&
             next?.contactId === message.contactId && !endsDay;
           const contact = contacts?.[message.contactId];
+          const isOldestUnread = unreadCount > 0 && index === oldestUnreadIndex;
 
           return (
             <>
               {startsNewDay ? <DatePill timestamp={message.timestamp} /> : null}
+              {isOldestUnread ? (
+                <div className="flex w-full items-center gap-2 px-4 py-3 text-[11px] font-medium text-[#00a884]">
+                  <span className="h-px flex-1 bg-[#00a884]/50" />
+                  <span>New</span>
+                  <span className="h-px flex-1 bg-[#00a884]/50" />
+                </div>
+              ) : null}
               <MessageRow
                 message={message}
                 isGroup={isGroup}
@@ -244,6 +275,24 @@ const MessageList = memo(function MessageList({
           );
         }}
       />
+      {!isAtBottom && unreadCount > 0 ? (
+        <button
+          type="button"
+          aria-label={`Jump to ${unreadCount} new ${unreadCount === 1 ? "message" : "messages"}`}
+          className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/10 bg-[#111b21]/95 px-2 py-1.5 text-xs font-medium text-[#00a884] shadow-lg backdrop-blur-sm transition hover:bg-[#202c33] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#00a884]"
+          onClick={() => virtuosoRef.current?.scrollToIndex({
+            index: "LAST",
+            align: "end",
+            behavior: "smooth",
+          })}
+        >
+          <span className="rounded-full bg-[#00a884] px-1.5 py-0.5 text-[10px] font-semibold text-[#0b141a]">
+            {unreadCount}
+          </span>
+          <span>New {unreadCount === 1 ? "Message" : "Messages"}</span>
+          <ArrowDownIcon aria-hidden="true" size={14} weight="bold" />
+        </button>
+      ) : null}
     </div>
   );
 });
@@ -293,6 +342,7 @@ export default function CurrentChat() {
     error,
     isSending,
     hasMoreMessages,
+    unreadCount,
     sendMessage,
     loadOlderMessages,
   } = useCurrentChat();
@@ -321,6 +371,7 @@ export default function CurrentChat() {
           error={error}
           hasMoreMessages={hasMoreMessages}
           loadOlderMessages={loadOlderMessages}
+          unreadCount={unreadCount}
           scrollToBottomRequest={scrollToBottomRequest}
         />
         <Composer

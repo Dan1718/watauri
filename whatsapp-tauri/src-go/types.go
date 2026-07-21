@@ -3,10 +3,11 @@ package main
 func ptr(s string) *string { return &s }
 
 type User struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Avatar string `json:"avatar"`
-	Status string `json:"status"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	PushName string `json:"pushName,omitempty"`
+	Avatar   string `json:"avatar"`
+	Status   string `json:"status"`
 }
 
 type Message struct {

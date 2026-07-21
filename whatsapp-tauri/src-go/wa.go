@@ -130,6 +130,46 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				break
 			}
 
+			pushnamesStored := 0
+			inlineContactsStored := 0
+			for _, push := range data.GetPushnames() {
+				jid := push.GetID()
+				pushName := push.GetPushname()
+				if jid == "" {
+					continue
+				}
+				if err := wa.store.UpsertContact(User{
+					ID:       jid,
+					PushName: pushName,
+				}); err != nil {
+					log.Printf("[wa] failed to upsert history pushname %s: %v", jid, err)
+					continue
+				}
+				pushnamesStored++
+			}
+
+			for _, inline := range data.GetInlineContacts() {
+				jid := inline.GetPnJID()
+				if jid == "" {
+					jid = inline.GetLidJID()
+				}
+				if jid == "" {
+					continue
+				}
+				name := inline.GetFullName()
+				if name == "" {
+					name = inline.GetFirstName()
+				}
+				if name == "" {
+					name = inline.GetUsername()
+				}
+
+				if err := wa.store.UpsertContact(User{ID: jid, Name: name}); err != nil {
+					log.Printf("[wa] failed to upsert history inline contact %s: %v", jid, err)
+					continue
+				}
+				inlineContactsStored++
+			}
 			conversationsSeen := len(data.GetConversations())
 			conversationsStored := 0
 			conversationsSkipped := 0
@@ -138,7 +178,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			messagesSkipped := 0
 
 			log.Printf("[wa] Event: historySync type=%v chunk=%d progress=%d conversations=%d statusMessages=%d pushnames=%d inlineContacts=%d",
-				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, len(data.GetStatusV3Messages()), len(data.GetPushnames()), len(data.GetInlineContacts()))
+				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, len(data.GetStatusV3Messages()), pushnamesStored, inlineContactsStored)
 
 			for _, conv := range data.GetConversations() {
 				chatJID, err := types.ParseJID(conv.GetID())
@@ -196,8 +236,8 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			log.Printf("[wa] Event: pushName jid=%s old=%q new=%q", v.JID, v.OldPushName, v.NewPushName)
 			if wa.store != nil {
 				wa.store.UpsertContact(User{
-					ID:   v.JID.String(),
-					Name: v.NewPushName,
+					ID:       v.JID.String(),
+					PushName: v.NewPushName,
 				})
 			}
 		case *events.LoggedOut:

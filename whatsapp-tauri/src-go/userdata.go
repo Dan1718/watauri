@@ -545,7 +545,7 @@ func (s *UserDataStore) UpsertContact(contact User) error {
 	start := time.Now()
 	_, err := s.db.Exec(
 		`INSERT INTO contacts (jid, name, avatar, push_name, status) VALUES (?, ?, ?, ?, ?) ON CONFLICT(jid) DO UPDATE SET name=COALESCE(NULLIF(EXCLUDED.name, ''), name), avatar=COALESCE(NULLIF(EXCLUDED.avatar, ''), avatar), push_name=COALESCE(NULLIF(EXCLUDED.push_name, ''), push_name), status=COALESCE(NULLIF(EXCLUDED.status, ''), status)`,
-		contact.ID, contact.Name, contact.Avatar, "", contact.Status,
+		contact.ID, contact.Name, contact.Avatar, contact.PushName, contact.Status,
 	)
 	if err != nil {
 		log.Printf("[store] UpsertContact(%s) error: %v (%v)", contact.ID, err, time.Since(start))
@@ -554,13 +554,12 @@ func (s *UserDataStore) UpsertContact(contact User) error {
 	}
 	return err
 }
-
 func (s *UserDataStore) GetContacts() ([]User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	start := time.Now()
-	rows, err := s.db.Query(`SELECT jid, name, avatar, status FROM contacts`)
+	rows, err := s.db.Query(`SELECT jid, name, avatar, push_name, status FROM contacts`)
 	if err != nil {
 		log.Printf("[store] GetContacts query error: %v (%v)", err, time.Since(start))
 		return nil, err
@@ -570,7 +569,7 @@ func (s *UserDataStore) GetContacts() ([]User, error) {
 	var contacts []User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.Name, &u.Avatar, &u.Status); err != nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Avatar, &u.PushName, &u.Status); err != nil {
 			log.Printf("[store] GetContacts row scan error: %v (%v)", err, time.Since(start))
 			return nil, err
 		}

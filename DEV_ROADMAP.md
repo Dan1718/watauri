@@ -67,7 +67,7 @@
 | 3.1  | Add SQLite to the Go sidecar (`modernc.org/sqlite` + `mattn/go-sqlite3`)            | ✅ Done   |
 | 3.2  | Wire whatsmeow event handlers → SQLite writes (messages, chats, contacts, presence)  | ⚠️ Partial |
 | 3.3  | Replace Go mock handlers with real DB queries for `/api/chats` and `/api/chats/{id}` | ✅ Done   |
-| 3.4  | Add real-time push from Go to frontend (Server-Sent Events or WebSocket)             | ⏸️ Removed |
+| 3.4  | Add real-time push from Go to frontend using Server-Sent Events                      | Planned |
 | 3.5  | Support offline startup — load from SQLite first, sync when connected                | ✅ Done   |
 
 **3.2 details**:
@@ -92,7 +92,19 @@
 - `UpsertChat()` only inserts bare JID — no name/avatar — groups show as bare JIDs until HistorySync is processed
 - `HistorySync` skipped → no bulk offline-history insert after pairing
 
-**Deliverable**: Real chats and messages appear in the UI (with fallback JID names). New messages arrive (via polling, SSE removed).
+**SSE scope**:
+
+| Task | Detail | Status |
+| ---- | ------ | ------ |
+| SSE endpoint | Add `GET /api/events` with proper event-stream headers | Planned |
+| Event broadcaster | Add backend pub/sub for connected frontend clients | Planned |
+| Message events | Emit events when live or history messages are stored | Planned |
+| Receipt events | Emit events when message statuses change | Planned |
+| Chat events | Emit events when chat metadata changes | Planned |
+| Sync events | Emit history sync progress and completion events | Planned |
+| Frontend reconnect | Add EventSource reconnect and polling fallback behavior | Planned |
+
+**Deliverable**: Real chats and messages appear in the UI (with fallback JID names). New messages arrive through polling until SSE is implemented.
 
 ---
 

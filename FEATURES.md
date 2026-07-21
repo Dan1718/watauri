@@ -27,6 +27,7 @@ This file tracks user-facing product features. For implementation details, archi
 | Group participants | planned | Requires participant persistence in the local database |
 | Send text messages | planned | Composer endpoint and whatsmeow send path |
 | Message pagination | planned | Avoid loading entire chats at once |
+| Real-time updates | planned | Server-Sent Events for new messages, receipt changes, chat metadata updates, and sync progress |
 | Read receipts | planned | Risky: protocol-sensitive behavior |
 | Typing indicators | planned | Risky: protocol-sensitive behavior |
 | Attachments | planned | Media upload and download flow |

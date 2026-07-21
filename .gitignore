@@ -6,8 +6,7 @@ whatsapp-tauri/src-go/backend
 whatsapp-tauri/src-go/wa-session.db
 whatsapp-tauri/src-tauri/wa-session.db
 *.db
-*.db-wal
-*.db-shm
+*.db-*
 
 # Node
 node_modules/

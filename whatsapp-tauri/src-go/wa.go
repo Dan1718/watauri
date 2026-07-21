@@ -83,34 +83,6 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				log.Println("[wa] Skipping message: store is nil")
 				break
 			}
-			text := v.Message.GetConversation()
-			if text == "" {
-				if ext := v.Message.GetExtendedTextMessage(); ext != nil {
-					text = ext.GetText()
-				}
-			}
-			mediaType := ""
-			if v.Message.GetImageMessage() != nil {
-				mediaType = "image"
-			} else if v.Message.GetVideoMessage() != nil {
-				mediaType = "video"
-			} else if v.Message.GetAudioMessage() != nil {
-				mediaType = "audio"
-			} else if v.Message.GetDocumentMessage() != nil {
-				mediaType = "document"
-			}
-
-			if text == "" && mediaType == "" {
-				log.Printf("[wa] Skipping message %s: empty text, no media (reaction/receipt)", v.Info.ID)
-				break
-			}
-
-			status := "received"
-			if v.Info.IsFromMe {
-				status = "sent"
-			}
-			log.Printf("[wa] Event: message id=%s chat=%s sender=%s text=%q media=%s isFromMe=%v",
-				v.Info.ID, v.Info.Chat, v.Info.Sender, text, mediaType, v.Info.IsFromMe)
 
 			chatJID := v.Info.Chat.String()
 			placeholder := Chat{
@@ -118,23 +90,9 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			}
 			if err := wa.store.UpsertChat(placeholder); err != nil {
 				log.Printf("[wa] Failed to upsert placeholder chat %s: %v", chatJID, err)
+				break
 			}
-
-			ourMsg := Message{
-				ID:        v.Info.ID,
-				ChatJID:   chatJID,
-				SenderID:  v.Info.Sender.String(),
-				Text:      text,
-				Timestamp: v.Info.Timestamp.Format(time.RFC3339),
-				Status:    status,
-				MediaType: mediaType,
-				IsFromMe:  v.Info.IsFromMe,
-			}
-			if err := wa.store.InsertMessage(ourMsg); err != nil {
-				log.Printf("[wa] Failed to store message %s: %v", v.Info.ID, err)
-			} else {
-				log.Printf("[wa] Stored message %s in chat %s", v.Info.ID, chatJID)
-			}
+			wa.storeMessageEvent(v, "live")
 		case *events.Receipt:
 			log.Printf("[wa] Event: receipt type=%s ids=%v chat=%s sender=%s", v.Type, v.MessageIDs, v.Chat, v.Sender)
 			if len(v.MessageIDs) > 0 && wa.store != nil {
@@ -195,54 +153,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 						log.Printf("[wa] skipped nil parsed history message in %s", chatJID)
 						continue
 					}
-
-					text := evt.Message.GetConversation()
-
-					if text == "" {
-						if ext := evt.Message.GetExtendedTextMessage(); ext != nil {
-							text = ext.GetText()
-						}
-					}
-					mediaType := ""
-					if evt.Message.GetImageMessage() != nil {
-						mediaType = "image"
-					} else if evt.Message.GetVideoMessage() != nil {
-						mediaType = "video"
-					} else if evt.Message.GetAudioMessage() != nil {
-						mediaType = "audio"
-					} else if evt.Message.GetDocumentMessage() != nil {
-						mediaType = "document"
-					}
-					if text == "" && mediaType == "" {
-						log.Printf("[wa] Skipping message %s: empty text, no media (reaction/receipt)", evt.Info.ID)
-						continue
-					}
-
-					status := "received"
-
-					if evt.Info.IsFromMe {
-						status = "sent"
-					}
-					log.Printf("[wa] Event: message id = %s chat = %s sender = %s text = %q media = %s isFromMe = %v ",
-						evt.Info.ID, evt.Info.Chat, evt.Info.Sender, text, mediaType, evt.Info.IsFromMe)
-
-					chatJID := evt.Info.Chat.String()
-
-					ourMsg := Message{
-						ID:        evt.Info.ID,
-						ChatJID:   chatJID,
-						SenderID:  evt.Info.Sender.String(),
-						Text:      text,
-						Timestamp: evt.Info.Timestamp.Format(time.RFC3339),
-						Status:    status,
-						MediaType: mediaType,
-						IsFromMe:  evt.Info.IsFromMe,
-					}
-					if err := wa.store.InsertMessage(ourMsg); err != nil {
-						log.Printf("[wa] Failed to store message %s: %v", evt.Info.ID, err)
-					} else {
-						log.Printf("[wa] Stored message %s in chat %s", evt.Info.ID, chatJID)
-					}
+					wa.storeMessageEvent(evt, "history")
 				}
 			}
 		case *events.PushName:
@@ -265,6 +176,60 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 	})
 
 	return wa, nil
+}
+
+// / Stores a parsed Message event and stores it. The caller is responsible for upserting the chat before calling.
+func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool {
+
+	text := evt.Message.GetConversation()
+
+	if text == "" {
+		if ext := evt.Message.GetExtendedTextMessage(); ext != nil {
+			text = ext.GetText()
+		}
+	}
+	mediaType := ""
+	if evt.Message.GetImageMessage() != nil {
+		mediaType = "image"
+	} else if evt.Message.GetVideoMessage() != nil {
+		mediaType = "video"
+	} else if evt.Message.GetAudioMessage() != nil {
+		mediaType = "audio"
+	} else if evt.Message.GetDocumentMessage() != nil {
+		mediaType = "document"
+	}
+	if text == "" && mediaType == "" {
+		log.Printf("[wa] Skipping message %s: empty text, no media (reaction/receipt)", evt.Info.ID)
+		return false
+	}
+
+	status := "received"
+
+	if evt.Info.IsFromMe {
+		status = "sent"
+	}
+	log.Printf("[wa] Event: message id = %s chat = %s sender = %s text = %q media = %s isFromMe = %v ",
+		evt.Info.ID, evt.Info.Chat, evt.Info.Sender, text, mediaType, evt.Info.IsFromMe)
+
+	chatJID := evt.Info.Chat.String()
+
+	ourMsg := Message{
+		ID:        evt.Info.ID,
+		ChatJID:   chatJID,
+		SenderID:  evt.Info.Sender.String(),
+		Text:      text,
+		Timestamp: evt.Info.Timestamp.Format(time.RFC3339),
+		Status:    status,
+		MediaType: mediaType,
+		IsFromMe:  evt.Info.IsFromMe,
+	}
+	if err := wa.store.InsertMessage(ourMsg); err != nil {
+		log.Printf("[wa] Failed to store message %s: %v", evt.Info.ID, err)
+		return false
+	}
+	log.Printf("[wa] Stored message %s in chat %s", evt.Info.ID, chatJID)
+	return true
+
 }
 
 func (wa *WAManager) StartPairing() {

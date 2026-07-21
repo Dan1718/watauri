@@ -259,6 +259,28 @@ func (s *UserDataStore) UpsertChat(chat Chat) error {
 	return err
 }
 
+func (s *UserDataStore) UpsertChatParticipant(chatJID, userJID string, rank int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	start := time.Now()
+	_, err := s.db.Exec(
+		`INSERT INTO chat_participants (chat_jid, user_jid, rank, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(chat_jid, user_jid) DO UPDATE SET
+			rank = excluded.rank,
+			updated_at = excluded.updated_at`,
+		chatJID, userJID, rank, start.Format(time.RFC3339),
+	)
+	if err != nil {
+		log.Printf("[store] UpsertChatParticipant(%s -> %s) error: %v (%v)", userJID, chatJID, err, time.Since(start))
+		return err
+	}
+
+	log.Printf("[store] UpsertChatParticipant(%s -> %s) OK (%v)", userJID, chatJID, time.Since(start))
+	return nil
+}
+
 func (s *UserDataStore) GetChats() ([]Chat, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -12,6 +12,7 @@ import { useContacts } from "@/app/hooks/use-contacts";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
 import { formatTime, getDisplayNameFromJid } from "@/app/utils";
 import MessageStatusIcon from "../message-status-icon";
+import { useProfile } from "@/app/hooks/use-profile";
 
 export default function Chats({ selectedTab }: { selectedTab: string }) {
   const { openNewChatWindow } = useNewChat();
@@ -24,6 +25,7 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
   } = useChats();
   const { getContact } = useContacts();
   const { loadCurrentChat, contact, chatId } = useCurrentChat();
+  const { profile: { blueTickEnabled } } = useProfile();
 
   const getMetaMessage = (
     chat: Chat,
@@ -74,7 +76,15 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
             {name}
           </p>
           <div className="flex justify-start items-center gap-1 w-full">
-            {lastMessage && <MessageStatusIcon message={lastMessage} />}
+            {lastMessage && (
+              <MessageStatusIcon
+                isSentFromUser={lastMessage.isSentFromUser}
+                read={lastMessage.read}
+                delivered={lastMessage.delivered}
+                sent={lastMessage.sent}
+                blueTickEnabled={blueTickEnabled}
+              />
+            )}
             {lastMessage && contact?.typing && contact.id === lastMessage.contactId ? (
               <p className="text-emerald-500 text-sm">
                 {getMetaMessage(chat, lastMessage)}

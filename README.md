@@ -49,19 +49,19 @@ None yet.
 
 ## Tech Stack 
 
-Desktop: Tauri 
-Frontend: Next.js, React 
-Backend: Go 
-Database: SQLite 
-Whatsapp Client: whatsmeow 
-Package manager: bun 
+Desktop: Tauri   
+Frontend: Next.js, React   
+Backend: Go   
+Database: SQLite   
+Whatsapp Client: whatsmeow   
+Package manager: bun   
 
 ## Requirements 
 
-- Go 
-- Bun
-- Rust and Cargo
-- Tauri CLI dependencies
+- Go   
+- Bun  
+- Rust and Cargo  
+- Tauri CLI dependencies  
 
 ## Getting started 
 

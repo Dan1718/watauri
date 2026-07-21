@@ -177,8 +177,8 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			messagesStored := 0
 			messagesSkipped := 0
 
-			log.Printf("[wa] Event: historySync type=%v chunk=%d progress=%d conversations=%d statusMessages=%d pushnames=%d inlineContacts=%d",
-				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, len(data.GetStatusV3Messages()), pushnamesStored, inlineContactsStored)
+			log.Printf("[wa] Event: historySync type=%v chunk=%d progress=%d conversations=%d statusMessages=%d pushnames=%d/%d inlineContacts=%d/%d",
+				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, len(data.GetStatusV3Messages()), pushnamesStored, len(data.GetPushnames()), inlineContactsStored, len(data.GetInlineContacts()))
 
 			for _, conv := range data.GetConversations() {
 				chatJID, err := types.ParseJID(conv.GetID())

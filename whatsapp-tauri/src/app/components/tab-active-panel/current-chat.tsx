@@ -7,7 +7,7 @@ import ChatMessage from "./chat-message";
 import MessageReactions from "./message-reactions";
 
 export default function CurrentChat() {
-  const { chatId, messages, isLoading, error, isSending, sendMessage } = useCurrentChat();
+  const { chatId, group, messages, isLoading, error, isSending, sendMessage } = useCurrentChat();
   const [messageText, setMessageText] = useState("");
 
   if (!chatId) {
@@ -44,12 +44,15 @@ export default function CurrentChat() {
   };
 
   return (
-    <section className="w-full h-full flex flex-col">
+    <section className="w-full h-full min-h-0 flex flex-col">
       <ContactHeader />
-      <div className="h-[100%] w-full flex flex-col justify-end items-center relative">
+      <div className="min-h-0 w-full flex flex-1 flex-col justify-end items-center relative">
         <div className="absolute background-custom h-full w-full"></div>
 
-        <section className="p-4 pb-0 w-full max-h-[710px] flex flex-col justify-end items-center relative overflow-y-scroll">
+        <section
+          className="p-4 pb-0 w-full min-h-0 flex flex-1 flex-col items-center relative overflow-y-auto"
+          style={{ justifyContent: "safe flex-end" }}
+        >
           <div className="w-full flex justify-center items-center">
             <div className="rounded-full overflow-hidden bg-black z-20 w-fit">
               <p className="bg-white/20 text-white/55 h-full w-full text-xs p-1 px-2">
@@ -67,7 +70,9 @@ export default function CurrentChat() {
               key={index}
             >
               <div
-                className={`flex justify-between gap-2 items-center ${getMessageSpacing(
+                className={`flex min-w-0 gap-2 items-center ${
+                  group ? "w-[60%]" : "max-w-full"
+                } ${message.isSentFromUser ? "justify-end" : "justify-start"} ${getMessageSpacing(
                   index,
                   message.reactions?.length
                 )} relative`}

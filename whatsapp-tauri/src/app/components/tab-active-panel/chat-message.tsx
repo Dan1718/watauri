@@ -25,11 +25,11 @@ export default function ChatMessage({ message }: { message: Message }) {
 
   if (group) {
     return (
-      <div className="flex justify-between items-start gap-2 w-max ">
+      <div className="flex max-w-full min-w-0 justify-between items-start gap-2">
         {!message.isSentFromUser && (
           <Profile url={getContact(message.contactId)?.contactAvatar} />
         )}
-        <div className="rounded-lg overflow-hidden bg-black z-20">
+        <div className="min-w-0 rounded-lg overflow-hidden bg-black z-20">
           <div
             className={`flex flex-col justify-center items-start px-2 p-1.5 gap-1 ${
               message.isSentFromUser ? "bg-emerald-900" : "bg-white/20"
@@ -40,9 +40,9 @@ export default function ChatMessage({ message }: { message: Message }) {
                 {group.contacts[message.contactId]?.displayName}
               </p>
             )}
-            <div className="flex justify-between items-end gap-2">
-              <p className="text-white text-sm">{message.message}</p>
-              <p className="text-white/80 text-xs">
+            <div className="flex max-w-full min-w-0 justify-between items-end gap-2">
+              <p className="min-w-0 whitespace-pre-wrap break-words text-white text-sm">{message.message}</p>
+              <p className="shrink-0 text-white/80 text-xs">
                 {formatTime(message.timestamp)}
               </p>
               {message.isSentFromUser && (
@@ -55,14 +55,14 @@ export default function ChatMessage({ message }: { message: Message }) {
     );
   }
   return (
-    <div className="rounded-lg bg-black z-10 overflow-hidden w-max">
+    <div className="max-w-full min-w-0 rounded-lg bg-black z-10 overflow-hidden">
       <div
         className={`flex justify-between items-end px-2 p-1.5 gap-2 ${
           message.isSentFromUser ? "bg-emerald-900" : "bg-white/20"
         }`}
       >
-        <p className="text-white text-sm">{message.message}</p>
-        <p className="text-white/80 text-xs">{formatTime(message.timestamp)}</p>
+        <p className="min-w-0 whitespace-pre-wrap break-words text-white text-sm">{message.message}</p>
+        <p className="shrink-0 text-white/80 text-xs">{formatTime(message.timestamp)}</p>
         {message.isSentFromUser && (
           <MessageStatusIcon message={message} isInMessage />
         )}

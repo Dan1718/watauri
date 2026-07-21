@@ -364,7 +364,7 @@ func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message
 		IsFromMe:  true,
 	}
 	if err := wa.store.InsertMessage(message); err != nil {
-		return Message{}, err
+		log.Printf("[wa] Failed to store sent message %s: %v", message.ID, err)
 	}
 	return message, nil
 }

@@ -125,5 +125,6 @@ Contributions are welcome. I know that it's not properly organized yet, but I pl
 
 ## Disclaimer. 
 
+There is a fair bit of AI generated code and documentation. 
 This project is not affiliated with WhatsApp, Meta, or any official WhatsApp product.
 It uses WhatsApp Web behavior through whatsmeow. Use at your own risk.

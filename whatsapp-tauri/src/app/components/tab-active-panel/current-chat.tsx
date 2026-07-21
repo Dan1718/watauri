@@ -1,4 +1,5 @@
 import { FormEvent, memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import dayjs from "dayjs";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Message } from "@/app/context/chats-provider";
 import { CurrentChatContacts } from "@/app/context/current-chat-provider";
@@ -12,17 +13,36 @@ import MessageReactions from "./message-reactions";
 
 const INITIAL_ITEM_INDEX = 1_000_000;
 
-function MessageListHeader() {
+function messageDay(timestamp: Message["timestamp"]) {
+  return typeof timestamp === "number" ? dayjs.unix(timestamp) : dayjs(timestamp);
+}
+
+function isSameMessageDay(a: Message["timestamp"], b: Message["timestamp"]) {
+  return messageDay(a).format("YYYY-MM-DD") === messageDay(b).format("YYYY-MM-DD");
+}
+
+function formatMessageDay(timestamp: Message["timestamp"]) {
+  const date = messageDay(timestamp);
+  const daysAgo = dayjs().startOf("day").diff(date.startOf("day"), "day");
+
+  if (daysAgo === 0) return "Today";
+  if (daysAgo === 1) return "Yesterday";
+  if (daysAgo > 1 && daysAgo < 7) return date.format("dddd");
+  return date.format("ddd, MMM D");
+}
+
+function DatePill({ timestamp, floating = false }: {
+  timestamp: Message["timestamp"];
+  floating?: boolean;
+}) {
   return (
-    <div className="flex w-full justify-center px-4 pb-4 pt-4">
-      <p className="rounded-full bg-[#202c33] px-2 py-1 text-xs text-white/55">
-        Today
+    <div className={floating ? undefined : "flex w-full justify-center px-4 py-3"}>
+      <p className="rounded-full border border-white/10 bg-[#182229]/95 px-2.5 py-1 text-[11px] font-medium text-white/60 shadow-sm backdrop-blur-sm">
+        {formatMessageDay(timestamp)}
       </p>
     </div>
   );
 }
-
-const virtuosoComponents = { Header: MessageListHeader };
 
 type MessageRowProps = {
   message: Message;
@@ -121,6 +141,8 @@ const MessageList = memo(function MessageList({
   scrollToBottomRequest: number;
 }) {
   const [activeReactionId, setActiveReactionId] = useState<string | null>(null);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const [visibleTimestamp, setVisibleTimestamp] = useState<Message["timestamp"] | null>(null);
   const messageIndexes = useMemo(
     () => new Map(messages.map((message, index) => [message.id, index])),
     [messages]
@@ -164,6 +186,14 @@ const MessageList = memo(function MessageList({
           Loading...
         </div>
       ) : null}
+      <div
+        aria-hidden="true"
+        className={`pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 transition-opacity duration-200 ${
+          isScrolling && visibleTimestamp !== null ? "opacity-100" : "opacity-0 delay-1000"
+        }`}
+      >
+        {visibleTimestamp !== null ? <DatePill timestamp={visibleTimestamp} floating /> : null}
+      </div>
       <Virtuoso
         ref={virtuosoRef}
         key={chatId}
@@ -173,9 +203,13 @@ const MessageList = memo(function MessageList({
         initialTopMostItemIndex={Math.max(0, messages.length - 1)}
         alignToBottom
         followOutput={(isAtBottom) => isAtBottom ? "auto" : false}
-        increaseViewportBy={{ top: 400, bottom: 200 }}
-        components={virtuosoComponents}
+        increaseViewportBy={{ top: 0, bottom: 200 }}
         computeItemKey={(_index, message) => message.id}
+        isScrolling={setIsScrolling}
+        rangeChanged={({ startIndex }) => {
+          const message = messages[startIndex - firstItemIndex];
+          if (message) setVisibleTimestamp(message.timestamp);
+        }}
         startReached={() => {
           if (hasMoreMessages && !isLoading) void loadOlderMessages();
         }}
@@ -183,25 +217,30 @@ const MessageList = memo(function MessageList({
           const index = messageIndexes.get(message.id)!;
           const previous = messages[index - 1];
           const next = messages[index + 1];
+          const startsNewDay = !previous || !isSameMessageDay(previous.timestamp, message.timestamp);
+          const endsDay = !next || !isSameMessageDay(message.timestamp, next.timestamp);
           const repeatedIncomingSender = isGroup && !message.isSentFromUser &&
-            !previous?.isSentFromUser && previous?.contactId === message.contactId;
+            !startsNewDay && !previous?.isSentFromUser && previous?.contactId === message.contactId;
           const compact = next?.isSentFromUser === message.isSentFromUser &&
-            next?.contactId === message.contactId;
+            next?.contactId === message.contactId && !endsDay;
           const contact = contacts?.[message.contactId];
 
           return (
-            <MessageRow
-              message={message}
-              isGroup={isGroup}
-              senderName={contact?.displayName ?? getDisplayNameFromJid(message.contactId)}
-              senderAvatar={contact?.contactAvatar}
-              showSender={!repeatedIncomingSender}
-              compact={compact}
-              isLast={index === messages.length - 1}
-              blueTickEnabled={blueTickEnabled}
-              reactionMenuOpen={activeReactionId === message.id}
-              onToggleReactionMenu={toggleReactionMenu}
-            />
+            <>
+              {startsNewDay ? <DatePill timestamp={message.timestamp} /> : null}
+              <MessageRow
+                message={message}
+                isGroup={isGroup}
+                senderName={contact?.displayName ?? getDisplayNameFromJid(message.contactId)}
+                senderAvatar={contact?.contactAvatar}
+                showSender={!repeatedIncomingSender}
+                compact={compact}
+                isLast={index === messages.length - 1}
+                blueTickEnabled={blueTickEnabled}
+                reactionMenuOpen={activeReactionId === message.id}
+                onToggleReactionMenu={toggleReactionMenu}
+              />
+            </>
           );
         }}
       />

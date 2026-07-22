@@ -4,14 +4,16 @@ import { useProfile } from "@/app/hooks/use-profile";
 import Profile from "../profile";
 import {
   CaretDownIcon,
-  DotsThreeVerticalIcon,
-  MagnifyingGlassIcon,
+  InfoIcon,
   UsersThreeIcon,
   VideoCameraIcon,
 } from "@phosphor-icons/react";
 import TooltipWrapper from "../tooltip-wrapper";
 
-export default function ContactHeader() {
+export default function ContactHeader({ infoOpen, onToggleInfo }: {
+  infoOpen: boolean;
+  onToggleInfo: () => void;
+}) {
   const {
     profile: { id },
   } = useProfile();
@@ -34,12 +36,17 @@ export default function ContactHeader() {
             <CaretDownIcon className="text-white size-5" weight="bold" />
           </div>
         </TooltipWrapper>
-        <TooltipWrapper showTooltip={false}>
-          <MagnifyingGlassIcon className="text-white size-5" weight="bold" />
-        </TooltipWrapper>
-        <TooltipWrapper showTooltip={false}>
-          <DotsThreeVerticalIcon className="text-white size-5" weight="bold" />
-        </TooltipWrapper>
+        {!group ? (
+          <button
+            aria-label={infoOpen ? "Close contact info" : "Open contact info"}
+            aria-pressed={infoOpen}
+            className={`flex p-2 transition-colors focus-visible:outline-2 focus-visible:outline-emerald-400 ${infoOpen ? "text-emerald-400" : "text-white hover:text-white/70"}`}
+            onClick={onToggleInfo}
+            type="button"
+          >
+            <InfoIcon className="size-5" weight="bold" />
+          </button>
+        ) : null}
       </section>
     );
   };

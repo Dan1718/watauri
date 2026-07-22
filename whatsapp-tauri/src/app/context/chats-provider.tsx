@@ -33,6 +33,7 @@ export type Message = {
   sent?: boolean;
   delivered?: boolean;
   reactions?: ReactionType[];
+  mediaType?: string;
 };
 
 export type Chat = {
@@ -80,13 +81,15 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
     sent: true,
     delivered: message.status === "delivered" || message.status === "read",
     read: message.status === "read",
+    mediaType: message.mediaType,
   };
 }
 
 function sameMessage(a: Message, b: Message) {
   return a.id === b.id && a.contactId === b.contactId && a.message === b.message &&
     a.timestamp === b.timestamp && a.isSentFromUser === b.isSentFromUser &&
-    a.read === b.read && a.sent === b.sent && a.delivered === b.delivered;
+    a.read === b.read && a.sent === b.sent && a.delivered === b.delivered &&
+    a.mediaType === b.mediaType;
 }
 
 function sameChat(a: Chat, b: Chat) {

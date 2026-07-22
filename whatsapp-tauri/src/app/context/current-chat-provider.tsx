@@ -59,6 +59,7 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
     sent: true,
     delivered: message.status === "delivered" || message.status === "read",
     read: message.status === "read",
+    mediaType: message.mediaType,
   };
 }
 
@@ -66,6 +67,7 @@ function sameMessage(a: Message, b: Message) {
   return a.id === b.id && a.contactId === b.contactId && a.message === b.message &&
     a.timestamp === b.timestamp && a.isSentFromUser === b.isSentFromUser &&
     a.read === b.read && a.sent === b.sent && a.delivered === b.delivered &&
+    a.mediaType === b.mediaType &&
     (a.reactions === b.reactions || Boolean(a.reactions && b.reactions &&
       a.reactions.length === b.reactions.length && a.reactions.every((reaction, index) =>
         reaction.emoji === b.reactions![index].emoji && reaction.count === b.reactions![index].count)));

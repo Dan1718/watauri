@@ -8,6 +8,7 @@ import { useCurrentChat } from "@/app/hooks/use-current-chat";
 import { useProfile } from "@/app/hooks/use-profile";
 import { getDisplayNameFromJid } from "@/app/utils";
 import Reaction from "../message/reaction";
+import ChatInfoPanel from "./chat-info-panel";
 import ContactHeader from "./contact-header";
 import ChatMessage from "./chat-message";
 import MessageReactions from "./message-reactions";
@@ -334,8 +335,10 @@ function Composer({
 
 export default function CurrentChat() {
   const [scrollToBottomRequest, setScrollToBottomRequest] = useState(0);
+  const [infoOpen, setInfoOpen] = useState(false);
   const {
     chatId,
+    contact,
     group,
     messages,
     isLoading,
@@ -346,8 +349,7 @@ export default function CurrentChat() {
     sendMessage,
     loadOlderMessages,
   } = useCurrentChat();
-  const { profile: { blueTickEnabled } } = useProfile();
-
+  const { profile: { blueTickEnabled, id: userId } } = useProfile();
   if (!chatId) {
     return (
       <section className="flex h-full w-full items-center justify-center text-white">
@@ -357,31 +359,44 @@ export default function CurrentChat() {
   }
 
   return (
-    <section className="flex h-full min-h-0 w-full flex-col">
-      <ContactHeader />
-      <div
-        className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-end bg-[#161717] bg-[url('/background.webp')] bg-repeat"
-      >
-        <MessageList
+    <section className="flex h-full min-h-0 w-full overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <ContactHeader
+          infoOpen={infoOpen}
+          onToggleInfo={() => setInfoOpen((open) => !open)}
+        />
+        <div className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-end bg-[#161717] bg-[url('/background.webp')] bg-repeat">
+          <MessageList
+            key={chatId}
+            chatId={chatId}
+            messages={messages}
+            contacts={group?.contacts}
+            isGroup={Boolean(group)}
+            blueTickEnabled={blueTickEnabled}
+            isLoading={isLoading}
+            error={error}
+            hasMoreMessages={hasMoreMessages}
+            loadOlderMessages={loadOlderMessages}
+            unreadCount={unreadCount}
+            scrollToBottomRequest={scrollToBottomRequest}
+          />
+          <Composer
+            isSending={isSending}
+            sendMessage={sendMessage}
+            onSent={() => setScrollToBottomRequest((request) => request + 1)}
+          />
+        </div>
+      </div>
+      {infoOpen ? (
+        <ChatInfoPanel
           key={chatId}
           chatId={chatId}
+          contact={contact}
+          group={group}
           messages={messages}
-          contacts={group?.contacts}
-          isGroup={Boolean(group)}
-          blueTickEnabled={blueTickEnabled}
-          isLoading={isLoading}
-          error={error}
-          hasMoreMessages={hasMoreMessages}
-          loadOlderMessages={loadOlderMessages}
-          unreadCount={unreadCount}
-          scrollToBottomRequest={scrollToBottomRequest}
+          userId={userId}
         />
-        <Composer
-          isSending={isSending}
-          sendMessage={sendMessage}
-          onSent={() => setScrollToBottomRequest((request) => request + 1)}
-        />
-      </div>
+      ) : null}
     </section>
   );
 }

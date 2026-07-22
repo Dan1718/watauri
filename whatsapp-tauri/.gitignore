@@ -11,7 +11,7 @@ node_modules
 dist
 dist-ssr
 .next
-.next-build
+.next-*
 out
 next-env.d.ts
 *.tsbuildinfo

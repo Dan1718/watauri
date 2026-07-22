@@ -9,6 +9,7 @@ const sizes = {
   10: ["w-10 h-10", 40],
   11: ["w-11 h-11", 44],
   12: ["w-12 h-12", 48],
+  24: ["w-24 h-24", 96],
 } as const;
 
 function thumbnailUrl(url: string, width: number) {

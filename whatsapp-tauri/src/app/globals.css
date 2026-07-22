@@ -16,6 +16,12 @@ body {
   background: #0b141a;
 }
 
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  font-size: 22px;
+  line-height: 1;
+}
+
 * {
   scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
   scrollbar-width: thin;

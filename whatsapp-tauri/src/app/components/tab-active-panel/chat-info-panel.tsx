@@ -244,7 +244,7 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
           />
         </section>
 
-        {!group ? (
+        {!group && commonGroups.length > 0 ? (
           <section className="pb-3">
             <h3 className="mb-2 text-sm font-medium text-white/70">{commonGroups.length} {commonGroups.length === 1 ? "group" : "groups"} in common</h3>
             <div>

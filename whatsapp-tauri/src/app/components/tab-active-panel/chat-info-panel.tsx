@@ -1,6 +1,7 @@
-import { Message } from "@/app/context/chats-provider";
+import { Chat, Message } from "@/app/context/chats-provider";
 import { Contact } from "@/app/context/contacts-provider";
 import { CurrentChatContactsGroup } from "@/app/context/current-chat-provider";
+import { useChats } from "@/app/hooks/use-chats";
 import { getDisplayNameFromJid } from "@/app/utils";
 import { useEffect, useRef, useState } from "react";
 import Profile from "../profile";
@@ -16,6 +17,37 @@ const mediaFilters = [
 
 function Icon({ children }: { children: string }) {
   return <span aria-hidden="true" className="material-symbols-outlined">{children}</span>;
+}
+
+function latestMessageTime(chat: Chat) {
+  const timestamp = chat.messages.at(-1)?.timestamp;
+  if (typeof timestamp === "number") return timestamp;
+  return timestamp ? Date.parse(timestamp) || 0 : 0;
+}
+
+function orderGroups(groups: Chat[], limit = groups.length) {
+  if (limit >= groups.length) {
+    return [...groups].sort((a, b) => latestMessageTime(b) - latestMessageTime(a));
+  }
+  const ordered: Chat[] = [];
+  for (const group of groups) {
+    const time = latestMessageTime(group);
+    const index = ordered.findIndex((item) => latestMessageTime(item) < time);
+    ordered.splice(index < 0 ? ordered.length : index, 0, group);
+    if (ordered.length > limit) ordered.pop();
+  }
+  return ordered;
+}
+
+function GroupRow({ chat }: { chat: Chat }) {
+  return (
+    <div className="flex items-center gap-3 px-1 py-2.5">
+      <Profile size="11" url={chat.groupAvatar}>
+        {!chat.groupAvatar ? <div className="flex h-full w-full items-center justify-center bg-white/10"><Icon>group</Icon></div> : undefined}
+      </Profile>
+      <span className="min-w-0 flex-1 truncate text-sm text-white/85">{chat.groupName ?? getDisplayNameFromJid(chat.id)}</span>
+    </div>
+  );
 }
 
 export default function ChatInfoPanel({ chatId, contact, group, messages, userId }: {
@@ -35,6 +67,17 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
   const [notes, setNotes] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
   const [showAllMembers, setShowAllMembers] = useState(false);
+  const [commonGroupsOpen, setCommonGroupsOpen] = useState(false);
+  const [commonGroupSearch, setCommonGroupSearch] = useState("");
+  const { chats: { complete } } = useChats();
+  const [{ all: commonGroups, preview: commonGroupPreview }] = useState(() => {
+    const directContactId = complete.find((chat) => chat.id === chatId && !chat.group)?.contactId;
+    const all = typeof directContactId === "string"
+      ? complete.filter((chat) => chat.group && Array.isArray(chat.contactId) && chat.contactId.includes(directContactId))
+      : [];
+    return { all, preview: orderGroups(all, 5) };
+  });
+  const [orderedCommonGroups, setOrderedCommonGroups] = useState<Chat[] | null>(null);
   const mediaRef = useRef<HTMLElement>(null);
   const members = group ? Object.entries(group.contacts) : [];
   const matchingMembers = members.filter(([id, member]) =>
@@ -68,8 +111,17 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
     if (showAll) requestAnimationFrame(() => mediaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
   };
 
+  const openCommonGroups = () => {
+    setOrderedCommonGroups(orderGroups(commonGroups));
+    setCommonGroupsOpen(true);
+  };
+
+  const visibleCommonGroups = (orderedCommonGroups ?? []).filter((chat) =>
+    (chat.groupName ?? getDisplayNameFromJid(chat.id)).toLowerCase().includes(commonGroupSearch.toLowerCase())
+  );
+
   return (
-    <aside aria-label={group ? "Group info" : "Contact info"} className="flex h-full w-[min(366px,40%)] min-w-72 shrink-0 flex-col border-l border-white/10 bg-[#111b21] text-white">
+    <aside aria-label={group ? "Group info" : "Contact info"} className="relative flex h-full w-[min(366px,40%)] min-w-72 shrink-0 flex-col overflow-hidden border-l border-white/10 bg-[#111b21] text-white">
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
         <section className="relative flex flex-col items-center pb-3 pt-8 text-center">
           {group ? <button className="absolute right-0 top-5 rounded px-1 text-sm font-medium text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button">Edit</button> : null}
@@ -191,6 +243,20 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
             value={notes}
           />
         </section>
+
+        {!group ? (
+          <section className="pb-3">
+            <h3 className="mb-2 text-sm font-medium text-white/70">{commonGroups.length} {commonGroups.length === 1 ? "group" : "groups"} in common</h3>
+            <div>
+              {commonGroupPreview.map((chat) => <GroupRow chat={chat} key={chat.id} />)}
+            </div>
+            {commonGroups.length > 5 ? (
+              <button className="flex w-full items-center justify-between rounded-lg px-1 py-2 text-sm text-white/70 hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={openCommonGroups} type="button">
+                <span>Show more</span><Icon>chevron_right</Icon>
+              </button>
+            ) : null}
+          </section>
+        ) : null}
       </div>
 
       <nav aria-label="Chat actions" className="relative grid shrink-0 grid-cols-4 bg-[#0b141a] px-2 py-2">
@@ -210,6 +276,28 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
           </div>
         ) : null}
       </nav>
+
+      <section
+        aria-hidden={!commonGroupsOpen}
+        aria-label="Groups in common"
+        className={`absolute inset-0 z-40 flex flex-col bg-[#111b21] transition-transform duration-300 ease-out motion-reduce:transition-none ${commonGroupsOpen ? "translate-x-0" : "translate-x-full pointer-events-none"}`}
+        inert={!commonGroupsOpen}
+      >
+        <header className="flex shrink-0 items-center gap-3 border-b border-white/10 px-4 py-4">
+          <button aria-label="Back to contact info" className="flex size-9 items-center justify-center rounded-full text-white/75 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setCommonGroupsOpen(false)} type="button"><Icon>arrow_back</Icon></button>
+          <h2 className="text-base font-semibold">Groups in common</h2>
+        </header>
+        <div className="shrink-0 px-4 pb-3 pt-4">
+          <label className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2.5 text-white/50 focus-within:ring-1 focus-within:ring-emerald-400/70">
+            <Icon>search</Icon>
+            <input aria-label="Search groups in common" className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40" onChange={(event) => setCommonGroupSearch(event.target.value)} placeholder="Search groups" type="search" value={commonGroupSearch} />
+          </label>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+          {visibleCommonGroups.map((chat) => <GroupRow chat={chat} key={chat.id} />)}
+          {visibleCommonGroups.length === 0 ? <p className="py-10 text-center text-sm text-white/40">No groups found</p> : null}
+        </div>
+      </section>
     </aside>
   );
 }

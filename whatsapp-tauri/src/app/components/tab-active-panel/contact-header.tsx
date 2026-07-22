@@ -36,17 +36,15 @@ export default function ContactHeader({ infoOpen, onToggleInfo }: {
             <CaretDownIcon className="text-white size-5" weight="bold" />
           </div>
         </TooltipWrapper>
-        {!group ? (
-          <button
-            aria-label={infoOpen ? "Close contact info" : "Open contact info"}
-            aria-pressed={infoOpen}
-            className={`flex p-2 transition-colors focus-visible:outline-2 focus-visible:outline-emerald-400 ${infoOpen ? "text-emerald-400" : "text-white hover:text-white/70"}`}
-            onClick={onToggleInfo}
-            type="button"
-          >
-            <InfoIcon className="size-5" weight="bold" />
-          </button>
-        ) : null}
+        <button
+          aria-label={infoOpen ? `Close ${group ? "group" : "contact"} info` : `Open ${group ? "group" : "contact"} info`}
+          aria-pressed={infoOpen}
+          className={`flex p-2 transition-colors focus-visible:outline-2 focus-visible:outline-emerald-400 ${infoOpen ? "text-emerald-400" : "text-white hover:text-white/70"}`}
+          onClick={onToggleInfo}
+          type="button"
+        >
+          <InfoIcon className="size-5" weight="bold" />
+        </button>
       </section>
     );
   };

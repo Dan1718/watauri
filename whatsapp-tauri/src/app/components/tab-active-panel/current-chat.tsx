@@ -260,8 +260,8 @@ export default function CurrentChat() {
     sendMessage,
     loadOlderMessages,
   } = useCurrentChat();
-  const { profile: { blueTickEnabled } } = useProfile();
-  const infoOpen = !group && infoChatId === chatId;
+  const { profile: { blueTickEnabled, id: userId } } = useProfile();
+  const infoOpen = infoChatId === chatId;
 
   if (!chatId) {
     return (
@@ -301,9 +301,12 @@ export default function CurrentChat() {
       </div>
       {infoOpen ? (
         <ChatInfoPanel
+          key={chatId}
           chatId={chatId}
           contact={contact}
+          group={group}
           messages={messages}
+          userId={userId}
         />
       ) : null}
     </section>

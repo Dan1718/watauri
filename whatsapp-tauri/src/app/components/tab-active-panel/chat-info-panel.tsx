@@ -1,5 +1,7 @@
 import { Message } from "@/app/context/chats-provider";
 import { Contact } from "@/app/context/contacts-provider";
+import { CurrentChatContactsGroup } from "@/app/context/current-chat-provider";
+import { getDisplayNameFromJid } from "@/app/utils";
 import { useEffect, useRef, useState } from "react";
 import Profile from "../profile";
 
@@ -16,10 +18,12 @@ function Icon({ children }: { children: string }) {
   return <span aria-hidden="true" className="material-symbols-outlined">{children}</span>;
 }
 
-export default function ChatInfoPanel({ chatId, contact, messages }: {
+export default function ChatInfoPanel({ chatId, contact, group, messages, userId }: {
   chatId: string;
   contact: Contact | null;
+  group: CurrentChatContactsGroup | null;
   messages: Message[];
+  userId: string;
 }) {
   const [muted, setMuted] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -29,7 +33,16 @@ export default function ChatInfoPanel({ chatId, contact, messages }: {
   const [durationOpen, setDurationOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [notes, setNotes] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
+  const [showAllMembers, setShowAllMembers] = useState(false);
   const mediaRef = useRef<HTMLElement>(null);
+  const members = group ? Object.entries(group.contacts) : [];
+  const matchingMembers = members.filter(([id, member]) =>
+    (id === userId ? "You" : member?.displayName ?? getDisplayNameFromJid(id))
+      .toLowerCase()
+      .includes(memberSearch.toLowerCase())
+  );
+  const visibleMembers = memberSearch || showAllMembers ? matchingMembers : matchingMembers.slice(0, 5);
   const media = messages.filter((message) =>
     message.mediaType || /https?:\/\/\S+/i.test(message.message)
   );
@@ -56,11 +69,16 @@ export default function ChatInfoPanel({ chatId, contact, messages }: {
   };
 
   return (
-    <aside aria-label="Contact info" className="flex h-full w-[min(366px,40%)] min-w-72 shrink-0 flex-col border-l border-white/10 bg-[#111b21] text-white">
+    <aside aria-label={group ? "Group info" : "Contact info"} className="flex h-full w-[min(366px,40%)] min-w-72 shrink-0 flex-col border-l border-white/10 bg-[#111b21] text-white">
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
-        <section className="flex flex-col items-center pb-7 pt-8 text-center">
+        <section className="relative flex flex-col items-center pb-7 pt-8 text-center">
+          {group ? <button className="absolute right-0 top-5 rounded px-1 text-sm font-medium text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button">Edit</button> : null}
           <div className="relative mb-4 flex w-full justify-center" style={{ paddingBottom: 24 }}>
-            <div className="rounded-full ring-1 ring-white/10"><Profile size="24" url={contact?.contactAvatar} /></div>
+            <div className="rounded-full ring-1 ring-white/10">
+              <Profile size="24" url={group?.avatar || contact?.contactAvatar}>
+                {group && !group.avatar ? <div className="flex h-full w-full items-center justify-center bg-white/15"><Icon>group</Icon></div> : undefined}
+              </Profile>
+            </div>
             <button aria-label={muted ? "Unmute chat" : "Mute chat"} aria-pressed={muted} className={`${actionClass(muted)} absolute`} onClick={() => setMuted((value) => !value)} style={{ bottom: 0, left: 0 }} type="button">
               <Icon>{muted ? "notifications_off" : "notifications"}</Icon>
             </button>
@@ -68,13 +86,39 @@ export default function ChatInfoPanel({ chatId, contact, messages }: {
               <Icon>{pinned ? "keep_off" : "push_pin"}</Icon>
             </button>
           </div>
-          <h3 className="max-w-full truncate text-xl font-semibold">{contact?.displayName}</h3>
-          <p className="mt-1 text-sm text-white/50">{contact?.typing ? "typing..." : contact?.statusMessage || "Online"}</p>
+          <h3 className="max-w-full truncate text-xl font-semibold">{group?.name ?? contact?.displayName}</h3>
+          {group ? <button className="mt-1 rounded px-1 text-sm text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button">Add a description</button> : <p className="mt-1 text-sm text-white/50">{contact?.typing ? "typing..." : contact?.statusMessage || "Online"}</p>}
         </section>
+
+        {group ? (
+            <section className="py-5">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-medium text-white/70">Members</h3>
+                {members.length > 5 ? <button className="rounded px-1 text-sm font-medium text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setShowAllMembers((value) => !value)} type="button">{showAllMembers ? "Show less" : "Show all"}</button> : null}
+              </div>
+              <div className="overflow-hidden rounded-xl border border-white/10 bg-white/3">
+                <label className="flex items-center gap-2 px-3 py-2 text-white/50">
+                  <Icon>search</Icon>
+                  <input aria-label="Search group members" className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40" onChange={(event) => setMemberSearch(event.target.value)} placeholder={`Search ${members.length} group members`} type="search" value={memberSearch} />
+                </label>
+                <button className="flex w-full items-center gap-3 px-3 py-3 text-left text-sm font-medium text-white/80 hover:bg-white/8 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button"><Icon>group_add</Icon>Add members</button>
+                <div className="px-3 py-2">
+                  {visibleMembers.map(([id, member]) => (
+                    <div className="flex items-center gap-3 py-2" key={id}>
+                      <Profile size="10" url={member?.contactAvatar} />
+                      <span className="min-w-0 truncate text-sm text-white/85">{id === userId ? `${member?.displayName ?? "You"} (You)` : member?.displayName ?? getDisplayNameFromJid(id)}</span>
+                    </div>
+                  ))}
+                  {visibleMembers.length === 0 ? <p className="py-5 text-center text-sm text-white/35">{memberSearch ? "No members found" : "No member data available"}</p> : null}
+                  {showAllMembers && members.length > 5 && !memberSearch ? <button className="flex w-full items-center justify-center gap-1 rounded py-2 text-sm text-white/65 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setShowAllMembers(false)} type="button">Show less <Icon>expand_less</Icon></button> : null}
+                </div>
+              </div>
+            </section>
+        ) : null}
 
         {media.length > 0 ? (
           <section className="pb-3 pt-6" ref={mediaRef}>
-            <div className="mb-3 flex items-center justify-between" style={showAll ? { background: "#111b21", position: "sticky", top: 0, zIndex: 20 } : undefined}>
+            <div className={`mb-3 flex items-center justify-between ${showAll ? "py-3" : ""}`} style={showAll ? { background: "#111b21", position: "sticky", top: 0, zIndex: 20 } : undefined}>
               <h3 className="text-sm font-medium text-white/70">Media</h3>
               <button className="rounded px-1 text-sm font-medium text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={toggleMedia} type="button">{showAll ? "Show less" : "Show all"}</button>
             </div>
@@ -160,7 +204,7 @@ export default function ChatInfoPanel({ chatId, contact, messages }: {
         </button>
         {overflowOpen ? (
           <div className="absolute bottom-[68px] right-3 w-48 overflow-hidden rounded-xl border border-white/10 bg-[#202c33] py-1 shadow-2xl">
-            {[["block", "Block contact"], ["delete", "Delete chat"]].map(([icon, label]) => (
+            {(group ? [["logout", "Exit group"], ["delete", "Delete group"]] : [["block", "Block contact"], ["delete", "Delete chat"]]).map(([icon, label]) => (
               <button className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-red-300 hover:bg-white/8" key={label} type="button"><Icon>{icon}</Icon>{label}</button>
             ))}
           </div>

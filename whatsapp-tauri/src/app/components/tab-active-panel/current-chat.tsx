@@ -323,8 +323,8 @@ function Composer({
     <form className="z-30 h-auto w-full px-4 pb-2 pt-1" onSubmit={handleSubmit}>
       <input
         aria-label="Message"
-        className="w-full rounded-full bg-[#242626] p-3 px-4 text-sm text-white caret-green-400 outline-none placeholder:text-white/60"
-        disabled={isSending}
+        className="w-full rounded-full bg-[#242626] p-3 px-4 text-sm text-white caret-green-400 outline-none read-only:cursor-wait placeholder:text-white/60"
+        readOnly={isSending}
         placeholder={isSending ? "Sending..." : "Type a message"}
         value={messageText}
         onChange={(event) => setMessageText(event.target.value)}

@@ -71,7 +71,7 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
   return (
     <aside aria-label={group ? "Group info" : "Contact info"} className="flex h-full w-[min(366px,40%)] min-w-72 shrink-0 flex-col border-l border-white/10 bg-[#111b21] text-white">
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
-        <section className="relative flex flex-col items-center pb-7 pt-8 text-center">
+        <section className="relative flex flex-col items-center pb-3 pt-8 text-center">
           {group ? <button className="absolute right-0 top-5 rounded px-1 text-sm font-medium text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button">Edit</button> : null}
           <div className="relative mb-4 flex w-full justify-center" style={{ paddingBottom: 24 }}>
             <div className="rounded-full ring-1 ring-white/10">
@@ -91,7 +91,7 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
         </section>
 
         {group ? (
-            <section className="py-5">
+            <section className="py-3">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-medium text-white/70">Members</h3>
                 {members.length > 5 ? <button className="rounded px-1 text-sm font-medium text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setShowAllMembers((value) => !value)} type="button">{showAllMembers ? "Show less" : "Show all"}</button> : null}
@@ -117,10 +117,10 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
         ) : null}
 
         {media.length > 0 ? (
-          <section className="pb-3 pt-6" ref={mediaRef}>
-            <div className={`mb-3 flex items-center justify-between ${showAll ? "py-3" : ""}`} style={showAll ? { background: "#111b21", position: "sticky", top: 0, zIndex: 20 } : undefined}>
+          <section className="pb-3 pt-3" ref={mediaRef}>
+            <div className="mb-3 flex items-center justify-between" style={showAll ? { background: "#111b21", position: "sticky", top: 0, zIndex: 20 } : undefined}>
               <h3 className="text-sm font-medium text-white/70">Media</h3>
-              <button className="rounded px-1 text-sm font-medium text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={toggleMedia} type="button">{showAll ? "Show less" : "Show all"}</button>
+              <button className="w-20 rounded px-1 text-center text-sm font-medium text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={toggleMedia} type="button">{showAll ? "Show less" : "Show all"}</button>
             </div>
             <div className={showAll ? "rounded-xl bg-white/5 p-2" : ""}>
               {showAll ? (

@@ -247,7 +247,7 @@ function Composer({
 
 export default function CurrentChat() {
   const [scrollToBottomRequest, setScrollToBottomRequest] = useState(0);
-  const [infoChatId, setInfoChatId] = useState<string | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
   const {
     chatId,
     contact,
@@ -261,8 +261,6 @@ export default function CurrentChat() {
     loadOlderMessages,
   } = useCurrentChat();
   const { profile: { blueTickEnabled, id: userId } } = useProfile();
-  const infoOpen = infoChatId === chatId;
-
   if (!chatId) {
     return (
       <section className="flex h-full w-full items-center justify-center text-white">
@@ -276,7 +274,7 @@ export default function CurrentChat() {
       <div className="flex min-w-0 flex-1 flex-col">
         <ContactHeader
           infoOpen={infoOpen}
-          onToggleInfo={() => setInfoChatId(infoOpen ? null : chatId)}
+          onToggleInfo={() => setInfoOpen((open) => !open)}
         />
         <div className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-end bg-[#0b141a]">
           <MessageList

@@ -12,6 +12,7 @@ dist
 dist-ssr
 .next
 .next-*
+.next-tauri
 out
 next-env.d.ts
 *.tsbuildinfo

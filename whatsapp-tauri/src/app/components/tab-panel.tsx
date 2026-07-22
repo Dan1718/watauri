@@ -8,7 +8,7 @@ export default function TabPanel() {
   const { isNewChatWindowOpen } = useNewChat();
 
   return (
-    <section className="col-span-7 h-full w-full relative bg-black/90 border-r-[1px] border-gray-300/20 flex flex-col overflow-hidden">
+    <section className="col-span-7 h-full w-full relative bg-[#161717] border-r-[1px] border-gray-300/20 flex flex-col overflow-hidden">
       <TabPanelSwitcher />
       {isNewChatWindowOpen ? <NewChatWindow /> : null}
     </section>

@@ -231,10 +231,10 @@ function Composer({
   };
 
   return (
-    <form className="z-30 h-auto w-full p-4" onSubmit={handleSubmit}>
+    <form className="z-30 h-auto w-full px-4 pb-2 pt-1" onSubmit={handleSubmit}>
       <input
         aria-label="Message"
-        className="w-full rounded-full bg-white/15 p-3 px-4 text-sm text-white caret-green-400 outline-none placeholder:text-white/60"
+        className="w-full rounded-full bg-[#242626] p-3 px-4 text-sm text-white caret-green-400 outline-none placeholder:text-white/60"
         disabled={isSending}
         placeholder={isSending ? "Sending..." : "Type a message"}
         value={messageText}
@@ -270,7 +270,9 @@ export default function CurrentChat() {
   return (
     <section className="flex h-full min-h-0 w-full flex-col">
       <ContactHeader />
-      <div className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-end bg-[#0b141a]">
+      <div
+        className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-end bg-[#161717] bg-[url('/background.webp')] bg-repeat"
+      >
         <MessageList
           key={chatId}
           chatId={chatId}

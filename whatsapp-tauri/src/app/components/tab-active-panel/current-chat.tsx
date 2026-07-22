@@ -270,7 +270,9 @@ export default function CurrentChat() {
   return (
     <section className="flex h-full min-h-0 w-full flex-col">
       <ContactHeader />
-      <div className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-end bg-[#0b141a]">
+      <div
+        className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-end bg-[#161717] bg-[url('/background.webp')] bg-repeat bg-blend-soft-light"
+      >
         <MessageList
           key={chatId}
           chatId={chatId}

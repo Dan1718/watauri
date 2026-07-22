@@ -11,7 +11,7 @@ export default function TabIcons() {
   const { selectedTab, selectTab, topTabs } = useTab();
 
   return (
-    <section className="flex flex-col justify-between items-center w-full h-full bg-black/85 border-r-[1px] border-gray-300/20">
+    <section className="flex flex-col justify-between items-center w-full h-full bg-[#1D1F1F] border-r-[1px] border-gray-300/20">
       <section className="flex flex-col justify-between items-center gap-2 py-4">
         {topTabs.map((tab: string, index: number) => (
           <TooltipWrapper

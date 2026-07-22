@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -13,10 +15,12 @@ import (
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	wastore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -129,6 +133,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				log.Printf("[wa] history sync skipped: nil data")
 				break
 			}
+			dumpHistorySync(data)
 
 			pushnamesStored := 0
 			inlineContactsStored := 0
@@ -252,6 +257,46 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 	})
 
 	return wa, nil
+}
+
+func dumpHistorySync(data *waHistorySync.HistorySync) {
+	if data == nil || os.Getenv("WATAURI_DUMP_HISTORY_SYNC") != "1" {
+		return
+	}
+
+	dir := os.Getenv("WATAURI_HISTORY_SYNC_DUMP_DIR")
+	if dir == "" {
+		dir = "history-sync-dumps"
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		log.Printf("[wa] failed to create history sync dump dir %s: %v", dir, err)
+		return
+	}
+
+	timestamp := time.Now().UTC().Format("20060102T150405.000000000Z")
+	filename := fmt.Sprintf(
+		"history-sync-%s-%s-chunk-%d.json",
+		timestamp,
+		data.GetSyncType().String(),
+		data.GetChunkOrder(),
+	)
+	path := filepath.Join(dir, filename)
+
+	payload, err := protojson.MarshalOptions{
+		Multiline:       true,
+		Indent:          "  ",
+		EmitUnpopulated: false,
+	}.Marshal(data)
+	if err != nil {
+		log.Printf("[wa] failed to marshal history sync dump: %v", err)
+		return
+	}
+
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		log.Printf("[wa] failed to write history sync dump %s: %v", path, err)
+		return
+	}
+	log.Printf("[wa] wrote history sync dump: %s", path)
 }
 
 // / Stores a parsed Message event and stores it. The caller is responsible for upserting the chat before calling.

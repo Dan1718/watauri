@@ -32,3 +32,6 @@ next-env.d.ts
 # Go binaries
 src-go/backend
 src-go/backend-*
+
+# Debug dumps
+history-sync-dumps/

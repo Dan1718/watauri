@@ -69,6 +69,7 @@
 | 3.3  | Replace Go mock handlers with real DB queries for `/api/chats` and `/api/chats/{id}` | ✅ Done   |
 | 3.4  | Add real-time push from Go to frontend using Server-Sent Events                      | Planned |
 | 3.5  | Support offline startup — load from SQLite first, sync when connected                | ✅ Done   |
+| 3.6  | Batch HistorySync SQLite writes to reduce initial sync time                          | Planned |
 
 **3.2 details**:
 | Event | Handled | Notes |
@@ -91,6 +92,7 @@
 - `GetChats()` never joins with `contacts` → 1-on-1 chats have `participants: null` and no display name (frontend works around with `chatName()` deriving from JID)
 - `GetChats()` lastMessage does not yet expose the full message contract (`chatJid`, `status`, `mediaType`, `isFromMe`)
 - History sync persists conversations/messages, but group participants, avatars, push names, and group update events are incomplete
+- History sync currently performs many per-row SQLite writes; batch inserts/transactions are needed for large initial syncs
 
 **SSE scope**:
 

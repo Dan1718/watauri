@@ -27,12 +27,17 @@ Look at [FEATURES.md](./FEATURES.md) for everything.
 - [x] Message history view
 - [x] History sync persistence
 - [x] Contact storage basics
-- [ ] Sending messages
-- [ ] Message pagination
+- [x] Sending messages
+- [x] Message pagination
 - [ ] Real-time updates with Server-Sent Events
-- [ ] Contact name sync
+- [x] Contact name sync
 - [ ] Group metadata
 - [ ] Group participants
+- [ ] Communities and related group metadata
+- [ ] Pinned chats
+- [ ] Pinned messages
+- [ ] Favourite chats and contacts
+- [ ] Archive workflows
 - [ ] Safer local API routing
 - [ ] Custom chat groups and filters
 - [ ] Fast full-text search
@@ -131,9 +136,9 @@ whatsapp-tauri/
 - [x] WhatsApp pairing
 - [x] Local message persistence
 - [x] Historical chat sync
-- [ ] Sending messages
+- [x] Sending messages
 - [ ] Contacts and group metadata
-- [ ] Message pagination
+- [x] Message pagination
 - [ ] Real-time updates with Server-Sent Events
 - [ ] Read receipts
 
@@ -151,7 +156,11 @@ whatsapp-tauri/
 - [ ] Custom chat groups
 - [ ] Saved filters
 - [ ] Per-group notification rules
-- [ ] Archive/star workflows
+- [ ] Archive workflows
+- [ ] Pinned chats
+- [ ] Pinned messages
+- [ ] Favourite chats and contacts
+- [ ] Starred message workflows
 - [ ] Multi-select chats/messages
 
 ### Phase 4: Search and Export

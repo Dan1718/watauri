@@ -21,12 +21,14 @@ This file tracks user-facing product features. For implementation details, archi
 | Local SQLite storage | done | Stores chats and messages locally |
 | Chat list | done | Loaded from local database |
 | Message history view | done | Opens stored messages for a chat |
-| History sync persistence | in-progress | Backfills historical chats and messages after pairing |
-| Contact names | in-progress | Push names and inline contacts still need improvement |
+| History sync persistence | in-progress | Backfills historical chats and messages after pairing; batching is planned for large syncs |
+| Contact names | in-progress | Push names and inline contacts are persisted; display fallback still needs refinement |
 | Group metadata | in-progress | Group names are partially supported through history sync |
 | Group participants | planned | Requires participant persistence in the local database |
-| Send text messages | planned | Composer endpoint and whatsmeow send path |
-| Message pagination | planned | Avoid loading entire chats at once |
+| Communities | planned | Support WhatsApp community parent groups and related announcement/subgroup metadata |
+| Community subgroups | planned | Display linked community groups and parent/subgroup relationships when available |
+| Send text messages | done | Composer endpoint and whatsmeow send path |
+| Message pagination | done | Cursor pagination avoids loading entire chats at once |
 | Real-time updates | planned | Server-Sent Events for new messages, receipt changes, chat metadata updates, and sync progress |
 | Read receipts | planned | Risky: protocol-sensitive behavior |
 | Typing indicators | planned | Risky: protocol-sensitive behavior |
@@ -52,7 +54,12 @@ This file tracks user-facing product features. For implementation details, archi
 | Per-group notification priority | planned | Desktop-side notification rules |
 | Mute or badge-only modes | planned | Local notification behavior |
 | Chat tags or labels | planned | Local organization layer |
-| Archive/star workflows | planned | Depends on local and protocol behavior |
+| Archive chats | planned | Archive and unarchive chats locally and eventually sync protocol state |
+| Pinned chats | planned | Keep important chats at the top of the chat list |
+| Pinned messages | planned | Pin important messages inside a chat |
+| Favourite chats | planned | Mark important chats for quick access and filtering |
+| Favourite contacts | planned | Mark contacts for quick access and filtering |
+| Starred messages | planned | Mark important messages and expose starred-message views |
 
 ## Search
 

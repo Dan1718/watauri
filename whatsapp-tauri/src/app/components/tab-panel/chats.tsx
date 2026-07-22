@@ -23,7 +23,7 @@ type ChatRowProps = {
   isCurrent: boolean;
   typingMatchesLastSender: boolean;
   blueTickEnabled: boolean;
-  loadCurrentChat: (chat: { chatId: string; page: number }) => void;
+  loadCurrentChat: (chat: { chatId: string; page: number; unreadCount: number }) => void;
 };
 
 const ChatRow = memo(function ChatRow({
@@ -47,7 +47,11 @@ const ChatRow = memo(function ChatRow({
 
   return (
     <button
-      onClick={() => loadCurrentChat({ chatId: chat.id, page: 0 })}
+      onClick={() => loadCurrentChat({
+        chatId: chat.id,
+        page: 0,
+        unreadCount: chat.unreadCount,
+      })}
       className={`outline-none flex items-center text-left w-full gap-4 p-2.5 hover:bg-white/10 rounded-xl cursor-pointer ${
         isCurrent ? "bg-white/10" : ""
       }`}

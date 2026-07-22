@@ -170,7 +170,7 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
 
         {media.length > 0 ? (
           <section className="pb-3 pt-3" ref={mediaRef}>
-            <div className="mb-3 flex items-center justify-between" style={showAll ? { background: "#111b21", position: "sticky", top: 0, zIndex: 20 } : undefined}>
+            <div className={`mb-3 flex items-center justify-between ${showAll ? "py-3" : ""}`} style={showAll ? { background: "#111b21", position: "sticky", top: 0, zIndex: 20 } : undefined}>
               <h3 className="text-sm font-medium text-white/70">Media</h3>
               <button className="w-20 rounded px-1 text-center text-sm font-medium text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={toggleMedia} type="button">{showAll ? "Show less" : "Show all"}</button>
             </div>

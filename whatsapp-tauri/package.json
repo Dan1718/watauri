@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build:backend": "go -C src-go build -o backend && go -C src-go build -o backend-x86_64-unknown-linux-gnu",
-    "dev": "next dev",
-    "dev:tauri": "next dev -p 1420",
+    "dev": "NEXT_DIST_DIR=.next-dev next dev",
+    "dev:tauri": "NEXT_DIST_DIR=.next-tauri next dev -p 1420",
     "build": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next build",
     "start": "next start",
     "lint": "next lint",

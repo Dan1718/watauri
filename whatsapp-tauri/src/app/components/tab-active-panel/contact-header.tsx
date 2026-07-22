@@ -59,7 +59,7 @@ export default function ContactHeader({ infoOpen, onToggleInfo }: {
     };
 
     return (
-      <div className="h-auto w-full flex gap-4 justify-between items-center bg-black p-3 px-4">
+      <div className="h-auto w-full flex gap-4 justify-between items-center bg-[#161717] p-3 px-4">
         <div className="flex gap-4 justify-start items-center">
           <Profile size="10">
             <div className="h-full w-full flex justify-center items-center bg-white/50">
@@ -76,7 +76,7 @@ export default function ContactHeader({ infoOpen, onToggleInfo }: {
     );
   }
   return (
-    <div className="w-full h-fit bg-black z-50">
+    <div className="w-full h-fit bg-[#161717] z-50">
       <div className="flex gap-4 h-full w-full justify-between items-center p-3 px-4">
         <div className="flex gap-4 justify-start items-center">
           <Profile size="10" url={contact?.contactAvatar} />

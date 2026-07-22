@@ -41,6 +41,7 @@ export type Chat = {
   contactId: string | string[];
   groupName?: string;
   groupAvatar?: string;
+  unreadCount: number;
   read: boolean;
   group: boolean;
   favorite: boolean;
@@ -97,7 +98,8 @@ function sameChat(a: Chat, b: Chat) {
     : Array.isArray(b.contactId) && a.contactId.length === b.contactId.length &&
       a.contactId.every((id, index) => id === b.contactId[index]);
   return a.id === b.id && contactsEqual && a.groupName === b.groupName &&
-    a.groupAvatar === b.groupAvatar && a.read === b.read && a.group === b.group &&
+    a.groupAvatar === b.groupAvatar && a.unreadCount === b.unreadCount &&
+    a.read === b.read && a.group === b.group &&
     a.favorite === b.favorite && a.messages.length === b.messages.length &&
     a.messages.every((message, index) => sameMessage(message, b.messages[index]));
 }
@@ -125,6 +127,7 @@ function toChat(chat: BackendChat): Chat {
     contactId,
     groupName: chat.name || (chat.isGroup ? getDisplayNameFromJid(chat.id) : undefined),
     groupAvatar: chat.avatar,
+    unreadCount: chat.unreadCount,
     read: chat.unreadCount === 0,
     group: chat.isGroup,
     favorite: Boolean(chat.isStarred),

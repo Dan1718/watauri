@@ -31,6 +31,7 @@ export type CurrentChatData = {
   messages: Message[];
   group: CurrentChatContactsGroup | null;
   page: number;
+  unreadCount: number;
   isLoading: boolean;
   error: string | null;
   isSending: boolean;
@@ -123,6 +124,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     messages: [],
     group: null,
     page: 0,
+    unreadCount: 0,
     isLoading: false,
     error: null,
     isSending: false,

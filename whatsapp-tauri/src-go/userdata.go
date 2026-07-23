@@ -375,6 +375,35 @@ func displayNameFromJID(jid string) string {
 	}
 	return "Unknown chat"
 }
+
+func (s *UserDataStore) CanonicalDirectChatJID(jid string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.CanonicalDirectChatJIDLocked(jid)
+}
+
+func (s *UserDataStore) CanonicalDirectChatJIDLocked(jid string) (string, error) {
+	if !strings.HasSuffix(jid, "@lid") {
+		return jid, nil
+	}
+
+	var phoneJID string
+	err := s.db.QueryRow(
+		`SELECT phone_jid FROM jid_mappings WHERE lid_jid = ?`,
+		jid,
+	).Scan(&phoneJID)
+	if err == sql.ErrNoRows {
+		return jid, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if phoneJID == "" {
+		return jid, nil
+	}
+	return phoneJID, nil
+}
+
 func (s *UserDataStore) UpsertJIDMapping(lidJID, phoneJID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

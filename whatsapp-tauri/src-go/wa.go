@@ -103,11 +103,16 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			}
 
 			chatJID := v.Info.Chat.String()
+			canonicalChatJID, err := wa.store.CanonicalDirectChatJID(chatJID)
+			if err != nil {
+				log.Printf("[wa] Failed to canonicalize chat %s: %v", chatJID, err)
+				break
+			}
 			placeholder := Chat{
-				ID: chatJID,
+				ID: canonicalChatJID,
 			}
 			if err := wa.store.UpsertChat(placeholder); err != nil {
-				log.Printf("[wa] Failed to upsert placeholder chat %s: %v", chatJID, err)
+				log.Printf("[wa] Failed to upsert placeholder chat %s: %v", canonicalChatJID, err)
 				break
 			}
 			wa.storeMessageEvent(v, "live")
@@ -203,13 +208,21 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 					conversationsSkipped++
 					continue
 				}
-
+				canonicalChatJID := chatJID.String()
+				if chatJID.Server != types.GroupServer {
+					canonicalChatJID, err = wa.store.CanonicalDirectChatJID(chatJID.String())
+					if err != nil {
+						log.Printf("[wa] failed to canonicalize history chat %s: %v", chatJID, err)
+						conversationsSkipped++
+						continue
+					}
+				}
 				name := conv.GetName()
 				if name == "" {
 					name = conv.GetDisplayName()
 				}
 				chat := Chat{
-					ID:          chatJID.String(),
+					ID:          canonicalChatJID,
 					UnreadCount: int(conv.GetUnreadCount()),
 					IsGroup:     chatJID.Server == "g.us",
 					IsArchived:  conv.GetArchived(),
@@ -344,6 +357,14 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 		evt.Info.ID, evt.Info.Chat, evt.Info.Sender, text, mediaType, evt.Info.IsFromMe)
 
 	chatJID := evt.Info.Chat.String()
+	if evt.Info.Chat.Server != types.GroupServer {
+		canonicalChatJID, err := wa.store.CanonicalDirectChatJID(chatJID)
+		if err != nil {
+			log.Printf("[wa] Failed to canonicalize message chat %s: %v", chatJID, err)
+			return false
+		}
+		chatJID = canonicalChatJID
+	}
 
 	ourMsg := Message{
 		ID:        evt.Info.ID,

@@ -296,6 +296,7 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 	var chats []Chat
 	for rows.Next() {
 		var c Chat
+		c.Participants = []User{}
 		var name, avatar sql.NullString
 		var lastMsgID, lastMsgText, lastMsgTS, lastMsgSender sql.NullString
 		var isGroup, isArchived, isStarred, isCommunity int

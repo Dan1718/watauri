@@ -290,23 +290,33 @@ func (s *UserDataStore) UpsertChatParticipant(chatJID, userJID string, rank int)
 func (s *UserDataStore) ResolveContact(jid string) (User, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.resolveContactNoLock(jid)
+}
+
+func (s *UserDataStore) resolveContactNoLock(jid string) (User, bool, error) {
 	candidates := []string{jid}
 	if strings.HasSuffix(jid, "@lid") {
 		var phoneJID string
 		err := s.db.QueryRow(
-			`SELECT phone_jid from jid_mappings WHERE lid_jid = ?`,
+			`SELECT phone_jid FROM jid_mappings WHERE lid_jid = ?`,
 			jid,
 		).Scan(&phoneJID)
-		if err == nil && phoneJID != "" {
+		if err != nil && err != sql.ErrNoRows {
+			return User{}, false, err
+		}
+		if phoneJID != "" {
 			candidates = append(candidates, phoneJID)
 		}
 	} else if strings.HasSuffix(jid, "@s.whatsapp.net") {
 		var lidJID string
 		err := s.db.QueryRow(
-			`SELECT lid_jid from jid_mappings where phone_jid = ?`,
+			`SELECT lid_jid FROM jid_mappings WHERE phone_jid = ?`,
 			jid,
 		).Scan(&lidJID)
-		if err == nil && lidJID != "" {
+		if err != nil && err != sql.ErrNoRows {
+			return User{}, false, err
+		}
+		if lidJID != "" {
 			candidates = append(candidates, lidJID)
 		}
 	}
@@ -316,7 +326,7 @@ func (s *UserDataStore) ResolveContact(jid string) (User, bool, error) {
 	for _, candidate := range candidates {
 		var contact User
 		err := s.db.QueryRow(
-			`SELECT jid, name, avatar, push_name, status FROM contacts where jid = ?`,
+			`SELECT jid, name, avatar, push_name, status FROM contacts WHERE jid = ?`,
 			candidate,
 		).Scan(&contact.ID, &contact.Name, &contact.Avatar, &contact.PushName, &contact.Status)
 
@@ -345,6 +355,26 @@ func contactScore(contact User) int {
 	return 1
 }
 
+func contactDisplayName(contact User, fallbackJID string) string {
+	if contact.Name != "" {
+		return contact.Name
+	}
+	if contact.PushName != "" {
+		return contact.PushName
+	}
+	return displayNameFromJID(fallbackJID)
+}
+
+func displayNameFromJID(jid string) string {
+	user, _, ok := strings.Cut(jid, "@")
+	if ok && user != "" {
+		return user
+	}
+	if jid != "" {
+		return jid
+	}
+	return "Unknown chat"
+}
 func (s *UserDataStore) UpsertJIDMapping(lidJID, phoneJID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

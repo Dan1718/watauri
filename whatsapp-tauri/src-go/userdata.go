@@ -290,7 +290,7 @@ func (s *UserDataStore) UpsertChatParticipant(chatJID, userJID string, rank int)
 func (s *UserDataStore) ResolveContact(jid string) (User, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.resolveContactNoLock(jid)
+	return s.resolveContactLocked(jid)
 }
 
 func (s *UserDataStore) resolveContactLocked(jid string) (User, bool, error) {
@@ -446,7 +446,7 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 		}
 		c.IsGroup = intToBool(isGroup)
 		if !c.IsGroup {
-			contact, ok, err := s.resolveContactNoLock(c.ID)
+			contact, ok, err := s.resolveContactLocked(c.ID)
 			if err != nil {
 				log.Printf("[store] failed to resolve contact for chat %s: %v", c.ID, err)
 			} else if ok {

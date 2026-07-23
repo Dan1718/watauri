@@ -89,6 +89,8 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			wa.status = "connected"
 			wa.mu.Unlock()
 			log.Println("[wa] Connected to Whatsapp")
+
+			go wa.SyncContacts(context.Background())
 		case *events.Disconnected:
 			wa.mu.Lock()
 			wa.status = "unauthenticated"
@@ -386,6 +388,7 @@ func (wa *WAManager) StartPairing() {
 				wa.mu.Lock()
 				wa.status = "connected"
 				wa.mu.Unlock()
+				go wa.SyncContacts(context.Background())
 			case "timeout":
 				wa.mu.Lock()
 				wa.status = "unauthenticated"
@@ -430,7 +433,7 @@ func (wa *WAManager) SyncContacts(ctx context.Context) {
 	store := wa.store
 	wa.mu.RUnlock()
 
-	if client == nil || client.store == nil || store == nil {
+	if client == nil || store == nil || store == nil {
 		log.Println("[wa] Skipping contact sync: client or store is nil")
 		return
 	}
@@ -450,6 +453,7 @@ func (wa *WAManager) SyncContacts(ctx context.Context) {
 		if name == "" {
 			name = info.BusinessName
 		}
+		log.Printf("[wa] name = %s", name)
 		if err := store.UpsertContact(User{
 			ID:       jid.String(),
 			Name:     name,

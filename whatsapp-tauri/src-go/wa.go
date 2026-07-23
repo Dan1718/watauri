@@ -155,37 +155,29 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				pushnamesStored++
 			}
 
-			for _, inline := range data.GetInlineContacts() {
-				jid := inline.GetPnJID()
-				if jid == "" {
-					jid = inline.GetLidJID()
-				}
-				if jid == "" {
-					continue
-				}
-				name := inline.GetFullName()
-				if name == "" {
-					name = inline.GetFirstName()
-				}
-				if name == "" {
-					name = inline.GetUsername()
-				}
-
-				if err := wa.store.UpsertContact(User{ID: jid, Name: name}); err != nil {
-					log.Printf("[wa] failed to upsert history inline contact %s: %v", jid, err)
-					continue
-				}
-				inlineContactsStored++
-			}
 			conversationsSeen := len(data.GetConversations())
 			conversationsStored := 0
 			conversationsSkipped := 0
 			messagesSeen := 0
 			messagesStored := 0
 			messagesSkipped := 0
+			jidMappingsStored := 0
+			for _, mapping := range data.GetPhoneNumberToLidMappings() {
+				phoneJID := mapping.GetPnJID()
+				lidJID := mapping.GetLidJID()
+				if phoneJID == "" || lidJID == "" {
+					continue
+				}
+				if err := wa.store.UpsertJIDMapping(lidJID, phoneJID); err != nil {
 
-			log.Printf("[wa] Event: historySync type=%v chunk=%d progress=%d conversations=%d statusMessages=%d pushnames=%d/%d inlineContacts=%d/%d",
-				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, len(data.GetStatusV3Messages()), pushnamesStored, len(data.GetPushnames()), inlineContactsStored, len(data.GetInlineContacts()))
+					log.Printf("[wa] failed to upsert history jid mapping %s -> %s: %v", lidJID, phoneJID, err)
+					continue
+				}
+
+				jidMappingsStored++
+			}
+			log.Printf("[wa] Event: historySync type=%v chunk=%d progress=%d conversations=%d statusMessages=%d pushnames=%d/%d inlineContacts=%d/%d,jidMappings=%d/%d",
+				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, len(data.GetStatusV3Messages()), pushnamesStored, len(data.GetPushnames()), inlineContactsStored, len(data.GetInlineContacts()), jidMappingsStored, len(data.GetPhoneNumberToLidMappings()))
 
 			for _, conv := range data.GetConversations() {
 				chatJID, err := types.ParseJID(conv.GetID())

@@ -433,7 +433,7 @@ func (wa *WAManager) SyncContacts(ctx context.Context) {
 	store := wa.store
 	wa.mu.RUnlock()
 
-	if client == nil || store == nil || store == nil {
+	if client == nil || client.Store == nil || store == nil {
 		log.Println("[wa] Skipping contact sync: client or store is nil")
 		return
 	}

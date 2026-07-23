@@ -286,8 +286,9 @@ func (s *UserDataStore) UpsertChatParticipant(chatJID, userJID string, rank int)
 	log.Printf("[store] UpsertChatParticipant(%s -> %s) OK (%v)", userJID, chatJID, time.Since(start))
 	return nil
 }
+
 func (s *UserDataStore) ResolveContact(jid string) (User, bool, error) {
-	s.mu.Rlock()
+	s.mu.RLock()
 	defer s.mu.RUnlock()
 	candidates := []string{jid}
 	if strings.HasSuffix(jid, "@lid") {
@@ -333,6 +334,7 @@ func (s *UserDataStore) ResolveContact(jid string) (User, bool, error) {
 	}
 	return best, bestScore > 0, nil
 }
+
 func contactScore(contact User) int {
 	if contact.Name != "" {
 		return 3
@@ -342,6 +344,7 @@ func contactScore(contact User) int {
 	}
 	return 1
 }
+
 func (s *UserDataStore) UpsertJIDMapping(lidJID, phoneJID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

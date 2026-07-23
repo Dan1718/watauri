@@ -379,10 +379,10 @@ func displayNameFromJID(jid string) string {
 func (s *UserDataStore) CanonicalDirectChatJID(jid string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.CanonicalDirectChatJIDLocked(jid)
+	return s.canonicalDirectChatJIDLocked(jid)
 }
 
-func (s *UserDataStore) CanonicalDirectChatJIDLocked(jid string) (string, error) {
+func (s *UserDataStore) canonicalDirectChatJIDLocked(jid string) (string, error) {
 	if !strings.HasSuffix(jid, "@lid") {
 		return jid, nil
 	}

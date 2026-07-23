@@ -286,7 +286,62 @@ func (s *UserDataStore) UpsertChatParticipant(chatJID, userJID string, rank int)
 	log.Printf("[store] UpsertChatParticipant(%s -> %s) OK (%v)", userJID, chatJID, time.Since(start))
 	return nil
 }
+func (s *UserDataStore) ResolveContact(jid string) (User, bool, error) {
+	s.mu.Rlock()
+	defer s.mu.RUnlock()
+	candidates := []string{jid}
+	if strings.HasSuffix(jid, "@lid") {
+		var phoneJID string
+		err := s.db.QueryRow(
+			`SELECT phone_jid from jid_mappings WHERE lid_jid = ?`,
+			jid,
+		).Scan(&phoneJID)
+		if err == nil && phoneJID != "" {
+			candidates = append(candidates, phoneJID)
+		}
+	} else if strings.HasSuffix(jid, "@s.whatsapp.net") {
+		var lidJID string
+		err := s.db.QueryRow(
+			`SELECT lid_jid from jid_mappings where phone_jid = ?`,
+			jid,
+		).Scan(&lidJID)
+		if err == nil && lidJID != "" {
+			candidates = append(candidates, lidJID)
+		}
+	}
 
+	var best User
+	bestScore := 0
+	for _, candidate := range candidates {
+		var contact User
+		err := s.db.QueryRow(
+			`SELECT jid, name, avatar, push_name, status FROM contacts where jid = ?`,
+			candidate,
+		).Scan(&contact.ID, &contact.Name, &contact.Avatar, &contact.PushName, &contact.Status)
+
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return User{}, false, err
+		}
+		score := contactScore(contact)
+		if score > bestScore {
+			best = contact
+			bestScore = score
+		}
+	}
+	return best, bestScore > 0, nil
+}
+func contactScore(contact User) int {
+	if contact.Name != "" {
+		return 3
+	}
+	if contact.PushName != "" {
+		return 2
+	}
+	return 1
+}
 func (s *UserDataStore) UpsertJIDMapping(lidJID, phoneJID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

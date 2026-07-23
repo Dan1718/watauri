@@ -359,13 +359,13 @@ export default function CurrentChat() {
   }
 
   return (
-    <section className="flex h-full min-h-0 w-full overflow-hidden">
-      <div className="flex min-w-0 flex-1 flex-col">
-        <ContactHeader
-          infoOpen={infoOpen}
-          onToggleInfo={() => setInfoOpen((open) => !open)}
-        />
-        <div className="relative flex min-h-0 w-full flex-1 flex-col items-center justify-end bg-[#161717] bg-[url('/background.webp')] bg-repeat">
+    <section className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <ContactHeader
+        infoOpen={infoOpen}
+        onToggleInfo={() => setInfoOpen((open) => !open)}
+      />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col items-center justify-end bg-[#161717] bg-[url('/background.webp')] bg-repeat">
           <MessageList
             key={chatId}
             chatId={chatId}
@@ -386,17 +386,17 @@ export default function CurrentChat() {
             onSent={() => setScrollToBottomRequest((request) => request + 1)}
           />
         </div>
+        {infoOpen ? (
+          <ChatInfoPanel
+            key={chatId}
+            chatId={chatId}
+            contact={contact}
+            group={group}
+            messages={messages}
+            userId={userId}
+          />
+        ) : null}
       </div>
-      {infoOpen ? (
-        <ChatInfoPanel
-          key={chatId}
-          chatId={chatId}
-          contact={contact}
-          group={group}
-          messages={messages}
-          userId={userId}
-        />
-      ) : null}
     </section>
   );
 }

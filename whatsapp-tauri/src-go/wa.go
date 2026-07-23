@@ -162,22 +162,39 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			messagesStored := 0
 			messagesSkipped := 0
 			jidMappingsStored := 0
+			jidMappingsSkipped := 0
 			for _, mapping := range data.GetPhoneNumberToLidMappings() {
-				phoneJID := mapping.GetPnJID()
-				lidJID := mapping.GetLidJID()
-				if phoneJID == "" || lidJID == "" {
+				pn, err := types.ParseJID(mapping.GetPnJID())
+				if err != nil {
+					log.Printf("[wa] history sync invalid phone jid mapping pn=%q lid=%q: %v", mapping.GetPnJID(), mapping.GetLidJID(), err)
+					jidMappingsSkipped++
 					continue
 				}
-				if err := wa.store.UpsertJIDMapping(lidJID, phoneJID); err != nil {
+				if pn.Server == types.LegacyUserServer {
+					pn.Server = types.DefaultUserServer
+				}
+				lid, err := types.ParseJID(mapping.GetLidJID())
+				if err != nil {
+					log.Printf("[wa] history sync invalid lid mapping pn=%q lid=%q: %v", mapping.GetPnJID(), mapping.GetLidJID(), err)
+					jidMappingsSkipped++
+					continue
+				}
+				if lid.Server != types.HiddenUserServer || pn.Server != types.DefaultUserServer {
+					log.Printf("[wa] history sync skipped unexpected jid mapping pn=%s lid=%s", pn, lid)
+					jidMappingsSkipped++
+					continue
+				}
 
-					log.Printf("[wa] failed to upsert history jid mapping %s -> %s: %v", lidJID, phoneJID, err)
+				if err := wa.store.UpsertJIDMapping(lid.String(), pn.String()); err != nil {
+					log.Printf("[wa] failed to upsert history jid mapping %s -> %s: %v", lid, pn, err)
+					jidMappingsSkipped++
 					continue
 				}
 
 				jidMappingsStored++
 			}
-			log.Printf("[wa] Event: historySync type=%v chunk=%d progress=%d conversations=%d statusMessages=%d pushnames=%d/%d inlineContacts=%d/%d,jidMappings=%d/%d",
-				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, len(data.GetStatusV3Messages()), pushnamesStored, len(data.GetPushnames()), inlineContactsStored, len(data.GetInlineContacts()), jidMappingsStored, len(data.GetPhoneNumberToLidMappings()))
+			log.Printf("[wa] Event: historySync type=%v chunk=%d progress=%d conversations=%d statusMessages=%d pushnames=%d/%d inlineContacts=%d/%d jidMappings=%d/%d skipped=%d",
+				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, len(data.GetStatusV3Messages()), pushnamesStored, len(data.GetPushnames()), inlineContactsStored, len(data.GetInlineContacts()), jidMappingsStored, len(data.GetPhoneNumberToLidMappings()), jidMappingsSkipped)
 
 			for _, conv := range data.GetConversations() {
 				chatJID, err := types.ParseJID(conv.GetID())
@@ -445,7 +462,6 @@ func (wa *WAManager) SyncContacts(ctx context.Context) {
 		if name == "" {
 			name = info.BusinessName
 		}
-		log.Printf("[wa] name = %s", name)
 		if err := store.UpsertContact(User{
 			ID:       jid.String(),
 			Name:     name,

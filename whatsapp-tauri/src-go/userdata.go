@@ -265,26 +265,6 @@ func (s *UserDataStore) UpsertChat(chat Chat) error {
 	return err
 }
 
-func (s *UserDataStore) UpsertJIDMapping(lidJID, phoneJID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	start := time.Now()
-	_, err := s.db.Exec(`INSERT INTO jid_mappings (lid_jid, phone_jid, updated_at)
-	VALUES (?, ?, ?)
-	ON CONFLICT(lid_jid) DO UPDATE SET
-		phone_jid = excluded.phone_jid,
-		updated_at = excluded.updated_at`,
-		lidJID, phoneJID, start.Format(time.RFC3339))
-	if err != nil {
-		log.Printf("[store] UpsertJIDMapping(%s->%s) error : %v (%v) ", lidJID, phoneJID, err, time.Since(start))
-		return err
-	}
-
-	log.Printf("[store] UpsertJIDMapping(%s -> %s) OK (%v)", lidJID, phoneJID, time.Since(start))
-	return nil
-
-}
 func (s *UserDataStore) UpsertChatParticipant(chatJID, userJID string, rank int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -304,6 +284,41 @@ func (s *UserDataStore) UpsertChatParticipant(chatJID, userJID string, rank int)
 	}
 
 	log.Printf("[store] UpsertChatParticipant(%s -> %s) OK (%v)", userJID, chatJID, time.Since(start))
+	return nil
+}
+
+func (s *UserDataStore) UpsertJIDMapping(lidJID, phoneJID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	start := time.Now()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM jid_mappings WHERE lid_jid <> ? AND phone_jid = ?`, lidJID, phoneJID); err != nil {
+		log.Printf("[store] UpsertJIDMapping(%s -> %s) delete error: %v (%v)", lidJID, phoneJID, err, time.Since(start))
+		return err
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO jid_mappings (lid_jid, phone_jid, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(lid_jid) DO UPDATE SET
+			phone_jid = excluded.phone_jid,
+			updated_at = excluded.updated_at`,
+		lidJID, phoneJID, start.Format(time.RFC3339),
+	); err != nil {
+		log.Printf("[store] UpsertJIDMapping(%s -> %s) error: %v (%v)", lidJID, phoneJID, err, time.Since(start))
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("[store] UpsertJIDMapping(%s -> %s) commit error: %v (%v)", lidJID, phoneJID, err, time.Since(start))
+		return err
+	}
+
+	log.Printf("[store] UpsertJIDMapping(%s -> %s) OK (%v)", lidJID, phoneJID, time.Since(start))
 	return nil
 }
 

@@ -293,7 +293,7 @@ func (s *UserDataStore) ResolveContact(jid string) (User, bool, error) {
 	return s.resolveContactNoLock(jid)
 }
 
-func (s *UserDataStore) resolveContactNoLock(jid string) (User, bool, error) {
+func (s *UserDataStore) resolveContactLocked(jid string) (User, bool, error) {
 	candidates := []string{jid}
 	if strings.HasSuffix(jid, "@lid") {
 		var phoneJID string
@@ -445,6 +445,18 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 			c.LastMessage = &Message{ID: lastMsgID.String, Text: lastMsgText.String, Timestamp: lastMsgTS.String, SenderID: lastMsgSender.String}
 		}
 		c.IsGroup = intToBool(isGroup)
+		if !c.IsGroup {
+			contact, ok, err := s.resolveContactNoLock(c.ID)
+			if err != nil {
+				log.Printf("[store] failed to resolve contact for chat %s: %v", c.ID, err)
+			} else if ok {
+				displayName := contactDisplayName(contact, c.ID)
+				c.Name = &displayName
+			} else if c.Name == nil || *c.Name == "" {
+				displayName := displayNameFromJID(c.ID)
+				c.Name = &displayName
+			}
+		}
 		c.IsArchived = intToBool(isArchived)
 		c.IsStarred = intToBool(isStarred)
 		c.IsCommunity = intToBool(isCommunity)

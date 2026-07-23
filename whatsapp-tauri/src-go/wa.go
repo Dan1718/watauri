@@ -259,6 +259,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 					}
 				}
 			}
+			go wa.SyncContacts(context.Background())
 			log.Printf("[wa] historySync done type=%v chunk=%d progress=%d conversationsSeen=%d conversationsStored=%d conversationsSkipped=%d messagesSeen=%d messagesStored=%d messagesSkipped=%d",
 				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, conversationsStored, conversationsSkipped, messagesSeen, messagesStored, messagesSkipped)
 		case *events.PushName:

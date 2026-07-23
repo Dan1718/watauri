@@ -33,6 +33,7 @@ Look at [FEATURES.md](./FEATURES.md) for everything.
 - [x] Contact name sync
 - [ ] Group metadata
 - [ ] Group participants
+- [ ] Contact and group avatars
 - [ ] Communities and related group metadata
 - [ ] Pinned chats
 - [ ] Pinned messages
@@ -137,7 +138,7 @@ whatsapp-tauri/
 - [x] Local message persistence
 - [x] Historical chat sync
 - [x] Sending messages
-- [ ] Contacts and group metadata
+- [ ] Contacts, group metadata, participants, and avatars
 - [x] Message pagination
 - [ ] Real-time updates with Server-Sent Events
 - [ ] Read receipts

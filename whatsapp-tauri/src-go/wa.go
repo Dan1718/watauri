@@ -424,6 +424,46 @@ func (wa *WAManager) GetProfile() Profile {
 	}
 	return profile
 }
+func (wa *WAManager) SyncContacts(ctx context.Context) {
+	wa.mu.RLock()
+	client := wa.client
+	store := wa.store
+	wa.mu.RUnlock()
+
+	if client == nil || client.store == nil || store == nil {
+		log.Println("[wa] Skipping contact sync: client or store is nil")
+		return
+	}
+	contacts, err := client.Store.Contacts.GetAllContacts(ctx)
+	if err != nil {
+		log.Printf("[wa] Failed to load contacts from whatsmeow store : %v", err)
+		return
+	}
+	stored := 0
+	skipped := 0
+
+	for jid, info := range contacts {
+		name := info.FullName
+		if name == "" {
+			name = info.FirstName
+		}
+		if name == "" {
+			name = info.BusinessName
+		}
+		if err := store.UpsertContact(User{
+			ID:       jid.String(),
+			Name:     name,
+			PushName: info.PushName,
+		}); err != nil {
+			log.Printf("[wa] Failed to upsert synced contact %s: %v", jid, err)
+			skipped++
+			continue
+
+		}
+		stored++
+	}
+	log.Printf("[wa] Contact sync complete: stored = %d, skipped = %d, total = %d", stored, skipped, len(contacts))
+}
 
 func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message, error) {
 	to, err := types.ParseJID(chatID)

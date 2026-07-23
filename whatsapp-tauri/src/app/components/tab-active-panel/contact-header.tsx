@@ -39,7 +39,7 @@ export default function ContactHeader({ infoOpen, onToggleInfo }: {
         <button
           aria-label={infoOpen ? `Close ${group ? "group" : "contact"} info` : `Open ${group ? "group" : "contact"} info`}
           aria-pressed={infoOpen}
-          className={`flex p-2 transition-colors focus-visible:outline-2 focus-visible:outline-emerald-400 ${infoOpen ? "text-emerald-400" : "text-white hover:text-white/70"}`}
+          className={`flex cursor-pointer rounded-full p-2 transition-colors focus-visible:outline-2 focus-visible:outline-emerald-400 ${infoOpen ? "text-emerald-400" : "text-white hover:text-white/70"}`}
           onClick={onToggleInfo}
           type="button"
         >

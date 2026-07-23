@@ -16,6 +16,22 @@ body {
   background: #0b141a;
 }
 
+button:not(:disabled):hover {
+  background-color: #2e2f2f;
+}
+
+button.green-action:not(:disabled):hover {
+  background-color: transparent;
+}
+
+button.media-filter-action:not(:disabled):hover {
+  background-color: transparent;
+}
+
+.chat-info-action[aria-pressed="true"]:hover {
+  background-color: #34d399;
+}
+
 .material-symbols-outlined {
   font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
   font-size: 22px;

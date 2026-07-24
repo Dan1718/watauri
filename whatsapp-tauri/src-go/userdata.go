@@ -530,6 +530,15 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 	rows, err := s.db.Query(
 		`SELECT
 			p.user_jid,
+			COALESCE(
+				CASE WHEN p.user_jid LIKE '%@s.whatsapp.net' THEN p.user_jid END,
+				lid_map.phone_jid
+			) AS phone_jid,
+
+			COALESCE(
+				CASE WHEN p.user_jid LIKE '%@lid' THEN p.user_jid END,
+				phone_map.lid_jid
+			) AS lid_jid,
 			COALESCE(NULLIF(c.name, ''), NULLIF(pc.name, ''), NULLIF(lc.name, '')) AS name,
 			COALESCE(NULLIF(c.avatar, ''), NULLIF(pc.avatar, ''), NULLIF(lc.avatar, '')) AS avatar,
 			COALESCE(NULLIF(c.push_name, ''), NULLIF(pc.push_name, ''), NULLIF(lc.push_name, '')) AS push_name,
@@ -562,9 +571,11 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 
 	for rows.Next() {
 		var participant User
-		var name, avatar, pushName, status sql.NullString
+		var name, avatar, pushName, status, phoneJID, lidJID sql.NullString
 		if err := rows.Scan(
 			&participant.ID,
+			&phoneJID,
+			&lidJID,
 			&name,
 			&avatar,
 			&pushName,
@@ -584,8 +595,22 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 		if status.Valid {
 			participant.Status = status.String
 		}
+		if phoneJID.Valid {
+			participant.PhoneJID = phoneJID.String
+			participant.PhoneNumber = phoneNumberFromJID(phoneJID.String)
+		}
 		if participant.Name == "" {
-			participant.Name = contactDisplayName(participant, participant.ID)
+			if participant.PushName != "" {
+				participant.Name = participant.PushName
+			} else if participant.PhoneNumber != "" {
+				participant.Name = participant.PhoneNumber
+			} else {
+				participant.Name = displayNameFromJID(participant.ID)
+			}
+		}
+
+		if lidJID.Valid {
+			participant.LIDJID = lidJID.String
 		}
 		participants = append(participants, participant)
 	}
@@ -594,6 +619,14 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 	}
 
 	return participants, nil
+}
+
+func phoneNumberFromJID(jid string) string {
+	user, server, ok := strings.Cut(jid, "@")
+	if ok && server == "s.whatsapp.net" && user != "" {
+		return user
+	}
+	return ""
 }
 
 func (s *UserDataStore) InsertMessage(msg Message) error {
@@ -936,7 +969,6 @@ func (s *UserDataStore) UpdateMessageStatus(messageIDs []string, status string) 
 		log.Printf("[store] UpdateMessageStatus commit error: %v (%v)", err, time.Since(start))
 		return err
 	}
-	log.Printf("[store] UpdateMessageStatus(%d ids -> %s) OK (%v)", len(messageIDs), status, time.Since(start))
 	return nil
 }
 

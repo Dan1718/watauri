@@ -250,6 +250,42 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 }
 
 func handleReadMessage(w http.ResponseWriter, r *http.Request, chatID string) {
+	var body struct {
+		SendReceipt *bool `json:"sendReceipt"`
+	}
+	r.Body = http.MaxBytesReader(w,r.Body,1024)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil && !errors.Is(err, io.EOF){
+		writeJSONError(w,"invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err,io.EOF){
+		writeJSONError(w,"invalid request body", http.StatusBadRequest)
+		return
+	}
+	sendReceipt := true
+	if body.SendReceipt != nil {
+		sendReceipt = *body.SendReceipt
+	}
+	if wa == nil {
+		writeJSONError(w,"whatsapp is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := wa.MarkRead(r.Context(), chatID, sendReceipt); err != nil {
+		log.Printf("[http] POST /api/chats/%s/read error: %v", chatID, err)
+		switch {
+		case errors.Is(err, errInvalidChatID):
+			writeJSONError(w, "invalid chat ID", http.StatusBadRequest)
+		case errors.Is(err, errWAUnavailable):
+			writeJSONError(w, "WhatsApp is unavailable", http.StatusServiceUnavailable)
+		case errors.Is(err, errPersistMessage):
+			writeJSONError(w, "failed to update local read state", http.StatusInternalServerError)
+		default:
+			writeJSONError(w, "failed to mark chat read", http.StatusBadGateway)
+	}
+	return
+
 }
 
 func writeJSONError(w http.ResponseWriter, message string, status int) {

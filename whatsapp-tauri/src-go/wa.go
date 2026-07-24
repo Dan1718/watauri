@@ -381,7 +381,6 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 		log.Printf("[wa] Failed to store message %s: %v", evt.Info.ID, err)
 		return false
 	}
-	log.Printf("[wa] Stored message %s in chat %s", evt.Info.ID, chatJID)
 	return true
 
 }

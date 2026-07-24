@@ -353,21 +353,61 @@ function Composer({
   return (
     <form className="z-30 flex h-auto w-full gap-2 px-4 pb-2 pt-2" onSubmit={handleSubmit}>
       {!isRecording ? (
-        <button
-          type="button"
-          aria-label={isDrawerOpen ? "Close attachments" : "Open attachments"}
-          aria-expanded={isDrawerOpen}
-          className="composer-action-button relative grid size-11 shrink-0 place-items-center overflow-hidden rounded-full bg-[#242626] text-white"
-          onClick={() => setIsDrawerOpen((open) => !open)}
+        <div
+          className="relative h-11 shrink-0 motion-reduce:transition-none"
+          style={{ width: isDrawerOpen ? 140 : 44, zIndex: 1, transition: "width 250ms ease-out" }}
         >
           <span
             aria-hidden="true"
-            className="material-symbols-outlined grid size-6 place-items-center !text-[24px] transition-transform duration-200 ease-out will-change-transform"
-            style={{ color: "#8a8a92", transform: `rotate(${isDrawerOpen ? 45 : 0}deg)` }}
+            className="absolute inset-y-0 left-11 w-24 rounded-full bg-[#242626] motion-reduce:transition-none"
+            style={{ opacity: isDrawerOpen ? 1 : 0, transform: `scaleX(${isDrawerOpen ? 1 : 0})`, transformOrigin: "left", transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
+          />
+          <button
+            type="button"
+            aria-label={isDrawerOpen ? "Close attachments" : "Open attachments"}
+            aria-expanded={isDrawerOpen}
+            className="composer-action-button absolute left-0 top-0 grid size-11 cursor-pointer place-items-center overflow-hidden rounded-full bg-[#242626] text-white"
+            style={{ zIndex: 1 }}
+            onClick={() => setIsDrawerOpen((open) => !open)}
           >
-            add
-          </span>
-        </button>
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined grid size-6 place-items-center !text-[24px] transition-transform duration-200 ease-out will-change-transform motion-reduce:transition-none"
+              style={{ color: "#8a8a92", transform: `rotate(${isDrawerOpen ? 45 : 0}deg)` }}
+            >
+              add
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-label="Attach file"
+            tabIndex={isDrawerOpen ? 0 : -1}
+            className={`absolute grid size-6 cursor-pointer place-items-center motion-reduce:transition-none ${isDrawerOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+            style={{ left: 52, top: "50%", backgroundColor: "transparent", transform: `translate(${isDrawerOpen ? 0 : -42}px, -50%)`, transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>attach_file</span>
+          </button>
+          <button
+            type="button"
+            aria-label="Add media"
+            tabIndex={isDrawerOpen ? 0 : -1}
+            className={`absolute grid size-6 cursor-pointer place-items-center motion-reduce:transition-none ${isDrawerOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+            style={{ left: 84, top: "50%", backgroundColor: "transparent", transform: `translate(${isDrawerOpen ? 0 : -42}px, -50%)`, transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>add_circle</span>
+          </button>
+          <button
+            type="button"
+            aria-label="Send later"
+            tabIndex={isDrawerOpen ? 0 : -1}
+            className={`absolute grid size-6 cursor-pointer place-items-center motion-reduce:transition-none ${isDrawerOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+            style={{ left: 116, top: "50%", backgroundColor: "transparent", transform: `translate(${isDrawerOpen ? 0 : -42}px, -50%)`, transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
+          >
+            <svg aria-hidden="true" width="24" height="24" viewBox="0 -960 960 960" fill="#8a8a92">
+              <path transform="translate(960 0) scale(-1 1)" d="M480-120q-138 0-240.5-91.5T122-440h82q14 104 92.5 172T480-200q117 0 198.5-81.5T760-480q0-117-81.5-198.5T480-760q-69 0-129 32t-101 88h110v80H120v-240h80v94q51-64 124.5-99T480-840q75 0 140.5 28.5t114 77q48.5 48.5 77 114T840-480q0 75-28.5 140.5t-77 114q-48.5 48.5-114 77T480-120Zm112-192L440-464v-216h80v184l128 128-56 56Z" />
+            </svg>
+          </button>
+        </div>
       ) : null}
       {isRecording ? (
         <div className={`voice-recording-pill flex h-11 min-w-0 flex-1 items-center gap-2 rounded-full border-2 bg-[#202223] px-2 text-white sm:gap-3 ${paused ? "is-paused" : "is-recording"}`}>

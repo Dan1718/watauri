@@ -3,6 +3,7 @@ const API_BASE = "http://localhost:8090";
 export type BackendUser = {
   id: string;
   name?: string;
+  pushName?: string;
   avatar?: string;
   status?: string;
   phone?: string;

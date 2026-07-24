@@ -84,7 +84,7 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
       contact,
       id,
       isSelf: id === userId || contact?.id === userId,
-      name: contact?.isSaved || !contact?.phone ? contact?.displayName || getDisplayNameFromJid(id) : `+${contact.phone}`,
+      name: contact?.displayName || (contact?.phone ? `+${contact.phone}` : getDisplayNameFromJid(id)),
     }))
     .sort((a, b) => Number(Boolean(b.contact?.isSaved)) - Number(Boolean(a.contact?.isSaved)) ||
       Number(b.isSelf) - Number(a.isSelf) ||

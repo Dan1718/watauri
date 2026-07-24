@@ -11,7 +11,7 @@ import { Chat, Message } from "./chats-provider";
 import { useChats } from "../hooks/use-chats";
 import { useContacts } from "../hooks/use-contacts";
 import { Contact } from "./contacts-provider";
-import { getDisplayNameFromJid } from "../utils";
+import { getDisplayNameFromJid, isPhonePlaceholder, normalizeJid } from "../utils";
 import { BackendMessage, listBackendMessages, sendBackendMessage } from "../backend";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
 
@@ -51,7 +51,7 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
   const isFromMe = Boolean(message.isFromMe);
   return {
     id: message.id,
-    contactId: isFromMe ? fallbackContactId : message.senderId,
+    contactId: isFromMe ? fallbackContactId : normalizeJid(message.senderId),
     message: message.text,
     timestamp: message.timestamp,
     isSentFromUser: isFromMe,
@@ -134,7 +134,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   const {
     chats: { complete },
   } = useChats();
-  const { contacts } = useContacts();
+  const { contacts, getContact } = useContacts();
   const pollingActive = useChatPollingActive();
   const cacheRef = useRef(new Map<string, CachedMessages>());
   const requestRef = useRef<ActiveRequest | null>(null);
@@ -261,11 +261,18 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
       } else {
         const groupContacts: CurrentChatContacts = {};
         chat.contactId.forEach((groupContact: string) => {
-          const contact = contacts.find((contact: Contact) => contact.id === groupContact);
           const participant = chat.participants?.find(({ id }) => id === groupContact);
+          const contact = getContact(groupContact) ?? (participant?.phone ? getContact(participant.phone) : undefined);
+          const displayName = participant?.name && !isPhonePlaceholder(participant.name)
+            ? participant.name
+            : undefined;
+          const contactDisplayName = contact?.displayName && !isPhonePlaceholder(contact.displayName)
+            ? contact.displayName
+            : undefined;
           groupContacts[groupContact] = participant ? {
             id: participant.id,
-            displayName: participant.name || contact?.displayName || getDisplayNameFromJid(participant.id),
+            displayName: (contact?.isSaved ? contact.displayName : undefined) || displayName || contactDisplayName ||
+              (participant.phone ? `+${participant.phone}` : getDisplayNameFromJid(participant.id)),
             contactAvatar: contact?.contactAvatar || participant.avatar || "",
             statusMessage: contact?.statusMessage || participant.status || "",
             phone: participant.phone || contact?.phone,
@@ -288,7 +295,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
         });
       }
     }
-  }, [complete, contacts, currentChat.chatId]);
+  }, [complete, contacts, currentChat.chatId, getContact]);
 
   const loadCurrentChat = useCallback((chat: Partial<CurrentChatData>) => {
     setCurrentChat((prev) => {

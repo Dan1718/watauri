@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { BackendChat, BackendMessage, BackendUser, listBackendChats } from "../backend";
-import { getDisplayNameFromJid } from "../utils";
+import { getDisplayNameFromJid, normalizeJid } from "../utils";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
 
 export enum Filters {
@@ -76,7 +76,7 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
   const isFromMe = Boolean(message.isFromMe);
   return {
     id: message.id,
-    contactId: isFromMe ? fallbackContactId : message.senderId,
+    contactId: isFromMe ? fallbackContactId : normalizeJid(message.senderId),
     message: message.text,
     timestamp: message.timestamp,
     isSentFromUser: isFromMe,
@@ -105,7 +105,7 @@ function sameChat(a: Chat, b: Chat) {
     a.participants?.every((participant, index) => {
       const other = b.participants?.[index];
       return participant.id === other?.id && participant.name === other?.name &&
-        participant.avatar === other?.avatar && participant.status === other?.status &&
+        participant.pushName === other?.pushName && participant.avatar === other?.avatar && participant.status === other?.status &&
         participant.phone === other?.phone && participant.isSaved === other?.isSaved;
     });
   return a.id === b.id && contactsEqual && participantsEqual && a.groupName === b.groupName &&

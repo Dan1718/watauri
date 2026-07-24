@@ -161,15 +161,20 @@ const ChatList = memo(function ChatList({
     if (normalizedSearch && !name.toLowerCase().includes(normalizedSearch)) return [];
 
     const lastMessage = chat.messages[chat.messages.length - 1];
+    const sender = lastMessage && chat.group
+      ? chat.participants?.find(({ id }) => id === lastMessage.contactId)
+      : undefined;
+    const senderContact = lastMessage && chat.group ? getContact(lastMessage.contactId) : undefined;
+    const senderName = lastMessage && chat.group
+      ? sender?.name || senderContact?.displayName || getDisplayNameFromJid(lastMessage.contactId)
+      : undefined;
     return [
       <ChatRow
         key={chat.id}
         chat={chat}
         name={name}
         avatar={contact?.contactAvatar}
-        senderName={lastMessage && chat.group
-          ? getContact(lastMessage.contactId)?.displayName ?? getDisplayNameFromJid(lastMessage.contactId)
-          : undefined}
+        senderName={sender?.phone && !sender.isSaved && !senderContact?.isSaved ? `${senderName} (+${sender.phone})` : senderName}
         isCurrent={chat.id === currentChatId}
         typingMatchesLastSender={Boolean(lastMessage && typingContactId === lastMessage.contactId)}
         blueTickEnabled={blueTickEnabled}

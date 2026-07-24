@@ -49,4 +49,10 @@ type Chat struct {
 	LastMessageText      string   `json:"-"`
 	LastMessageTimestamp string   `json:"-"`
 	LastMessageSender    string   `json:"-"`
+	CanSend              bool     `json:"canSend"`
+	IsPinned             bool     `json:"isPinned"`
+	IsMuted              bool     `json:"isMuted"`
+	IsFavorite           bool     `json:"isFavorite"`
+	IsAnnouncement       bool     `json:"isAnnouncement"`
+	IsSuspended          bool     `json:"isSuspended"`
 }

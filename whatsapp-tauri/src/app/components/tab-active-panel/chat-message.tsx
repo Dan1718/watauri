@@ -53,6 +53,7 @@ export default function ChatMessage({
           read={message.read}
           delivered={message.delivered}
           sent={message.sent}
+          pending={message.pending}
           blueTickEnabled={blueTickEnabled}
           isInMessage
         />

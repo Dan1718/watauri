@@ -300,13 +300,11 @@ const MessageList = memo(function MessageList({
 
 function Composer({
   chatId,
-  isSending,
   sendMessage,
   onSent,
 }: {
   chatId: string;
-  isSending: boolean;
-  sendMessage: (text: string) => Promise<boolean>;
+  sendMessage: (text: string) => boolean;
   onSent: () => void;
 }) {
   const [messageText, setMessageText] = useState("");
@@ -351,11 +349,11 @@ function Composer({
   const hasText = messageText.length > 0;
   const isRecording = recordingState !== "idle";
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = messageText.trim();
-    if (!text || isSending) return;
-    if (await sendMessage(text)) {
+    if (!text) return;
+    if (sendMessage(text)) {
       setMessageText("");
       onSent();
     }
@@ -565,9 +563,8 @@ function Composer({
           <input
             ref={inputRef}
             aria-label="Message"
-            className="h-11 w-full rounded-full bg-[#242626] py-3 pl-4 pr-12 text-sm text-white caret-green-400 outline-none read-only:cursor-wait placeholder:text-white/60"
-            readOnly={isSending}
-            placeholder={isSending ? "Sending..." : "Type a message"}
+            className="h-11 w-full rounded-full bg-[#242626] py-3 pl-4 pr-12 text-sm text-white caret-green-400 outline-none placeholder:text-white/60"
+            placeholder="Type a message"
             value={messageText}
             onChange={(event) => setMessageText(event.target.value)}
           />
@@ -607,7 +604,6 @@ export default function CurrentChat() {
     messages,
     isLoading,
     error,
-    isSending,
     hasMoreMessages,
     unreadCount,
     sendMessage,
@@ -646,7 +642,6 @@ export default function CurrentChat() {
           />
           <Composer
             chatId={chatId}
-            isSending={isSending}
             sendMessage={sendMessage}
             onSent={() => setScrollToBottomRequest((request) => request + 1)}
           />

@@ -34,13 +34,12 @@ export type CurrentChatData = {
   unreadCount: number;
   isLoading: boolean;
   error: string | null;
-  isSending: boolean;
   hasMoreMessages: boolean;
 };
 
 export type CurrentChat = CurrentChatData & {
   loadCurrentChat: (chat: Partial<CurrentChatData>) => void;
-  sendMessage: (text: string) => Promise<boolean>;
+  sendMessage: (text: string) => boolean;
   loadOlderMessages: () => Promise<void>;
 };
 
@@ -56,9 +55,10 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
     message: message.text,
     timestamp: message.timestamp,
     isSentFromUser: isFromMe,
-    sent: true,
+    sent: message.status !== "pending",
     delivered: message.status === "delivered" || message.status === "read",
     read: message.status === "read",
+    pending: message.status === "pending",
     mediaType: message.mediaType,
   };
 }
@@ -67,6 +67,7 @@ function sameMessage(a: Message, b: Message) {
   return a.id === b.id && a.contactId === b.contactId && a.message === b.message &&
     a.timestamp === b.timestamp && a.isSentFromUser === b.isSentFromUser &&
     a.read === b.read && a.sent === b.sent && a.delivered === b.delivered &&
+    a.pending === b.pending &&
     a.mediaType === b.mediaType &&
     (a.reactions === b.reactions || Boolean(a.reactions && b.reactions &&
       a.reactions.length === b.reactions.length && a.reactions.every((reaction, index) =>
@@ -127,7 +128,6 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     unreadCount: 0,
     isLoading: false,
     error: null,
-    isSending: false,
     hasMoreMessages: false,
   });
   const {
@@ -295,7 +295,6 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
           hasMoreMessages: cached?.hasMore ?? false,
           isLoading: !cached?.initialized,
           error: null,
-          isSending: false,
         } : {}),
         ...chat,
       };
@@ -313,44 +312,72 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     await promise;
   }, [requestPage]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback((text: string) => {
     const trimmedText = text.trim();
     const chatId = currentChatRef.current.chatId;
     if (!chatId || !trimmedText) return false;
 
-    setCurrentChat((prev) => ({ ...prev, isSending: true, error: null }));
-    try {
-      const sentMessage = await sendBackendMessage(chatId, trimmedText);
-      const chat = chatsRef.current.find((item: Chat) => item.id === chatId);
-      const fallbackContactId = typeof chat?.contactId === "string" ? chat.contactId : chatId;
-      const message = toMessage(sentMessage, fallbackContactId);
-      const cached = cacheRef.current.get(chatId);
-      if (cached) {
-        cacheRef.current.set(chatId, { ...cached, messages: mergeMessages(cached.messages, [message]) });
-      } else {
-        cacheRef.current.set(chatId, {
-          messages: [message], nextCursor: null, latestCursor: null, hasMore: false, initialized: false,
+    const chat = chatsRef.current.find((item: Chat) => item.id === chatId);
+    const fallbackContactId = typeof chat?.contactId === "string" ? chat.contactId : chatId;
+    const optimisticId = `pending-${crypto.randomUUID()}`;
+    const optimisticMessage: Message = {
+      id: optimisticId,
+      contactId: fallbackContactId,
+      message: trimmedText,
+      timestamp: new Date().toISOString(),
+      isSentFromUser: true,
+      sent: false,
+      delivered: false,
+      read: false,
+      pending: true,
+    };
+    const cached = cacheRef.current.get(chatId);
+    cacheRef.current.set(chatId, cached
+      ? { ...cached, messages: mergeMessages(cached.messages, [optimisticMessage]) }
+      : {
+          messages: [optimisticMessage], nextCursor: null, latestCursor: null, hasMore: false, initialized: false,
         });
-      }
+    setCurrentChat((prev) => prev.chatId === chatId
+      ? { ...prev, messages: mergeMessages(prev.messages, [optimisticMessage]), error: null }
+      : prev);
+
+    void sendBackendMessage(chatId, trimmedText).then((sentMessage) => {
+      const message = toMessage(sentMessage, fallbackContactId);
+      const replaceOptimistic = (messages: Message[]) => {
+        const withoutOptimistic = messages.filter(({ id }) => id !== optimisticId);
+        return withoutOptimistic.some(({ id }) => id === message.id)
+          ? withoutOptimistic
+          : mergeMessages(withoutOptimistic, [message]);
+      };
+      const latestCache = cacheRef.current.get(chatId);
+      if (latestCache) cacheRef.current.set(chatId, {
+        ...latestCache,
+        messages: replaceOptimistic(latestCache.messages),
+      });
       setCurrentChat((prev) =>
         prev.chatId === chatId
           ? {
               ...prev,
-              messages: mergeMessages(prev.messages, [message]),
-              isSending: false,
+              messages: replaceOptimistic(prev.messages),
               error: null,
             }
           : prev
       );
-      return currentChatRef.current.chatId === chatId;
-    } catch (error) {
+    }).catch((error) => {
+      const markFailed = (messages: Message[]) => messages.map((message) =>
+        message.id === optimisticId ? { ...message, pending: false } : message);
+      const latestCache = cacheRef.current.get(chatId);
+      if (latestCache) cacheRef.current.set(chatId, {
+        ...latestCache,
+        messages: markFailed(latestCache.messages),
+      });
       setCurrentChat((prev) => prev.chatId === chatId ? {
         ...prev,
-        isSending: false,
+        messages: markFailed(prev.messages),
         error: error instanceof Error ? error.message : "Failed to send message",
       } : prev);
-      return false;
-    }
+    });
+    return true;
   }, []);
 
   const value = useMemo(

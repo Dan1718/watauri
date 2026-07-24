@@ -321,14 +321,23 @@ function Composer({
 
   return (
     <form className="z-30 h-auto w-full px-4 pb-2 pt-1" onSubmit={handleSubmit}>
-      <input
-        aria-label="Message"
-        className="w-full rounded-full bg-[#242626] p-3 px-4 text-sm text-white caret-green-400 outline-none read-only:cursor-wait placeholder:text-white/60"
-        readOnly={isSending}
-        placeholder={isSending ? "Sending..." : "Type a message"}
-        value={messageText}
-        onChange={(event) => setMessageText(event.target.value)}
-      />
+      <div className="relative w-full">
+        <input
+          aria-label="Message"
+          className="w-full rounded-full bg-[#242626] py-3 pl-4 pr-12 text-sm text-white caret-green-400 outline-none read-only:cursor-wait placeholder:text-white/60"
+          readOnly={isSending}
+          placeholder={isSending ? "Sending..." : "Type a message"}
+          value={messageText}
+          onChange={(event) => setMessageText(event.target.value)}
+        />
+        <span
+          aria-hidden="true"
+          className="material-symbols-outlined absolute top-1/2 z-10 -translate-y-1/2 cursor-pointer !text-[24px] transition-colors"
+          style={{ right: 12, color: "#8a8a92", clipPath: "circle(50%)" }}
+          onMouseEnter={(event) => { event.currentTarget.style.color = "#00a884"; }}
+          onMouseLeave={(event) => { event.currentTarget.style.color = "#8a8a92"; }}
+        >mood</span>
+      </div>
     </form>
   );
 }

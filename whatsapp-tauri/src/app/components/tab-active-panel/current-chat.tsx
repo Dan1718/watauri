@@ -319,6 +319,7 @@ function Composer({
   const [isAttachmentDrawerOpen, setIsAttachmentDrawerOpen] = useState(false);
   const [isMediaDrawerOpen, setIsMediaDrawerOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useLayoutEffect(() => {
     if (recordingState === "idle") inputRef.current?.focus();
@@ -364,6 +365,7 @@ function Composer({
 
   return (
     <form className="z-30 flex h-auto w-full gap-2 px-4 pb-2 pt-2" onSubmit={handleSubmit}>
+      <input ref={fileInputRef} type="file" hidden />
       {!isRecording ? (
         <div
           className="relative h-11 shrink-0 motion-reduce:transition-none"
@@ -419,7 +421,7 @@ function Composer({
               className={`absolute ${isDrawerReady ? "pointer-events-auto" : "pointer-events-none"}`}
               style={{ top: -18, left: -17, width: 22, height: 24, borderRadius: 999 }}
             />
-            <button type="button" aria-label="Attach file" aria-expanded={isAttachmentDrawerOpen} tabIndex={isDrawerReady ? 0 : -1} className="absolute z-20 grid size-6 cursor-pointer place-items-center bg-transparent" style={{ backgroundColor: "transparent" }}>
+            <button type="button" aria-label="Attach file" aria-expanded={isAttachmentDrawerOpen} tabIndex={isDrawerReady ? 0 : -1} className="absolute z-20 grid size-6 cursor-pointer place-items-center bg-transparent" style={{ backgroundColor: "transparent" }} onClick={() => fileInputRef.current?.click()}>
               <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>attach_file</span>
             </button>
             <button

@@ -31,7 +31,7 @@ This file tracks user-facing product features. For implementation details, archi
 | Send text messages | done | Composer endpoint and whatsmeow send path |
 | Message pagination | done | Cursor pagination avoids loading entire chats at once |
 | Real-time updates | planned | Server-Sent Events for new messages, receipt changes, chat metadata updates, and sync progress |
-| Read receipts | planned | Risky: protocol-sensitive behavior |
+| Read receipts | done | Opening a chat can mark inbound messages read locally and send WhatsApp read receipts; endpoint supports a `sendReceipt` privacy flag |
 | Typing indicators | planned | Risky: protocol-sensitive behavior |
 | Attachments | planned | Media upload and download flow |
 

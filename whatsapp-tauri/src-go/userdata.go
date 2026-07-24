@@ -287,6 +287,22 @@ func (s *UserDataStore) UpsertChatParticipant(chatJID, userJID string, rank int)
 	return nil
 }
 
+func (s *UserDataStore) DeleteChatParticipant(chatJID, userJID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	start := time.Now()
+	_, err := s.db.Exec(
+		`DELETE FROM chat_participants WHERE chat_jid = ? AND user_jid = ?`,
+		chatJID, userJID,
+	)
+	if err != nil {
+		log.Printf("[store] DeleteChatParticipant(%s -> %s) error: %v (%v)", userJID, chatJID, err, time.Since(start))
+		return err
+	}
+	log.Printf("[store] DeleteChatParticipant(%s -> %s) OK (%v)", userJID, chatJID, time.Since(start))
+	return nil
+}
+
 func (s *UserDataStore) ResolveContact(jid string) (User, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -486,6 +502,15 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 				c.Name = &displayName
 			}
 		}
+
+		if c.IsGroup {
+			participants, err := s.getChatParticipantsLocked(c.ID)
+			if err != nil {
+				log.Printf("[store] failed to load participants for group chat %s: %v", c.ID, err)
+			} else {
+				c.Participants = participants
+			}
+		}
 		c.IsArchived = intToBool(isArchived)
 		c.IsStarred = intToBool(isStarred)
 		c.IsCommunity = intToBool(isCommunity)
@@ -498,6 +523,75 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 	}
 	log.Printf("[store] GetChats -> %d chats (%v)", len(chats), time.Since(start))
 	return chats, nil
+}
+
+func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error) {
+	rows, err := s.db.Query(
+		`SELECT
+			p.user_jid,
+			COALESCE(NULLIF(c.name, ''), NULLIF(pc.name, ''), NULLIF(lc.name, '')) AS name,
+			COALESCE(NULLIF(c.avatar, ''), NULLIF(pc.avatar, ''), NULLIF(lc.avatar, '')) AS avatar,
+			COALESCE(NULLIF(c.push_name, ''), NULLIF(pc.push_name, ''), NULLIF(lc.push_name, '')) AS push_name,
+			COALESCE(NULLIF(c.status, ''), NULLIF(pc.status, ''), NULLIF(lc.status, '')) AS status
+		FROM chat_participants p
+		LEFT JOIN contacts c ON c.jid = p.user_jid
+		LEFT JOIN jid_mappings lid_map ON lid_map.lid_jid = p.user_jid
+		LEFT JOIN contacts pc ON pc.jid = lid_map.phone_jid
+		LEFT JOIN jid_mappings phone_map ON phone_map.phone_jid = p.user_jid
+		LEFT JOIN contacts lc ON lc.jid = phone_map.lid_jid
+		WHERE p.chat_jid = ?
+		ORDER BY p.rank DESC,
+			COALESCE(
+				NULLIF(c.name, ''),
+				NULLIF(pc.name, ''),
+				NULLIF(lc.name, ''),
+				NULLIF(c.push_name, ''),
+				NULLIF(pc.push_name, ''),
+				NULLIF(lc.push_name, ''),
+				p.user_jid
+			)`,
+		chatJID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	participants := []User{}
+
+	for rows.Next() {
+		var participant User
+		var name, avatar, pushName, status sql.NullString
+		if err := rows.Scan(
+			&participant.ID,
+			&name,
+			&avatar,
+			&pushName,
+			&status,
+		); err != nil {
+			return nil, err
+		}
+		if name.Valid {
+			participant.Name = name.String
+		}
+		if avatar.Valid {
+			participant.Avatar = avatar.String
+		}
+		if pushName.Valid {
+			participant.PushName = pushName.String
+		}
+		if status.Valid {
+			participant.Status = status.String
+		}
+		if participant.Name == "" {
+			participant.Name = contactDisplayName(participant, participant.ID)
+		}
+		participants = append(participants, participant)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return participants, nil
 }
 
 func (s *UserDataStore) InsertMessage(msg Message) error {

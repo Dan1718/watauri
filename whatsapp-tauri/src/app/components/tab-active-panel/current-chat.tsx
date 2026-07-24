@@ -317,6 +317,7 @@ function Composer({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isDrawerReady, setIsDrawerReady] = useState(false);
   const [isAttachmentDrawerOpen, setIsAttachmentDrawerOpen] = useState(false);
+  const [isMediaDrawerOpen, setIsMediaDrawerOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useLayoutEffect(() => {
@@ -331,6 +332,7 @@ function Composer({
 
   useEffect(() => {
     setIsAttachmentDrawerOpen(false);
+    setIsMediaDrawerOpen(false);
     setIsDrawerReady(false);
     if (!isDrawerOpen) return;
     const timer = window.setTimeout(() => setIsDrawerReady(true), 250);
@@ -439,15 +441,61 @@ function Composer({
               <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>photo_camera</span>
             </button>
           </div>
-          <button
-            type="button"
-            aria-label="Add media"
-            tabIndex={isDrawerOpen ? 0 : -1}
-            className={`absolute grid size-6 cursor-pointer place-items-center motion-reduce:transition-none ${isDrawerOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
-            style={{ left: 84, top: "50%", backgroundColor: "transparent", transform: `translate(${isDrawerOpen ? 0 : -42}px, -50%)`, transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
+          <div
+            className={`absolute z-20 size-6 motion-reduce:transition-none ${isDrawerOpen ? "opacity-100" : "opacity-0"} ${isDrawerReady ? "" : "pointer-events-none"}`}
+            style={{ left: 84, top: "50%", transform: `translate(${isDrawerOpen ? 0 : -42}px, -50%)`, transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
+            onMouseEnter={() => {
+              if (isDrawerReady) setIsMediaDrawerOpen(true);
+            }}
+            onMouseLeave={() => setIsMediaDrawerOpen(false)}
+            onFocus={() => {
+              if (isDrawerReady) setIsMediaDrawerOpen(true);
+            }}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setIsMediaDrawerOpen(false);
+            }}
           >
-            <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>add_circle</span>
-          </button>
+            <span
+              aria-hidden="true"
+              className={`absolute ${isMediaDrawerOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+              style={{ top: -90, left: -10, width: 44, height: 82, borderRadius: 999, backgroundColor: "#242626", opacity: isMediaDrawerOpen ? 1 : 0, transform: `scaleY(${isMediaDrawerOpen ? 1 : 0})`, transformOrigin: "bottom", transition: "transform 150ms ease-out, opacity 75ms ease-out" }}
+            />
+            <span
+              aria-hidden="true"
+              className={`absolute ${isMediaDrawerOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+              style={{ top: -8, left: -10, width: 44, height: 12 }}
+            />
+            <span
+              aria-hidden="true"
+              className={`absolute ${isDrawerReady ? "pointer-events-auto" : "pointer-events-none"}`}
+              style={{ top: -18, left: -15, width: 22, height: 24, borderRadius: 999 }}
+            />
+            <button type="button" aria-label="Add media" aria-expanded={isMediaDrawerOpen} tabIndex={isDrawerReady ? 0 : -1} className="absolute z-20 grid size-6 cursor-pointer place-items-center bg-transparent" style={{ backgroundColor: "transparent" }}>
+              <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>add_circle</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Create poll"
+              tabIndex={isDrawerOpen ? 0 : -1}
+              className={`absolute z-10 grid h-6 cursor-pointer place-items-center bg-transparent ${isMediaDrawerOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+              style={{ top: -77, left: -10, width: 44, backgroundColor: "transparent", opacity: isMediaDrawerOpen ? 1 : 0, transform: `translateY(${isMediaDrawerOpen ? 0 : 8}px)`, transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
+            >
+              <svg aria-hidden="true" width="24" height="24" viewBox="0 0 960 960" fill="#8a8a92">
+                <rect x="160" y="640" width="320" height="160" rx="80" />
+                <rect x="160" y="400" width="640" height="160" rx="80" />
+                <rect x="160" y="160" width="440" height="160" rx="80" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              aria-label="Add event"
+              tabIndex={isDrawerOpen ? 0 : -1}
+              className={`absolute z-10 grid h-6 cursor-pointer place-items-center bg-transparent ${isMediaDrawerOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+              style={{ top: -45, left: -10, width: 44, backgroundColor: "transparent", opacity: isMediaDrawerOpen ? 1 : 0, transform: `translateY(${isMediaDrawerOpen ? 0 : 8}px)`, transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
+            >
+              <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>calendar_month</span>
+            </button>
+          </div>
           <button
             type="button"
             aria-label="Send later"

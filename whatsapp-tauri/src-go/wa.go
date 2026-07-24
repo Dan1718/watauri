@@ -581,7 +581,8 @@ func (wa *WAManager) SyncGroups(ctx context.Context) {
 	groupsStored := 0
 	participantsStored := 0
 	groupsSkipped := 0
-
+	avatarsStored := 0
+	avatarsSkipped := 0
 	for _, group := range groups {
 		if group == nil || group.JID.User == "" || group.JID.Server == "" {
 			groupsSkipped++
@@ -608,9 +609,16 @@ func (wa *WAManager) SyncGroups(ctx context.Context) {
 				participantsStored++
 			}
 		}
+
+		if err := wa.SyncPicture(ctx, group.JID, false); err != nil {
+			log.Printf("[wa] failed to sync group avatar %s; %v", chatJID, err)
+			avatarsSkipped++
+		} else {
+			avatarsStored++
+		}
 	}
 
-	log.Printf("[wa] Group sync complete: groups=%d skipped=%d participants=%d total=%d", groupsStored, groupsSkipped, participantsStored, len(groups))
+	log.Printf("[wa] Group sync complete: groups=%d skipped=%d participants=%d avatars =%d avatarsskipped=%d total=%d", groupsStored, groupsSkipped, participantsStored, avatarsStored, avatarsSkipped, len(groups))
 }
 
 func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message, error) {

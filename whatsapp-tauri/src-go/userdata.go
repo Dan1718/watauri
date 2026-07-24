@@ -744,7 +744,7 @@ func (s *UserDataStore) GetUnreadInboundMessages(chatJID string) ([]Message, err
 	return messages, nil
 }
 
-func (s *UserDataStore) MarkChatRead(chatJID string) {
+func (s *UserDataStore) MarkChatRead(chatJID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -761,7 +761,7 @@ func (s *UserDataStore) MarkChatRead(chatJID string) {
 		AND is_from_me = 0
 		AND status != 'read'
 		ORDER BY timestamp_epoch ASC, id ASC`,
-		chatJID
+		chatJID,
 	)
 	if err != nil {
 		tx.Rollback()
@@ -770,12 +770,12 @@ func (s *UserDataStore) MarkChatRead(chatJID string) {
 	}
 
 	var ids []string
-	for rows.Next(){
+	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			rows.Close()
 			tx.Rollback()
-			log.Printf("[store] MarkChatRead(%s) scan error : %v (%v)",chatJID,err,time.Since(start))
+			log.Printf("[store] MarkChatRead(%s) scan error : %v (%v)", chatJID, err, time.Since(start))
 			return err
 		}
 		ids = append(ids, id)
@@ -786,10 +786,11 @@ func (s *UserDataStore) MarkChatRead(chatJID string) {
 		log.Printf("[store] MarkChatRead (%s) rows error : %v (%v)", chatJID, err, time.Since(start))
 		return err
 	}
-	stmt,err := tx.Prepare(`UPDATE messages SET status = 'read', revision = ? WHERE id = ?`)
+	rows.Close()
+	stmt, err := tx.Prepare(`UPDATE messages SET status = 'read', revision = ? WHERE id = ?`)
 	if err != nil {
 		tx.Rollback()
-		log.Printf("[store] MarkChatRead(%s) preparer errorr: %v (%v)", chatJID,err,time.Since(start))
+		log.Printf("[store] MarkChatRead(%s) preparer errorr: %v (%v)", chatJID, err, time.Since(start))
 		return err
 	}
 	defer stmt.Close()
@@ -800,7 +801,7 @@ func (s *UserDataStore) MarkChatRead(chatJID string) {
 			tx.Rollback()
 			return err
 		}
-		if _, err := stmt.Exec(revision,id); err != nil {
+		if _, err := stmt.Exec(revision, id); err != nil {
 			tx.Rollback()
 			log.Printf("[store] MarkChatRead(%s) update message %s error : %v (%v) ", chatJID, id, err, time.Since(start))
 			return err
@@ -812,16 +813,17 @@ func (s *UserDataStore) MarkChatRead(chatJID string) {
 		SET unread_count = 0,
 		updated_at = ?
 		WHERE jid = ?`, time.Now().Format(time.RFC3339), chatJID); err != nil {
-			tx.Rollback()
-			log.Printf("[store] MarkChatRead(%s) update chat error : %v (%v) ", chatJID,err, time.Since(start))
-			return err
-		}
-		if err := tx.Commit(); err != nil {
-			log.Printf("[store] MarkChatRead(%s) commit error : %v (%v)", chatJID,err,time.Since(start))
-			return err
-		}
-		log.Print("[store] Markchatread(%s) -> %d messages (%v)",chatJID,len(ids),time.Since(start))
-		return nil
+		tx.Rollback()
+		log.Printf("[store] MarkChatRead(%s) update chat error : %v (%v) ", chatJID, err, time.Since(start))
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("[store] MarkChatRead(%s) commit error : %v (%v)", chatJID, err, time.Since(start))
+		return err
+	}
+	log.Printf("[store] MarkChatRead(%s) -> %d messages (%v)", chatJID, len(ids), time.Since(start))
+	return nil
+
 }
 
 type messageCursor struct {

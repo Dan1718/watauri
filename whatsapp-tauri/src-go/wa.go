@@ -669,7 +669,7 @@ func (wa *WAManager) MarkRead(ctx context.Context, chatID string, sendReceipt bo
 	}
 	messages, err := store.GetUnreadInboundMessages(chatJID.String())
 	if err != nil {
-		return fmt.Errorf("%w: %v", errPersistMessage, errr)
+		return fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
 
 	if sendReceipt && len(messages) > 0 {

@@ -514,7 +514,12 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 		c.IsArchived = intToBool(isArchived)
 		c.IsStarred = intToBool(isStarred)
 		c.IsCommunity = intToBool(isCommunity)
-
+		c.CanSend = true
+		c.IsPinned = false
+		c.IsMuted = false
+		c.IsFavorite = c.IsStarred
+		c.IsAnnouncement = false
+		c.IsSuspended = false
 		chats = append(chats, c)
 	}
 	if err := rows.Err(); err != nil {

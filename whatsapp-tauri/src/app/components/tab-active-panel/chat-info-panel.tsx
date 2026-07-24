@@ -3,7 +3,7 @@ import { Contact } from "@/app/context/contacts-provider";
 import { CurrentChatContactsGroup } from "@/app/context/current-chat-provider";
 import { useChats } from "@/app/hooks/use-chats";
 import { getDisplayNameFromJid } from "@/app/utils";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Profile from "../profile";
 
 const durations = ["Off", "1 day", "7 days", "3 months"];
@@ -78,7 +78,6 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
     return { all, preview: orderGroups(all, 5) };
   });
   const [orderedCommonGroups, setOrderedCommonGroups] = useState<Chat[] | null>(null);
-  const mediaRef = useRef<HTMLElement>(null);
   const members = group ? Object.entries(group.contacts) : [];
   const matchingMembers = members.filter(([id, member]) =>
     (id === userId ? "You" : member?.displayName ?? getDisplayNameFromJid(id))
@@ -103,12 +102,11 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
   }, [chatId]);
 
   const actionClass = (active: boolean) =>
-    `flex size-11 items-center justify-center rounded-full border transition-colors focus-visible:outline-2 focus-visible:outline-emerald-400 ${active ? "border-emerald-400/60 bg-emerald-400 text-[#07130d]" : "border-white/10 bg-white/7 text-white/75 hover:bg-white/12"}`;
+    `chat-info-action flex size-11 items-center justify-center rounded-full border transition-colors focus-visible:outline-2 focus-visible:outline-emerald-400 ${active ? "border-emerald-400/60 bg-emerald-400 text-[#07130d]" : "border-white/10 bg-white/7 text-white/75 hover:bg-white/12"}`;
 
   const toggleMedia = () => {
     if (!showAll) setMediaFilter("image");
     setShowAll(!showAll);
-    if (showAll) requestAnimationFrame(() => mediaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
   };
 
   const openCommonGroups = () => {
@@ -121,10 +119,10 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
   );
 
   return (
-    <aside aria-label={group ? "Group info" : "Contact info"} className="relative flex h-full w-[min(366px,40%)] min-w-72 shrink-0 flex-col overflow-hidden border-l border-white/10 bg-[#111b21] text-white">
+    <aside aria-label={group ? "Group info" : "Contact info"} className="relative flex h-full w-[min(366px,40%)] min-w-72 shrink-0 flex-col overflow-hidden border-l border-white/10 bg-[#161717] text-white [&_button]:cursor-pointer">
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
         <section className="relative flex flex-col items-center pb-3 pt-8 text-center">
-          {group ? <button className="absolute right-0 top-5 rounded px-1 text-sm font-medium text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button">Edit</button> : null}
+          {group ? <button className="green-action absolute right-0 top-5 rounded px-1 text-sm font-medium text-emerald-400 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button">Edit</button> : null}
           <div className="relative mb-4 flex w-full justify-center" style={{ paddingBottom: 24 }}>
             <div className="rounded-full ring-1 ring-white/10">
               <Profile size="24" url={group?.avatar || contact?.contactAvatar}>
@@ -139,14 +137,14 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
             </button>
           </div>
           <h3 className="max-w-full truncate text-xl font-semibold">{group?.name ?? contact?.displayName}</h3>
-          {group ? <button className="mt-1 rounded px-1 text-sm text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button">Add a description</button> : <p className="mt-1 text-sm text-white/50">{contact?.typing ? "typing..." : contact?.statusMessage || "Online"}</p>}
+          {group ? <button className="green-action mt-1 rounded px-1 text-sm text-emerald-400 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button">Add a description</button> : <p className="mt-1 text-sm text-white/50">{contact?.typing ? "typing..." : contact?.statusMessage || "Online"}</p>}
         </section>
 
         {group ? (
             <section className="py-3">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-medium text-white/70">Members</h3>
-                {members.length > 5 ? <button className="rounded px-1 text-sm font-medium text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setShowAllMembers((value) => !value)} type="button">{showAllMembers ? "Show less" : "Show all"}</button> : null}
+                {members.length > 5 ? <button className="green-action rounded px-1 text-sm font-medium text-emerald-400 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setShowAllMembers((value) => !value)} type="button">{showAllMembers ? "Show less" : "Show all"}</button> : null}
               </div>
               <div className="overflow-hidden rounded-xl border border-white/10 bg-white/3">
                 <label className="flex items-center gap-2 px-3 py-2 text-white/50">
@@ -169,10 +167,10 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
         ) : null}
 
         {media.length > 0 ? (
-          <section className="pb-3 pt-3" ref={mediaRef}>
-            <div className={`mb-3 flex items-center justify-between ${showAll ? "py-3" : ""}`} style={showAll ? { background: "#111b21", position: "sticky", top: 0, zIndex: 20 } : undefined}>
+          <section className="pb-3 pt-3">
+            <div className="mb-3 flex items-center justify-between" style={showAll ? { background: "#161717", position: "sticky", top: 0, zIndex: 20 } : undefined}>
               <h3 className="text-sm font-medium text-white/70">Media</h3>
-              <button className="w-20 rounded px-1 text-center text-sm font-medium text-emerald-400 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={toggleMedia} type="button">{showAll ? "Show less" : "Show all"}</button>
+              <button className="green-action w-20 rounded py-1 text-sm font-medium text-emerald-400 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={toggleMedia} type="button">{showAll ? "Show less" : "Show all"}</button>
             </div>
             <div className={showAll ? "rounded-xl bg-white/5 p-2" : ""}>
               {showAll ? (
@@ -185,7 +183,7 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
                   {mediaFilters.map(([value, label]) => (
                     <button
                       aria-pressed={mediaFilter === value}
-                      className={`relative z-10 rounded-lg px-1 py-1.5 text-xs transition-colors ${mediaFilter === value ? "text-white" : "text-white/60 hover:text-white"}`}
+                      className={`media-filter-action relative z-10 rounded-lg px-1 py-1.5 text-xs transition-colors ${mediaFilter === value ? "text-white" : "text-white/60 hover:text-white"}`}
                       key={value}
                       onClick={() => setMediaFilter(value)}
                       type="button"
@@ -200,7 +198,7 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
                   {visibleMedia.map((message) => {
                     const type = message.mediaType || "link";
                     return (
-                      <div className="flex aspect-[4/3] min-w-0 flex-col items-center justify-center gap-2 rounded-xl border border-white/8 bg-[#17242b] p-3 text-center text-white/55" key={message.id}>
+                      <div className="flex aspect-[4/3] min-w-0 flex-col items-center justify-center gap-2 rounded-xl border border-white/8 bg-[#1d1e1e] p-3 text-center text-white/55" key={message.id}>
                         <Icon>{type === "image" ? "image" : type === "video" ? "movie" : type === "audio" ? "audio_file" : type === "document" ? "description" : "link"}</Icon>
                         <span className="max-w-full truncate text-xs capitalize">{type}</span>
                       </div>
@@ -217,11 +215,11 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
         <section className="pb-3 pt-3">
           <label className="mb-2 block text-sm font-medium text-white/70">Disappearing messages</label>
           <div className="relative">
-            <button aria-expanded={durationOpen} className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm hover:bg-white/8 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setDurationOpen((value) => !value)} style={durationOpen ? { backgroundColor: "#202c33", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0 } : undefined} type="button">
+            <button aria-expanded={durationOpen} className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-[#1d1e1e] px-4 py-3 text-left text-sm focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setDurationOpen((value) => !value)} style={durationOpen ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0 } : undefined} type="button">
               {duration}<Icon>{durationOpen ? "expand_less" : "expand_more"}</Icon>
             </button>
             {durationOpen ? (
-              <div className="overflow-hidden border border-white/10 bg-[#202c33] py-1 shadow-2xl" role="menu" style={{ borderRadius: "0 0 0.75rem 0.75rem", borderTopWidth: 0, left: 0, position: "absolute", right: 0, top: "100%", zIndex: 30 }}>
+              <div className="overflow-hidden border border-white/10 bg-[#1d1e1e] py-1 shadow-2xl" role="menu" style={{ borderRadius: "0 0 0.75rem 0.75rem", borderTopWidth: 0, left: 0, position: "absolute", right: 0, top: "100%", zIndex: 30 }}>
                 {durations.map((option) => (
                   <button aria-checked={duration === option} className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-white/80 hover:bg-white/8 focus:bg-white/8 focus:outline-none" key={option} onClick={() => { setDuration(option); setDurationOpen(false); }} role="menuitemradio" type="button">
                     {option}{duration === option ? <Icon>check</Icon> : null}
@@ -259,7 +257,7 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
         ) : null}
       </div>
 
-      <nav aria-label="Chat actions" className="relative grid shrink-0 grid-cols-4 bg-[#0b141a] px-2 py-2">
+      <nav aria-label="Chat actions" className="relative grid shrink-0 grid-cols-4 bg-[#161717] px-2 py-2">
         {[{ icon: "archive", label: "Archive" }, { icon: "schedule", label: "Remind me" }, { icon: "search", label: "Search" }].map((action) => (
           <button className="flex min-w-0 flex-col items-center gap-1 rounded-lg py-2 text-[11px] text-white/60 hover:bg-white/8 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400" key={action.label} type="button">
             <Icon>{action.icon}</Icon><span className="truncate">{action.label}</span>
@@ -269,9 +267,9 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
           <Icon>more_horiz</Icon><span>More</span>
         </button>
         {overflowOpen ? (
-          <div className="absolute bottom-[68px] right-3 w-48 overflow-hidden rounded-xl border border-white/10 bg-[#202c33] py-1 shadow-2xl">
+          <div className="absolute bottom-[68px] right-3 w-48 overflow-hidden rounded-xl border border-white/10 bg-[#1d1e1e] py-1 shadow-2xl">
             {(group ? [["logout", "Exit group"], ["delete", "Delete group"]] : [["block", "Block contact"], ["delete", "Delete chat"]]).map(([icon, label]) => (
-              <button className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-red-300 hover:bg-white/8" key={label} type="button"><Icon>{icon}</Icon>{label}</button>
+              <button className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#ff8a8a]" key={label} type="button"><Icon>{icon}</Icon>{label}</button>
             ))}
           </div>
         ) : null}
@@ -280,7 +278,7 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
       <section
         aria-hidden={!commonGroupsOpen}
         aria-label="Groups in common"
-        className={`absolute inset-0 z-40 flex flex-col bg-[#111b21] transition-transform duration-300 ease-out motion-reduce:transition-none ${commonGroupsOpen ? "translate-x-0" : "translate-x-full pointer-events-none"}`}
+        className={`absolute inset-0 z-40 flex flex-col bg-[#161717] transition-transform duration-300 ease-out motion-reduce:transition-none ${commonGroupsOpen ? "translate-x-0" : "translate-x-full pointer-events-none"}`}
         inert={!commonGroupsOpen}
       >
         <header className="flex shrink-0 items-center gap-3 border-b border-white/10 px-4 py-4">

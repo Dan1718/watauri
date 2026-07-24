@@ -1,7 +1,9 @@
 import {
   ChatDotsIcon,
   DotsThreeVerticalIcon,
+  MagnifyingGlassIcon,
   UsersThreeIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 import TooltipWrapper from "../tooltip-wrapper";
 import { useNewChat } from "@/app/hooks/use-new-chat";
@@ -177,7 +179,7 @@ const ChatList = memo(function ChatList({
 
   return renderedChats.length > 0
     ? renderedChats
-    : <div className="text-white/50 text-sm px-2 py-4">No chats found</div>;
+    : <div className="flex h-full items-center justify-center px-4 text-center text-xl text-white">No chats, contacts or messages found</div>;
 });
 
 export default function Chats({ selectedTab }: { selectedTab: string }) {
@@ -212,12 +214,20 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
         </section>
       </section>
       <section className="w-full flex flex-col gap-1">
-        <input
-          className="rounded-full w-full p-2 px-4 outline-none bg-white/10 hover:ring-[1px] hover:ring-gray-600 focus:ring-2 focus:ring-green-500 ring-0 ring-transparent focus:bg-transparent placeholder-gray-400 focus:placeholder-gray-400 text-white"
-          placeholder="Search or start a new chat"
-          value={search}
-          onChange={(event) => updateSearch(event.target.value)}
-        />
+        <div className="relative">
+          <MagnifyingGlassIcon aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 z-10 size-5 -translate-y-1/2 text-white/60" />
+          <input
+            className="w-full rounded-full border-2 border-transparent bg-[#2e2f2f] p-2 pl-10 pr-10 text-white caret-[#21c063] outline-none placeholder-gray-400 hover:border-gray-600 focus:border-[#21c063] focus:bg-[#161717]"
+            placeholder="Search or start a new chat"
+            value={search}
+            onChange={(event) => updateSearch(event.target.value)}
+          />
+          {search ? (
+            <button aria-label="Clear search" className="absolute right-2 top-1/2 flex -translate-y-1/2 cursor-pointer rounded-full p-1 text-white/80" onClick={() => updateSearch("")} type="button">
+              <XIcon className="size-4" weight="bold" />
+            </button>
+          ) : null}
+        </div>
         <div className="flex justify-start items-center text-white gap-2 mt-2">
           {Object.values(Filters).map((f: string) => (
             <button
@@ -234,7 +244,7 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
           ))}
         </div>
       </section>
-      <section className="w-full overflow-y-scroll flex flex-col gap-1">
+      <section className="flex min-h-0 w-full flex-1 flex-col gap-1 overflow-y-auto">
         <ChatList
           chats={filtered}
           search={search}

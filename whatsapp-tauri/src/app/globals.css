@@ -38,6 +38,115 @@ button.media-filter-action:not(:disabled):hover {
   line-height: 1;
 }
 
+.composer-action-button:not(:disabled):hover {
+  background-color: #2e2f2f;
+}
+
+.composer-action-button.is-send,
+.composer-action-button.is-send:not(:disabled):hover {
+  background-color: #00a884;
+  color: #081c15;
+}
+
+.voice-recording-pill {
+  position: relative;
+  overflow: visible;
+  border-color: transparent;
+  transition: border-color 300ms ease;
+}
+
+.voice-recording-pill.is-recording {
+  border-color: #21c063;
+  animation: voice-border-in 300ms ease both;
+}
+
+.voice-recording-pill.is-paused {
+  animation: voice-border-out 300ms ease both;
+}
+
+.voice-recording-pill::before {
+  position: absolute;
+  inset: -4px;
+  border: 6px solid #21c063;
+  border-radius: inherit;
+  content: "";
+  filter: blur(12px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms ease;
+}
+
+.voice-recording-pill.is-recording::before {
+  opacity: 0.30;
+  animation: voice-ring-in 300ms ease both;
+}
+
+.voice-recording-pill.is-paused::before {
+  animation: voice-ring-out 300ms ease both;
+}
+
+.voice-discard-button:hover {
+  clip-path: circle();
+}
+
+.voice-wave {
+  height: 16px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.48) 1px, transparent 1.5px) 0 50% / 5px 5px repeat-x;
+  animation: voice-wave 0.8s linear infinite;
+}
+
+.voice-playback-track::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  content: "";
+  background: #00a884;
+  transform: translateX(-100%);
+}
+
+.voice-playback-track.is-playing::before {
+  animation: voice-playback 3s linear infinite;
+}
+
+@keyframes voice-wave {
+  to { background-position-x: -20px; }
+}
+
+@keyframes voice-ring-in {
+  from { opacity: 0; }
+  to { opacity: 0.30; }
+}
+
+@keyframes voice-border-in {
+  from { border-color: transparent; }
+  to { border-color: #21c063; }
+}
+
+@keyframes voice-border-out {
+  from { border-color: #21c063; }
+  to { border-color: transparent; }
+}
+
+@keyframes voice-ring-out {
+  from { opacity: 0.30; }
+  to { opacity: 0; }
+}
+
+@keyframes voice-playback {
+  to { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-wave,
+  .voice-recording-pill.is-recording,
+  .voice-recording-pill.is-recording::before,
+  .voice-recording-pill.is-paused,
+  .voice-recording-pill.is-paused::before,
+  .voice-playback-track.is-playing::before {
+    animation: none;
+  }
+}
+
 * {
   scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
   scrollbar-width: thin;

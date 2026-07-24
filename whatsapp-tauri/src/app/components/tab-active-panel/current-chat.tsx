@@ -1,4 +1,4 @@
-import { FormEvent, memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownIcon } from "@phosphor-icons/react";
 import dayjs from "dayjs";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
@@ -299,15 +299,43 @@ const MessageList = memo(function MessageList({
 });
 
 function Composer({
+  chatId,
   isSending,
   sendMessage,
   onSent,
 }: {
+  chatId: string;
   isSending: boolean;
   sendMessage: (text: string) => Promise<boolean>;
   onSent: () => void;
 }) {
   const [messageText, setMessageText] = useState("");
+  const [recordingState, setRecordingState] = useState<"idle" | "recording" | "paused">("idle");
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [viewOnce, setViewOnce] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useLayoutEffect(() => {
+    if (recordingState === "idle") inputRef.current?.focus();
+  }, [chatId, recordingState]);
+
+  useEffect(() => {
+    if (recordingState !== "recording") return;
+    const timer = window.setInterval(() => setRecordingSeconds((seconds) => seconds + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [recordingState]);
+
+  const discardRecording = () => {
+    setRecordingState("idle");
+    setRecordingSeconds(0);
+    setIsPlaying(false);
+    setViewOnce(false);
+  };
+
+  const formattedTime = `${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, "0")}`;
+  const hasText = messageText.length > 0;
+  const isRecording = recordingState !== "idle";
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -319,25 +347,92 @@ function Composer({
     }
   };
 
+  const paused = recordingState === "paused";
+
   return (
-    <form className="z-30 h-auto w-full px-4 pb-2 pt-1" onSubmit={handleSubmit}>
-      <div className="relative w-full">
-        <input
-          aria-label="Message"
-          className="w-full rounded-full bg-[#242626] py-3 pl-4 pr-12 text-sm text-white caret-green-400 outline-none read-only:cursor-wait placeholder:text-white/60"
-          readOnly={isSending}
-          placeholder={isSending ? "Sending..." : "Type a message"}
-          value={messageText}
-          onChange={(event) => setMessageText(event.target.value)}
-        />
-        <span
-          aria-hidden="true"
-          className="material-symbols-outlined absolute top-1/2 z-10 -translate-y-1/2 cursor-pointer !text-[24px] transition-colors"
-          style={{ right: 12, color: "#8a8a92", clipPath: "circle(50%)" }}
-          onMouseEnter={(event) => { event.currentTarget.style.color = "#00a884"; }}
-          onMouseLeave={(event) => { event.currentTarget.style.color = "#8a8a92"; }}
-        >mood</span>
-      </div>
+    <form className="z-30 flex h-auto w-full gap-2 px-4 pb-2 pt-2" onSubmit={handleSubmit}>
+      {isRecording ? (
+        <div className={`voice-recording-pill flex h-11 min-w-0 flex-1 items-center gap-2 rounded-full border-2 bg-[#202223] px-2 text-white sm:gap-3 ${paused ? "is-paused" : "is-recording"}`}>
+          {paused ? (
+            <button type="button" aria-label={isPlaying ? "Pause playback" : "Play recording"} className="grid size-8 shrink-0 place-items-center rounded-full bg-transparent" onClick={() => setIsPlaying((playing) => !playing)}>
+              <span aria-hidden="true" className="material-symbols-outlined">{isPlaying ? "pause" : "play_arrow"}</span>
+            </button>
+          ) : (
+            <span className="grid size-8 shrink-0 place-items-center" aria-hidden="true">
+              <span className="size-2.5 rounded-full bg-[#ff7f96]" />
+            </span>
+          )}
+          {paused ? (
+            <div className="flex min-w-10 flex-1 items-center gap-1.5" aria-hidden="true">
+              <span className="size-3 shrink-0 rounded-full bg-[#00a884]" />
+              <span className={`voice-playback-track h-0.5 flex-1 overflow-hidden rounded-full bg-white/15 ${isPlaying ? "is-playing" : ""}`} />
+            </div>
+          ) : (
+            <span className="voice-wave min-w-10 flex-1" aria-hidden="true" />
+          )}
+          <span className="shrink-0 text-base tabular-nums">{formattedTime}</span>
+
+          <button
+            type="button"
+            aria-label={paused ? "Resume recording" : "Pause recording"}
+            className="grid size-9 shrink-0 place-items-center rounded-full bg-transparent text-[#ff7f96]"
+            onClick={() => {
+              setRecordingState(paused ? "recording" : "paused");
+              setIsPlaying(false);
+            }}
+          >
+            <span aria-hidden="true" className="material-symbols-outlined">{paused ? "radio_button_checked" : "pause"}</span>
+          </button>
+          <button
+            type="button"
+            aria-label={viewOnce ? "Disable view once" : "Enable view once"}
+            aria-pressed={viewOnce}
+            className="grid size-9 shrink-0 place-items-center rounded-full bg-transparent"
+            onClick={() => setViewOnce((enabled) => !enabled)}
+          >
+            <span
+              aria-hidden="true"
+              className="size-8 bg-contain bg-center bg-no-repeat"
+              style={{ backgroundImage: `url('${viewOnce ? "/view-once-on-nobg.svg" : "/view-once-off-nobg.svg"}')` }}
+            />
+          </button>
+          <button type="button" aria-label="Discard recording" className="voice-discard-button grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-transparent" onClick={discardRecording}>
+            <span aria-hidden="true" className="material-symbols-outlined">delete</span>
+          </button>
+        </div>
+      ) : (
+        <div className="relative min-w-0 flex-1">
+          <input
+            ref={inputRef}
+            aria-label="Message"
+            className="h-11 w-full rounded-full bg-[#242626] py-3 pl-4 pr-12 text-sm text-white caret-green-400 outline-none read-only:cursor-wait placeholder:text-white/60"
+            readOnly={isSending}
+            placeholder={isSending ? "Sending..." : "Type a message"}
+            value={messageText}
+            onChange={(event) => setMessageText(event.target.value)}
+          />
+          <span
+            aria-hidden="true"
+            className="material-symbols-outlined absolute top-1/2 z-10 -translate-y-1/2 cursor-pointer !text-[24px] transition-colors"
+            style={{ right: 12, color: "#8a8a92", clipPath: "circle(50%)" }}
+            onMouseEnter={(event) => { event.currentTarget.style.color = "#00a884"; }}
+            onMouseLeave={(event) => { event.currentTarget.style.color = "#8a8a92"; }}
+          >mood</span>
+        </div>
+      )}
+      <button
+        type={hasText ? "submit" : "button"}
+        aria-label={isRecording ? "Send voice message" : hasText ? "Send message" : "Record voice message"}
+        className={`composer-action-button relative grid size-11 shrink-0 place-items-center overflow-hidden rounded-full transition-colors duration-200 ${isRecording || hasText ? "is-send" : "bg-[#242626] text-white"}`}
+        onClick={!isRecording && !hasText ? () => {
+          setRecordingSeconds(0);
+          setRecordingState("recording");
+        } : undefined}
+      >
+        <span aria-hidden="true" className={`material-symbols-outlined absolute !text-[25px] text-white transition-all duration-200 ${isRecording || hasText ? "-translate-y-2 scale-50 opacity-0" : "translate-y-0 scale-100 opacity-100"}`}>mic</span>
+        <span aria-hidden="true" className={`material-symbols-outlined absolute !text-[25px] text-[#081c15] transition-all duration-200 ${hasText ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-50 opacity-0"}`}>arrow_upward</span>
+        <span aria-hidden="true" className={`material-symbols-outlined absolute !text-[25px] text-[#081c15] transition-all duration-200 ${isRecording ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-50 opacity-0"}`}>arrow_upward</span>
+      </button>
     </form>
   );
 }
@@ -390,6 +485,7 @@ export default function CurrentChat() {
             scrollToBottomRequest={scrollToBottomRequest}
           />
           <Composer
+            chatId={chatId}
             isSending={isSending}
             sendMessage={sendMessage}
             onSent={() => setScrollToBottomRequest((request) => request + 1)}

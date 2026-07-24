@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%" style="background: transparent;">
+  <!-- Background -->
+
+
+  <!-- Outer Arc -->
+  <path d="M 109 48.8 A 52 52 0 1 0 109 151.2" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- Dotted Arc (5 Dots) -->
+  <circle cx="129.8" cy="57.4" r="6" fill="#ffffff"/>
+  <circle cx="146.1" cy="76.0" r="6" fill="#ffffff"/>
+  <circle cx="152.0" cy="100.0" r="6" fill="#ffffff"/>
+  <circle cx="146.1" cy="124.0" r="6" fill="#ffffff"/>
+  <circle cx="129.8" cy="142.6" r="6" fill="#ffffff"/>
+
+  <!-- Center '1' Digit -->
+  <path d="M 93 85 L 102 77 L 102 122" fill="none" stroke="#ffffff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

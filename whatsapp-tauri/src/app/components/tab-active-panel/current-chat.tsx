@@ -299,21 +299,19 @@ const MessageList = memo(function MessageList({
 });
 
 function Composer({
-  isSending,
   sendMessage,
   onSent,
 }: {
-  isSending: boolean;
-  sendMessage: (text: string) => Promise<boolean>;
+  sendMessage: (text: string) => boolean;
   onSent: () => void;
 }) {
   const [messageText, setMessageText] = useState("");
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = messageText.trim();
-    if (!text || isSending) return;
-    if (await sendMessage(text)) {
+    if (!text) return;
+    if (sendMessage(text)) {
       setMessageText("");
       onSent();
     }
@@ -323,9 +321,8 @@ function Composer({
     <form className="z-30 h-auto w-full px-4 pb-2 pt-1" onSubmit={handleSubmit}>
       <input
         aria-label="Message"
-        className="w-full rounded-full bg-[#242626] p-3 px-4 text-sm text-white caret-green-400 outline-none read-only:cursor-wait placeholder:text-white/60"
-        readOnly={isSending}
-        placeholder={isSending ? "Sending..." : "Type a message"}
+        className="w-full rounded-full bg-[#242626] p-3 px-4 text-sm text-white caret-green-400 outline-none placeholder:text-white/60"
+        placeholder="Type a message"
         value={messageText}
         onChange={(event) => setMessageText(event.target.value)}
       />
@@ -343,7 +340,6 @@ export default function CurrentChat() {
     messages,
     isLoading,
     error,
-    isSending,
     hasMoreMessages,
     unreadCount,
     sendMessage,
@@ -381,7 +377,6 @@ export default function CurrentChat() {
             scrollToBottomRequest={scrollToBottomRequest}
           />
           <Composer
-            isSending={isSending}
             sendMessage={sendMessage}
             onSent={() => setScrollToBottomRequest((request) => request + 1)}
           />

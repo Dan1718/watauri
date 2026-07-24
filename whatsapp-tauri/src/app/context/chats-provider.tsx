@@ -32,6 +32,7 @@ export type Message = {
   read?: boolean;
   sent?: boolean;
   delivered?: boolean;
+  pending?: boolean;
   reactions?: ReactionType[];
   mediaType?: string;
 };
@@ -78,9 +79,10 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
     message: message.text,
     timestamp: message.timestamp,
     isSentFromUser: isFromMe,
-    sent: true,
+    sent: message.status !== "pending",
     delivered: message.status === "delivered" || message.status === "read",
     read: message.status === "read",
+    pending: message.status === "pending",
     mediaType: message.mediaType,
   };
 }
@@ -89,6 +91,7 @@ function sameMessage(a: Message, b: Message) {
   return a.id === b.id && a.contactId === b.contactId && a.message === b.message &&
     a.timestamp === b.timestamp && a.isSentFromUser === b.isSentFromUser &&
     a.read === b.read && a.sent === b.sent && a.delivered === b.delivered &&
+    a.pending === b.pending &&
     a.mediaType === b.mediaType;
 }
 

@@ -80,6 +80,7 @@ const ChatRow = memo(function ChatRow({
               read={lastMessage.read}
               delivered={lastMessage.delivered}
               sent={lastMessage.sent}
+              pending={lastMessage.pending}
               blueTickEnabled={blueTickEnabled}
             />
           )}

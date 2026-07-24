@@ -617,7 +617,6 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-
 	return participants, nil
 }
 
@@ -1013,6 +1012,45 @@ func (s *UserDataStore) GetContacts() ([]User, error) {
 	}
 	log.Printf("[store] GetContacts -> %d contacts (%v)", len(contacts), time.Since(start))
 	return contacts, nil
+}
+
+func (s *UserDataStore) SetChatAvatar(jid, avatar string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	start := time.Now()
+	_, err := s.db.Exec(
+		`UPDATE chats
+		SET avatar = ?,
+		    updated_at = ?
+		WHERE jid = ?`,
+		avatar,
+		time.Now().Format(time.RFC3339),
+		jid,
+	)
+	if err != nil {
+		log.Printf("[store] SetChatAvatar(%s) error: %v (%v)", jid, err, time.Since(start))
+	}
+	return err
+}
+
+func (s *UserDataStore) SetContactAvatar(jid, avatar string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	start := time.Now()
+	_, err := s.db.Exec(
+		`INSERT INTO contacts (jid, avatar)
+		VALUES (?, ?)
+		ON CONFLICT(jid) DO UPDATE SET
+			avatar = excluded.avatar`,
+		jid,
+		avatar,
+	)
+	if err != nil {
+		log.Printf("[store] SetContactAvatar(%s) error: %v (%v)", jid, err, time.Since(start))
+	}
+	return err
 }
 
 // SearchMessages performs full-text search across messages with optional filters.

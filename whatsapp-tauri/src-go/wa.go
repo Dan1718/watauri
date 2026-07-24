@@ -270,6 +270,13 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 					PushName: v.NewPushName,
 				})
 			}
+
+		case *events.Picture:
+			go func() {
+				if err := wa.SyncPicture(context.Background(), v.JID, v.Remove); err != nil {
+					log.Printf("[wa] failed to sync picture for %s: %v", v.JID, err)
+				}
+			}()
 		case *events.LoggedOut:
 			wa.mu.Lock()
 			wa.status = "unauthenticated"
@@ -693,6 +700,41 @@ func (wa *WAManager) MarkRead(ctx context.Context, chatID string, sendReceipt bo
 		return fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
 	return nil
+}
+
+func (wa *WAManager) SyncPicture(ctx context.Context, jid types.JID, remove bool) error {
+	wa.mu.RLock()
+	client := wa.client
+	store := wa.store
+	wa.mu.RUnlock()
+	if store == nil {
+		return errPersistMessage
+	}
+	avatar := ""
+	if !remove {
+		if client == nil {
+			return errWAUnavailable
+		}
+
+		info, err := client.GetProfilePictureInfo(ctx, jid, nil)
+		switch {
+		case errors.Is(err, whatsmeow.ErrProfilePictureNotSet), errors.Is(err, whatsmeow.ErrProfilePictureUnauthorized):
+			avatar = ""
+		case err != nil:
+			return err
+		case info != nil:
+			avatar = info.URL
+		}
+	}
+	normalized := jid.ToNonAD()
+	switch normalized.Server {
+	case types.GroupServer:
+		return store.SetChatAvatar(normalized.String(), avatar)
+	case types.DefaultUserServer, types.HiddenUserServer:
+		return store.SetContactAvatar(normalized.String(), avatar)
+	default:
+		return nil
+	}
 }
 
 func (wa *WAManager) Disconnect() { wa.client.Disconnect() }

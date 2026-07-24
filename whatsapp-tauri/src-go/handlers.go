@@ -76,18 +76,31 @@ func handleChats(w http.ResponseWriter, r *http.Request) {
 func handleMessages(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/chats/")
 	parts := strings.Split(path, "/")
-	if path == r.URL.Path || parts[0] == "" || len(parts) > 2 || (len(parts) == 2 && parts[1] != "send") {
+	if path == r.URL.Path || parts[0] == "" || len(parts) > 2 {
 		http.NotFound(w, r)
 		return
 	}
 	chatID := parts[0]
 	if len(parts) == 2 {
-		if r.Method != http.MethodPost {
-			methodNotAllowed(w, http.MethodPost)
+		switch parts[1] {
+		case "send":
+			if r.Method != http.MethodPost {
+				methodNotAllowed(w, http.MethodPost)
+				return
+			}
+			handleSendMessage(w, r, chatID)
+			return
+		case "read":
+			if r.Method != http.MethodPost {
+				methodNotAllowed(w, http.MethodPost)
+				return
+			}
+			handleReadMessage(w, r, chatID)
+			return
+		default:
+			http.NotFound(w, r)
 			return
 		}
-		handleSendMessage(w, r, chatID)
-		return
 	}
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w, http.MethodGet)
@@ -234,6 +247,9 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(message)
+}
+
+func handleReadMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 }
 
 func writeJSONError(w http.ResponseWriter, message string, status int) {

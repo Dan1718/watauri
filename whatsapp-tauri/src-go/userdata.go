@@ -596,6 +596,7 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
 	return participants, nil
 }
 
@@ -710,6 +711,41 @@ func (s *UserDataStore) InsertMessage(msg Message) error {
 		return err
 	}
 	return nil
+}
+
+func (s *UserDataStore) GetUnreadInboundMessages(chatJID string) ([]Message, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	start := time.Now()
+	rows, err := s.db.Query(`SELECT id, sender_jid, timestamp FROM messages WHERE chat_jid = ? AND is_from_me = 0 AND status != 'read' ORDER BY timestamp_epoch ASC, id ASC`, chatJID)
+	if err != nil {
+		log.Printf("[store] GetUnreadInboundMessages(%s) query error: %v (%v)", chatJID, err, time.Since(start))
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []Message
+	for rows.Next() {
+		var message Message
+		message.ChatJID = chatJID
+		if err := rows.Scan(&message.ID, &message.SenderID, &message.Timestamp); err != nil {
+			log.Printf("[store] GetUnreadInboundMessages(%s) row scan error: %v (%v)", chatJID, err, time.Since(start))
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("[store] GetUnreadInboundMessages(%s) rows error: %v (%v)", chatJID, err, time.Since(start))
+		return nil, err
+	}
+
+	log.Printf("[store] GetUnreadInboundMessages(%s) -> %d messages (%v)", chatJID, len(messages), time.Since(start))
+	return messages, nil
+}
+
+func (s *UserDataStore) MarkChatRead(chatJID string) {
+
 }
 
 type messageCursor struct {

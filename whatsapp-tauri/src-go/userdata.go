@@ -259,8 +259,6 @@ func (s *UserDataStore) UpsertChat(chat Chat) error {
 	)
 	if err != nil {
 		log.Printf("[store] UpsertChat(%s) error: %v (%v)", chat.ID, err, time.Since(start))
-	} else {
-		log.Printf("[store] UpsertChat(%s) OK (%v)", chat.ID, time.Since(start))
 	}
 	return err
 }
@@ -283,7 +281,6 @@ func (s *UserDataStore) UpsertChatParticipant(chatJID, userJID string, rank int)
 		return err
 	}
 
-	log.Printf("[store] UpsertChatParticipant(%s -> %s) OK (%v)", userJID, chatJID, time.Since(start))
 	return nil
 }
 
@@ -451,7 +448,6 @@ func (s *UserDataStore) UpsertJIDMapping(lidJID, phoneJID string) error {
 		return err
 	}
 
-	log.Printf("[store] UpsertJIDMapping(%s -> %s) OK (%v)", lidJID, phoneJID, time.Since(start))
 	return nil
 }
 
@@ -955,8 +951,6 @@ func (s *UserDataStore) UpsertContact(contact User) error {
 	)
 	if err != nil {
 		log.Printf("[store] UpsertContact(%s) error: %v (%v)", contact.ID, err, time.Since(start))
-	} else {
-		log.Printf("[store] UpsertContact(%s) OK (%v)", contact.ID, time.Since(start))
 	}
 	return err
 }

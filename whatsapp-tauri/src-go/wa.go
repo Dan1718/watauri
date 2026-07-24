@@ -459,6 +459,7 @@ func (wa *WAManager) GetProfile() Profile {
 	return profile
 }
 func (wa *WAManager) SyncContacts(ctx context.Context) {
+	start := time.Now()
 	wa.mu.RLock()
 	client := wa.client
 	store := wa.store
@@ -496,7 +497,7 @@ func (wa *WAManager) SyncContacts(ctx context.Context) {
 		}
 		stored++
 	}
-	log.Printf("[wa] Contact sync complete: stored = %d, skipped = %d, total = %d", stored, skipped, len(contacts))
+	log.Printf("[wa] Contact sync complete: stored = %d, skipped = %d, total = %d (%v)", stored, skipped, len(contacts), time.Since(start))
 }
 
 func groupParticipantRank(participant types.GroupParticipant) int {

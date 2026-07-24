@@ -115,7 +115,8 @@ type ActiveRequest = {
 
 function sameContact(a: Contact | undefined | null, b: Contact | undefined | null) {
   return a === b || Boolean(a && b && a.id === b.id && a.displayName === b.displayName &&
-    a.contactAvatar === b.contactAvatar && a.statusMessage === b.statusMessage && a.typing === b.typing);
+    a.contactAvatar === b.contactAvatar && a.statusMessage === b.statusMessage &&
+    a.phone === b.phone && a.isSaved === b.isSaved && a.typing === b.typing);
 }
 
 export default function CurrentChatProvider({ children }: PropsWithChildren) {
@@ -260,9 +261,16 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
       } else {
         const groupContacts: CurrentChatContacts = {};
         chat.contactId.forEach((groupContact: string) => {
-          groupContacts[groupContact] = contacts.find(
-            (contact: Contact) => contact.id === groupContact
-          );
+          const contact = contacts.find((contact: Contact) => contact.id === groupContact);
+          const participant = chat.participants?.find(({ id }) => id === groupContact);
+          groupContacts[groupContact] = participant ? {
+            id: participant.id,
+            displayName: participant.name || contact?.displayName || getDisplayNameFromJid(participant.id),
+            contactAvatar: contact?.contactAvatar || participant.avatar || "",
+            statusMessage: contact?.statusMessage || participant.status || "",
+            phone: participant.phone || contact?.phone,
+            isSaved: participant.isSaved,
+          } : contact;
         });
         const group = {
           name: chat.groupName ?? getDisplayNameFromJid(chat.id),

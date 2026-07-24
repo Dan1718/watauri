@@ -539,6 +539,7 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 				CASE WHEN p.user_jid LIKE '%@lid' THEN p.user_jid END,
 				phone_map.lid_jid
 			) AS lid_jid,
+			CASE WHEN COALESCE(NULLIF(c.name, ''), NULLIF(pc.name, ''), NULLIF(lc.name, '')) IS NOT NULL THEN 1 ELSE 0 END AS is_saved,
 			COALESCE(NULLIF(c.name, ''), NULLIF(pc.name, ''), NULLIF(lc.name, '')) AS name,
 			COALESCE(NULLIF(c.avatar, ''), NULLIF(pc.avatar, ''), NULLIF(lc.avatar, '')) AS avatar,
 			COALESCE(NULLIF(c.push_name, ''), NULLIF(pc.push_name, ''), NULLIF(lc.push_name, '')) AS push_name,
@@ -572,10 +573,12 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 	for rows.Next() {
 		var participant User
 		var name, avatar, pushName, status, phoneJID, lidJID sql.NullString
+		var isSaved bool
 		if err := rows.Scan(
 			&participant.ID,
 			&phoneJID,
 			&lidJID,
+			&isSaved,
 			&name,
 			&avatar,
 			&pushName,
@@ -583,6 +586,10 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 		); err != nil {
 			return nil, err
 		}
+		if phoneJID.Valid {
+			participant.Phone = displayNameFromJID(phoneJID.String)
+		}
+		participant.IsSaved = isSaved
 		if name.Valid {
 			participant.Name = name.String
 		}

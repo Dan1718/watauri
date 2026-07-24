@@ -11,6 +11,8 @@ type User struct {
 	PhoneNumber string `json:"phoneNumber"`
 	PhoneJID    string `json:"phoneJid,omitempty"`
 	LIDJID      string `json:"lidJid,omitempty"`
+	Phone       string `json:"phone,omitempty"`
+	IsSaved     bool   `json:"isSaved,omitempty"`
 }
 
 type Message struct {

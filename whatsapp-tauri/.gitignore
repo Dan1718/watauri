@@ -12,6 +12,7 @@ dist
 dist-ssr
 .next
 .next-*
+.next-tauri
 out
 next-env.d.ts
 *.tsbuildinfo
@@ -31,3 +32,6 @@ next-env.d.ts
 # Go binaries
 src-go/backend
 src-go/backend-*
+
+# Debug dumps
+history-sync-dumps/

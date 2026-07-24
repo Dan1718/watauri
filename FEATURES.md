@@ -22,8 +22,9 @@ This file tracks user-facing product features. For implementation details, archi
 | Chat list | done | Loaded from local database |
 | Message history view | done | Opens stored messages for a chat |
 | History sync persistence | in-progress | Backfills historical chats and messages after pairing; batching is planned for large syncs |
-| Contact names | in-progress | Push names and inline contacts are persisted; display fallback still needs refinement |
-| Group metadata | in-progress | Group names are partially supported through history sync |
+| Contact names | in-progress | Saved names, push names, and LID/phone display fallback are being wired into backend chat/contact display |
+| Contact and group avatars | planned | Fetch and persist WhatsApp profile picture URLs for contacts and groups |
+| Group metadata | in-progress | Group names are partially supported through history sync; live metadata changes and avatars are pending |
 | Group participants | planned | Requires participant persistence in the local database |
 | Communities | planned | Support WhatsApp community parent groups and related announcement/subgroup metadata |
 | Community subgroups | planned | Display linked community groups and parent/subgroup relationships when available |

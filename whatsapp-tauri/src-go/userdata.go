@@ -78,6 +78,20 @@ func (s *UserDataStore) migrate() error {
 			push_name TEXT,
 			status TEXT
 		)`,
+		`CREATE TABLE IF NOT EXISTS chat_participants (
+			chat_jid TEXT NOT NULL,
+			user_jid TEXT NOT NULL,
+			rank INTEGER DEFAULT 0,
+			updated_at TEXT,
+			PRIMARY KEY (chat_jid, user_jid),
+			FOREIGN KEY (chat_jid) REFERENCES chats(jid),
+			FOREIGN KEY (user_jid) REFERENCES contacts(jid)
+		)`,
+		`CREATE TABLE IF NOT EXISTS jid_mappings (
+			lid_jid TEXT PRIMARY KEY,
+			phone_jid TEXT NOT NULL,
+			updated_at TEXT
+		)`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
 			text,
 			content=messages,
@@ -114,6 +128,8 @@ func (s *UserDataStore) migrate() error {
 		`DROP INDEX IF EXISTS messages_chat_newest_idx`,
 		`CREATE INDEX IF NOT EXISTS messages_chat_newest_idx ON messages(chat_jid, timestamp_epoch DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS messages_chat_revision_idx ON messages(chat_jid, revision)`,
+		`CREATE INDEX IF NOT EXISTS chat_participants_user_idx ON chat_participants(user_jid)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS jid_mappings_phone_jid_idx ON jid_mappings(phone_jid)`,
 		`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`,
 		`CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
 			INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
@@ -249,6 +265,196 @@ func (s *UserDataStore) UpsertChat(chat Chat) error {
 	return err
 }
 
+func (s *UserDataStore) UpsertChatParticipant(chatJID, userJID string, rank int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	start := time.Now()
+	_, err := s.db.Exec(
+		`INSERT INTO chat_participants (chat_jid, user_jid, rank, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(chat_jid, user_jid) DO UPDATE SET
+			rank = excluded.rank,
+			updated_at = excluded.updated_at`,
+		chatJID, userJID, rank, start.Format(time.RFC3339),
+	)
+	if err != nil {
+		log.Printf("[store] UpsertChatParticipant(%s -> %s) error: %v (%v)", userJID, chatJID, err, time.Since(start))
+		return err
+	}
+
+	log.Printf("[store] UpsertChatParticipant(%s -> %s) OK (%v)", userJID, chatJID, time.Since(start))
+	return nil
+}
+
+func (s *UserDataStore) DeleteChatParticipant(chatJID, userJID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	start := time.Now()
+	_, err := s.db.Exec(
+		`DELETE FROM chat_participants WHERE chat_jid = ? AND user_jid = ?`,
+		chatJID, userJID,
+	)
+	if err != nil {
+		log.Printf("[store] DeleteChatParticipant(%s -> %s) error: %v (%v)", userJID, chatJID, err, time.Since(start))
+		return err
+	}
+	log.Printf("[store] DeleteChatParticipant(%s -> %s) OK (%v)", userJID, chatJID, time.Since(start))
+	return nil
+}
+
+func (s *UserDataStore) ResolveContact(jid string) (User, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.resolveContactLocked(jid)
+}
+
+func (s *UserDataStore) resolveContactLocked(jid string) (User, bool, error) {
+	candidates := []string{jid}
+	if strings.HasSuffix(jid, "@lid") {
+		var phoneJID string
+		err := s.db.QueryRow(
+			`SELECT phone_jid FROM jid_mappings WHERE lid_jid = ?`,
+			jid,
+		).Scan(&phoneJID)
+		if err != nil && err != sql.ErrNoRows {
+			return User{}, false, err
+		}
+		if phoneJID != "" {
+			candidates = append(candidates, phoneJID)
+		}
+	} else if strings.HasSuffix(jid, "@s.whatsapp.net") {
+		var lidJID string
+		err := s.db.QueryRow(
+			`SELECT lid_jid FROM jid_mappings WHERE phone_jid = ?`,
+			jid,
+		).Scan(&lidJID)
+		if err != nil && err != sql.ErrNoRows {
+			return User{}, false, err
+		}
+		if lidJID != "" {
+			candidates = append(candidates, lidJID)
+		}
+	}
+
+	var best User
+	bestScore := 0
+	for _, candidate := range candidates {
+		var contact User
+		err := s.db.QueryRow(
+			`SELECT jid, name, avatar, push_name, status FROM contacts WHERE jid = ?`,
+			candidate,
+		).Scan(&contact.ID, &contact.Name, &contact.Avatar, &contact.PushName, &contact.Status)
+
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return User{}, false, err
+		}
+		score := contactScore(contact)
+		if score > bestScore {
+			best = contact
+			bestScore = score
+		}
+	}
+	return best, bestScore > 0, nil
+}
+
+func contactScore(contact User) int {
+	if contact.Name != "" {
+		return 3
+	}
+	if contact.PushName != "" {
+		return 2
+	}
+	return 1
+}
+
+func contactDisplayName(contact User, fallbackJID string) string {
+	if contact.Name != "" {
+		return contact.Name
+	}
+	if contact.PushName != "" {
+		return contact.PushName
+	}
+	return displayNameFromJID(fallbackJID)
+}
+
+func displayNameFromJID(jid string) string {
+	user, _, ok := strings.Cut(jid, "@")
+	if ok && user != "" {
+		return user
+	}
+	if jid != "" {
+		return jid
+	}
+	return "Unknown chat"
+}
+
+func (s *UserDataStore) CanonicalDirectChatJID(jid string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.canonicalDirectChatJIDLocked(jid)
+}
+
+func (s *UserDataStore) canonicalDirectChatJIDLocked(jid string) (string, error) {
+	if !strings.HasSuffix(jid, "@lid") {
+		return jid, nil
+	}
+
+	var phoneJID string
+	err := s.db.QueryRow(
+		`SELECT phone_jid FROM jid_mappings WHERE lid_jid = ?`,
+		jid,
+	).Scan(&phoneJID)
+	if err == sql.ErrNoRows {
+		return jid, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if phoneJID == "" {
+		return jid, nil
+	}
+	return phoneJID, nil
+}
+
+func (s *UserDataStore) UpsertJIDMapping(lidJID, phoneJID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	start := time.Now()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM jid_mappings WHERE lid_jid <> ? AND phone_jid = ?`, lidJID, phoneJID); err != nil {
+		log.Printf("[store] UpsertJIDMapping(%s -> %s) delete error: %v (%v)", lidJID, phoneJID, err, time.Since(start))
+		return err
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO jid_mappings (lid_jid, phone_jid, updated_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(lid_jid) DO UPDATE SET
+			phone_jid = excluded.phone_jid,
+			updated_at = excluded.updated_at`,
+		lidJID, phoneJID, start.Format(time.RFC3339),
+	); err != nil {
+		log.Printf("[store] UpsertJIDMapping(%s -> %s) error: %v (%v)", lidJID, phoneJID, err, time.Since(start))
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("[store] UpsertJIDMapping(%s -> %s) commit error: %v (%v)", lidJID, phoneJID, err, time.Since(start))
+		return err
+	}
+
+	log.Printf("[store] UpsertJIDMapping(%s -> %s) OK (%v)", lidJID, phoneJID, time.Since(start))
+	return nil
+}
+
 func (s *UserDataStore) GetChats() ([]Chat, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -264,6 +470,7 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 	var chats []Chat
 	for rows.Next() {
 		var c Chat
+		c.Participants = []User{}
 		var name, avatar sql.NullString
 		var lastMsgID, lastMsgText, lastMsgTS, lastMsgSender sql.NullString
 		var isGroup, isArchived, isStarred, isCommunity int
@@ -283,6 +490,27 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 			c.LastMessage = &Message{ID: lastMsgID.String, Text: lastMsgText.String, Timestamp: lastMsgTS.String, SenderID: lastMsgSender.String}
 		}
 		c.IsGroup = intToBool(isGroup)
+		if !c.IsGroup {
+			contact, ok, err := s.resolveContactLocked(c.ID)
+			if err != nil {
+				log.Printf("[store] failed to resolve contact for chat %s: %v", c.ID, err)
+			} else if ok {
+				displayName := contactDisplayName(contact, c.ID)
+				c.Name = &displayName
+			} else if c.Name == nil || *c.Name == "" {
+				displayName := displayNameFromJID(c.ID)
+				c.Name = &displayName
+			}
+		}
+
+		if c.IsGroup {
+			participants, err := s.getChatParticipantsLocked(c.ID)
+			if err != nil {
+				log.Printf("[store] failed to load participants for group chat %s: %v", c.ID, err)
+			} else {
+				c.Participants = participants
+			}
+		}
 		c.IsArchived = intToBool(isArchived)
 		c.IsStarred = intToBool(isStarred)
 		c.IsCommunity = intToBool(isCommunity)
@@ -295,6 +523,75 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 	}
 	log.Printf("[store] GetChats -> %d chats (%v)", len(chats), time.Since(start))
 	return chats, nil
+}
+
+func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error) {
+	rows, err := s.db.Query(
+		`SELECT
+			p.user_jid,
+			COALESCE(NULLIF(c.name, ''), NULLIF(pc.name, ''), NULLIF(lc.name, '')) AS name,
+			COALESCE(NULLIF(c.avatar, ''), NULLIF(pc.avatar, ''), NULLIF(lc.avatar, '')) AS avatar,
+			COALESCE(NULLIF(c.push_name, ''), NULLIF(pc.push_name, ''), NULLIF(lc.push_name, '')) AS push_name,
+			COALESCE(NULLIF(c.status, ''), NULLIF(pc.status, ''), NULLIF(lc.status, '')) AS status
+		FROM chat_participants p
+		LEFT JOIN contacts c ON c.jid = p.user_jid
+		LEFT JOIN jid_mappings lid_map ON lid_map.lid_jid = p.user_jid
+		LEFT JOIN contacts pc ON pc.jid = lid_map.phone_jid
+		LEFT JOIN jid_mappings phone_map ON phone_map.phone_jid = p.user_jid
+		LEFT JOIN contacts lc ON lc.jid = phone_map.lid_jid
+		WHERE p.chat_jid = ?
+		ORDER BY p.rank DESC,
+			COALESCE(
+				NULLIF(c.name, ''),
+				NULLIF(pc.name, ''),
+				NULLIF(lc.name, ''),
+				NULLIF(c.push_name, ''),
+				NULLIF(pc.push_name, ''),
+				NULLIF(lc.push_name, ''),
+				p.user_jid
+			)`,
+		chatJID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	participants := []User{}
+
+	for rows.Next() {
+		var participant User
+		var name, avatar, pushName, status sql.NullString
+		if err := rows.Scan(
+			&participant.ID,
+			&name,
+			&avatar,
+			&pushName,
+			&status,
+		); err != nil {
+			return nil, err
+		}
+		if name.Valid {
+			participant.Name = name.String
+		}
+		if avatar.Valid {
+			participant.Avatar = avatar.String
+		}
+		if pushName.Valid {
+			participant.PushName = pushName.String
+		}
+		if status.Valid {
+			participant.Status = status.String
+		}
+		if participant.Name == "" {
+			participant.Name = contactDisplayName(participant, participant.ID)
+		}
+		participants = append(participants, participant)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return participants, nil
 }
 
 func (s *UserDataStore) InsertMessage(msg Message) error {
@@ -535,7 +832,7 @@ func (s *UserDataStore) UpsertContact(contact User) error {
 	start := time.Now()
 	_, err := s.db.Exec(
 		`INSERT INTO contacts (jid, name, avatar, push_name, status) VALUES (?, ?, ?, ?, ?) ON CONFLICT(jid) DO UPDATE SET name=COALESCE(NULLIF(EXCLUDED.name, ''), name), avatar=COALESCE(NULLIF(EXCLUDED.avatar, ''), avatar), push_name=COALESCE(NULLIF(EXCLUDED.push_name, ''), push_name), status=COALESCE(NULLIF(EXCLUDED.status, ''), status)`,
-		contact.ID, contact.Name, contact.Avatar, "", contact.Status,
+		contact.ID, contact.Name, contact.Avatar, contact.PushName, contact.Status,
 	)
 	if err != nil {
 		log.Printf("[store] UpsertContact(%s) error: %v (%v)", contact.ID, err, time.Since(start))
@@ -544,13 +841,12 @@ func (s *UserDataStore) UpsertContact(contact User) error {
 	}
 	return err
 }
-
 func (s *UserDataStore) GetContacts() ([]User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	start := time.Now()
-	rows, err := s.db.Query(`SELECT jid, name, avatar, status FROM contacts`)
+	rows, err := s.db.Query(`SELECT jid, name, avatar, push_name, status FROM contacts`)
 	if err != nil {
 		log.Printf("[store] GetContacts query error: %v (%v)", err, time.Since(start))
 		return nil, err
@@ -560,7 +856,7 @@ func (s *UserDataStore) GetContacts() ([]User, error) {
 	var contacts []User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.Name, &u.Avatar, &u.Status); err != nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Avatar, &u.PushName, &u.Status); err != nil {
 			log.Printf("[store] GetContacts row scan error: %v (%v)", err, time.Since(start))
 			return nil, err
 		}

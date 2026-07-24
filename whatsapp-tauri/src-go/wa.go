@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -13,10 +15,12 @@ import (
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	wastore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -85,6 +89,8 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			wa.status = "connected"
 			wa.mu.Unlock()
 			log.Println("[wa] Connected to Whatsapp")
+			go wa.SyncGroups(context.Background())
+			go wa.SyncContacts(context.Background())
 		case *events.Disconnected:
 			wa.mu.Lock()
 			wa.status = "unauthenticated"
@@ -97,11 +103,16 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			}
 
 			chatJID := v.Info.Chat.String()
+			canonicalChatJID, err := wa.store.CanonicalDirectChatJID(chatJID)
+			if err != nil {
+				log.Printf("[wa] Failed to canonicalize chat %s: %v", chatJID, err)
+				break
+			}
 			placeholder := Chat{
-				ID: chatJID,
+				ID: canonicalChatJID,
 			}
 			if err := wa.store.UpsertChat(placeholder); err != nil {
-				log.Printf("[wa] Failed to upsert placeholder chat %s: %v", chatJID, err)
+				log.Printf("[wa] Failed to upsert placeholder chat %s: %v", canonicalChatJID, err)
 				break
 			}
 			wa.storeMessageEvent(v, "live")
@@ -129,6 +140,25 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				log.Printf("[wa] history sync skipped: nil data")
 				break
 			}
+			dumpHistorySync(data)
+
+			pushnamesStored := 0
+			inlineContactsStored := 0
+			for _, push := range data.GetPushnames() {
+				jid := push.GetID()
+				pushName := push.GetPushname()
+				if jid == "" {
+					continue
+				}
+				if err := wa.store.UpsertContact(User{
+					ID:       jid,
+					PushName: pushName,
+				}); err != nil {
+					log.Printf("[wa] failed to upsert history pushname %s: %v", jid, err)
+					continue
+				}
+				pushnamesStored++
+			}
 
 			conversationsSeen := len(data.GetConversations())
 			conversationsStored := 0
@@ -136,9 +166,40 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			messagesSeen := 0
 			messagesStored := 0
 			messagesSkipped := 0
+			jidMappingsStored := 0
+			jidMappingsSkipped := 0
+			for _, mapping := range data.GetPhoneNumberToLidMappings() {
+				pn, err := types.ParseJID(mapping.GetPnJID())
+				if err != nil {
+					log.Printf("[wa] history sync invalid phone jid mapping pn=%q lid=%q: %v", mapping.GetPnJID(), mapping.GetLidJID(), err)
+					jidMappingsSkipped++
+					continue
+				}
+				if pn.Server == types.LegacyUserServer {
+					pn.Server = types.DefaultUserServer
+				}
+				lid, err := types.ParseJID(mapping.GetLidJID())
+				if err != nil {
+					log.Printf("[wa] history sync invalid lid mapping pn=%q lid=%q: %v", mapping.GetPnJID(), mapping.GetLidJID(), err)
+					jidMappingsSkipped++
+					continue
+				}
+				if lid.Server != types.HiddenUserServer || pn.Server != types.DefaultUserServer {
+					log.Printf("[wa] history sync skipped unexpected jid mapping pn=%s lid=%s", pn, lid)
+					jidMappingsSkipped++
+					continue
+				}
 
-			log.Printf("[wa] Event: historySync type=%v chunk=%d progress=%d conversations=%d statusMessages=%d pushnames=%d inlineContacts=%d",
-				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, len(data.GetStatusV3Messages()), len(data.GetPushnames()), len(data.GetInlineContacts()))
+				if err := wa.store.UpsertJIDMapping(lid.String(), pn.String()); err != nil {
+					log.Printf("[wa] failed to upsert history jid mapping %s -> %s: %v", lid, pn, err)
+					jidMappingsSkipped++
+					continue
+				}
+
+				jidMappingsStored++
+			}
+			log.Printf("[wa] Event: historySync type=%v chunk=%d progress=%d conversations=%d statusMessages=%d pushnames=%d/%d inlineContacts=%d/%d jidMappings=%d/%d skipped=%d",
+				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, len(data.GetStatusV3Messages()), pushnamesStored, len(data.GetPushnames()), inlineContactsStored, len(data.GetInlineContacts()), jidMappingsStored, len(data.GetPhoneNumberToLidMappings()), jidMappingsSkipped)
 
 			for _, conv := range data.GetConversations() {
 				chatJID, err := types.ParseJID(conv.GetID())
@@ -147,13 +208,21 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 					conversationsSkipped++
 					continue
 				}
-
+				canonicalChatJID := chatJID.String()
+				if chatJID.Server != types.GroupServer {
+					canonicalChatJID, err = wa.store.CanonicalDirectChatJID(chatJID.String())
+					if err != nil {
+						log.Printf("[wa] failed to canonicalize history chat %s: %v", chatJID, err)
+						conversationsSkipped++
+						continue
+					}
+				}
 				name := conv.GetName()
 				if name == "" {
 					name = conv.GetDisplayName()
 				}
 				chat := Chat{
-					ID:          chatJID.String(),
+					ID:          canonicalChatJID,
 					UnreadCount: int(conv.GetUnreadCount()),
 					IsGroup:     chatJID.Server == "g.us",
 					IsArchived:  conv.GetArchived(),
@@ -190,14 +259,15 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 					}
 				}
 			}
+			go wa.SyncContacts(context.Background())
 			log.Printf("[wa] historySync done type=%v chunk=%d progress=%d conversationsSeen=%d conversationsStored=%d conversationsSkipped=%d messagesSeen=%d messagesStored=%d messagesSkipped=%d",
 				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, conversationsStored, conversationsSkipped, messagesSeen, messagesStored, messagesSkipped)
 		case *events.PushName:
 			log.Printf("[wa] Event: pushName jid=%s old=%q new=%q", v.JID, v.OldPushName, v.NewPushName)
 			if wa.store != nil {
 				wa.store.UpsertContact(User{
-					ID:   v.JID.String(),
-					Name: v.NewPushName,
+					ID:       v.JID.String(),
+					PushName: v.NewPushName,
 				})
 			}
 		case *events.LoggedOut:
@@ -212,6 +282,46 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 	})
 
 	return wa, nil
+}
+
+func dumpHistorySync(data *waHistorySync.HistorySync) {
+	if data == nil || os.Getenv("WATAURI_DUMP_HISTORY_SYNC") != "1" {
+		return
+	}
+
+	dir := os.Getenv("WATAURI_HISTORY_SYNC_DUMP_DIR")
+	if dir == "" {
+		dir = "history-sync-dumps"
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		log.Printf("[wa] failed to create history sync dump dir %s: %v", dir, err)
+		return
+	}
+
+	timestamp := time.Now().UTC().Format("20060102T150405.000000000Z")
+	filename := fmt.Sprintf(
+		"history-sync-%s-%s-chunk-%d.json",
+		timestamp,
+		data.GetSyncType().String(),
+		data.GetChunkOrder(),
+	)
+	path := filepath.Join(dir, filename)
+
+	payload, err := protojson.MarshalOptions{
+		Multiline:       true,
+		Indent:          "  ",
+		EmitUnpopulated: false,
+	}.Marshal(data)
+	if err != nil {
+		log.Printf("[wa] failed to marshal history sync dump: %v", err)
+		return
+	}
+
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		log.Printf("[wa] failed to write history sync dump %s: %v", path, err)
+		return
+	}
+	log.Printf("[wa] wrote history sync dump: %s", path)
 }
 
 // / Stores a parsed Message event and stores it. The caller is responsible for upserting the chat before calling.
@@ -248,6 +358,14 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 		evt.Info.ID, evt.Info.Chat, evt.Info.Sender, text, mediaType, evt.Info.IsFromMe)
 
 	chatJID := evt.Info.Chat.String()
+	if evt.Info.Chat.Server != types.GroupServer {
+		canonicalChatJID, err := wa.store.CanonicalDirectChatJID(chatJID)
+		if err != nil {
+			log.Printf("[wa] Failed to canonicalize message chat %s: %v", chatJID, err)
+			return false
+		}
+		chatJID = canonicalChatJID
+	}
 
 	ourMsg := Message{
 		ID:        evt.Info.ID,
@@ -301,6 +419,7 @@ func (wa *WAManager) StartPairing() {
 				wa.mu.Lock()
 				wa.status = "connected"
 				wa.mu.Unlock()
+				go wa.SyncContacts(context.Background())
 			case "timeout":
 				wa.mu.Lock()
 				wa.status = "unauthenticated"
@@ -338,6 +457,153 @@ func (wa *WAManager) GetProfile() Profile {
 		profile.ID = wa.client.Store.ID.String()
 	}
 	return profile
+}
+func (wa *WAManager) SyncContacts(ctx context.Context) {
+	wa.mu.RLock()
+	client := wa.client
+	store := wa.store
+	wa.mu.RUnlock()
+
+	if client == nil || client.Store == nil || store == nil {
+		log.Println("[wa] Skipping contact sync: client or store is nil")
+		return
+	}
+	contacts, err := client.Store.Contacts.GetAllContacts(ctx)
+	if err != nil {
+		log.Printf("[wa] Failed to load contacts from whatsmeow store : %v", err)
+		return
+	}
+	stored := 0
+	skipped := 0
+
+	for jid, info := range contacts {
+		name := info.FullName
+		if name == "" {
+			name = info.FirstName
+		}
+		if name == "" {
+			name = info.BusinessName
+		}
+		if err := store.UpsertContact(User{
+			ID:       jid.String(),
+			Name:     name,
+			PushName: info.PushName,
+		}); err != nil {
+			log.Printf("[wa] Failed to upsert synced contact %s: %v", jid, err)
+			skipped++
+			continue
+
+		}
+		stored++
+	}
+	log.Printf("[wa] Contact sync complete: stored = %d, skipped = %d, total = %d", stored, skipped, len(contacts))
+}
+
+func groupParticipantRank(participant types.GroupParticipant) int {
+	if participant.IsSuperAdmin {
+		return 2
+	}
+	if participant.IsAdmin {
+		return 1
+	}
+	return 0
+}
+
+func groupParticipantJID(participant types.GroupParticipant) types.JID {
+	if participant.JID.User != "" && participant.JID.Server != "" {
+		return participant.JID.ToNonAD()
+	}
+	if participant.PhoneNumber.User != "" && participant.PhoneNumber.Server != "" {
+		return participant.PhoneNumber.ToNonAD()
+	}
+	if participant.LID.User != "" && participant.LID.Server != "" {
+		return participant.LID.ToNonAD()
+	}
+	return types.JID{}
+}
+
+func (wa *WAManager) persistGroupParticipant(chatJID string, participant types.GroupParticipant) bool {
+	wa.mu.RLock()
+	store := wa.store
+	wa.mu.RUnlock()
+	if store == nil {
+		return false
+	}
+
+	participantJID := groupParticipantJID(participant)
+	if participantJID.User == "" || participantJID.Server == "" {
+		return false
+	}
+	userID := participantJID.String()
+	if err := store.UpsertContact(User{
+		ID:       userID,
+		PushName: participant.DisplayName,
+	}); err != nil {
+		log.Printf("[wa] failed to upsert group participant contact %s: %v", userID, err)
+		return false
+	}
+	if participant.LID.User != "" &&
+		participant.LID.Server == types.HiddenUserServer &&
+		participant.PhoneNumber.User != "" &&
+		participant.PhoneNumber.Server == types.DefaultUserServer {
+		if err := store.UpsertJIDMapping(participant.LID.ToNonAD().String(), participant.PhoneNumber.ToNonAD().String()); err != nil {
+			log.Printf("[wa] failed to upsert group participant jid mapping %s -> %s: %v", participant.LID, participant.PhoneNumber, err)
+		}
+	}
+	if err := store.UpsertChatParticipant(chatJID, userID, groupParticipantRank(participant)); err != nil {
+		log.Printf("[wa] failed to upsert group participant %s in %s: %v", userID, chatJID, err)
+		return false
+	}
+	return true
+}
+
+func (wa *WAManager) SyncGroups(ctx context.Context) {
+	wa.mu.RLock()
+	client := wa.client
+	store := wa.store
+	wa.mu.RUnlock()
+	if client == nil || store == nil {
+		log.Println("[wa] Skipping group sync: client or store is nil")
+		return
+	}
+	groups, err := client.GetJoinedGroups(ctx)
+	if err != nil {
+		log.Printf("[wa] Failed to load joined groups: %v", err)
+		return
+	}
+	groupsStored := 0
+	participantsStored := 0
+	groupsSkipped := 0
+
+	for _, group := range groups {
+		if group == nil || group.JID.User == "" || group.JID.Server == "" {
+			groupsSkipped++
+			continue
+		}
+		chatJID := group.JID.ToNonAD().String()
+		chat := Chat{
+			ID:          chatJID,
+			IsGroup:     true,
+			IsCommunity: group.GroupParent.IsParent,
+		}
+		if group.Name != "" {
+			chat.Name = &group.Name
+		}
+		if err := store.UpsertChat(chat); err != nil {
+			log.Printf("[wa] failed to upsert synced group %s: %v", chatJID, err)
+			groupsSkipped++
+			continue
+		}
+		groupsStored++
+
+		for _, participant := range group.Participants {
+			if wa.persistGroupParticipant(chatJID, participant) {
+				participantsStored++
+			}
+		}
+	}
+
+	log.Printf("[wa] Group sync complete: groups=%d skipped=%d participants=%d total=%d", groupsStored, groupsSkipped, participantsStored, len(groups))
 }
 
 func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message, error) {

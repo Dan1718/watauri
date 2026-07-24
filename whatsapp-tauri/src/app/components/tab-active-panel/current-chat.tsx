@@ -314,6 +314,7 @@ function Composer({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [viewOnce, setViewOnce] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useLayoutEffect(() => {
@@ -351,6 +352,23 @@ function Composer({
 
   return (
     <form className="z-30 flex h-auto w-full gap-2 px-4 pb-2 pt-2" onSubmit={handleSubmit}>
+      {!isRecording ? (
+        <button
+          type="button"
+          aria-label={isDrawerOpen ? "Close attachments" : "Open attachments"}
+          aria-expanded={isDrawerOpen}
+          className="composer-action-button relative grid size-11 shrink-0 place-items-center overflow-hidden rounded-full bg-[#242626] text-white"
+          onClick={() => setIsDrawerOpen((open) => !open)}
+        >
+          <span
+            aria-hidden="true"
+            className="material-symbols-outlined grid size-6 place-items-center !text-[24px] transition-transform duration-200 ease-out will-change-transform"
+            style={{ color: "#8a8a92", transform: `rotate(${isDrawerOpen ? 45 : 0}deg)` }}
+          >
+            add
+          </span>
+        </button>
+      ) : null}
       {isRecording ? (
         <div className={`voice-recording-pill flex h-11 min-w-0 flex-1 items-center gap-2 rounded-full border-2 bg-[#202223] px-2 text-white sm:gap-3 ${paused ? "is-paused" : "is-recording"}`}>
           {paused ? (
@@ -429,7 +447,7 @@ function Composer({
           setRecordingState("recording");
         } : undefined}
       >
-        <span aria-hidden="true" className={`material-symbols-outlined absolute !text-[25px] text-white transition-all duration-200 ${isRecording || hasText ? "-translate-y-2 scale-50 opacity-0" : "translate-y-0 scale-100 opacity-100"}`}>mic</span>
+        <span aria-hidden="true" className={`material-symbols-outlined absolute !text-[25px] transition-all duration-200 ${isRecording || hasText ? "-translate-y-2 scale-50 opacity-0" : "translate-y-0 scale-100 opacity-100"}`} style={{ color: "#8a8a92" }}>mic</span>
         <span aria-hidden="true" className={`material-symbols-outlined absolute !text-[25px] text-[#081c15] transition-all duration-200 ${hasText ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-50 opacity-0"}`}>arrow_upward</span>
         <span aria-hidden="true" className={`material-symbols-outlined absolute !text-[25px] text-[#081c15] transition-all duration-200 ${isRecording ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-50 opacity-0"}`}>arrow_upward</span>
       </button>

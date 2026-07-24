@@ -75,7 +75,7 @@
 | Event | Handled | Notes |
 |-------|---------|-------|
 | `*events.Message` | ✅ | Text + media stored, chat metadata updated transactionally, reactions skipped |
-| `*events.Receipt` | ✅ | Status updated (delivered → read) |
+| `*events.Receipt` | ✅ | Incoming delivery/read receipts update local message status; `/api/chats/{id}/read` marks inbound messages read and can send WhatsApp read receipts |
 | `*events.PushName` | ✅ | Upserted to `contacts` table |
 | `*events.Presence` | ⚠️ | Logged only, no status persisted |
 | `*events.HistorySync` | ⚠️ | Conversations/messages, push names, contact names, and LID mappings are persisted; group participants and avatars remain incomplete |
@@ -118,7 +118,7 @@
 | ---- | ----------------------------------------------------------------------------- | ------ |
 | 4.1  | Send messages: `POST /api/chats/{id}/send` → `client.SendMessage()`           | ✅ Done |
 | 4.2  | Typing indicators: `PUT /api/chats/{id}/typing` → `client.SendChatPresence()` | 🔜 Planned |
-| 4.3  | Read receipts: mark read on chat open                                         | 🔜 Planned |
+| 4.3  | Read receipts: mark read on chat open with optional receipt suppression       | ✅ Done |
 | 4.4  | Attachments: Tauri file dialog → whatsmeow media upload                       | 🔜 Planned |
 | 4.5  | Archive / star: persist to SQLite + sync via whatsmeow app state              | 🔜 Planned |
 | 4.6  | Reactions: send/receive message reactions via whatsmeow                       | 🔜 Planned |

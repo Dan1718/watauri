@@ -29,6 +29,7 @@ Look at [FEATURES.md](./FEATURES.md) for everything.
 - [x] Contact storage basics
 - [x] Sending messages
 - [x] Message pagination
+- [x] Read receipts
 - [ ] Real-time updates with Server-Sent Events
 - [x] Contact name sync
 - [ ] Group metadata
@@ -141,7 +142,7 @@ whatsapp-tauri/
 - [ ] Contacts, group metadata, participants, and avatars
 - [x] Message pagination
 - [ ] Real-time updates with Server-Sent Events
-- [ ] Read receipts
+- [x] Read receipts
 
 ### Phase 2: Better Desktop Client
 

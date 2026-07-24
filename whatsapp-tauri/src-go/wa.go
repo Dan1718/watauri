@@ -459,6 +459,7 @@ func (wa *WAManager) GetProfile() Profile {
 	return profile
 }
 func (wa *WAManager) SyncContacts(ctx context.Context) {
+	start := time.Now()
 	wa.mu.RLock()
 	client := wa.client
 	store := wa.store
@@ -496,7 +497,7 @@ func (wa *WAManager) SyncContacts(ctx context.Context) {
 		}
 		stored++
 	}
-	log.Printf("[wa] Contact sync complete: stored = %d, skipped = %d, total = %d", stored, skipped, len(contacts))
+	log.Printf("[wa] Contact sync complete: stored = %d, skipped = %d, total = %d (%v)", stored, skipped, len(contacts), time.Since(start))
 }
 
 func groupParticipantRank(participant types.GroupParticipant) int {
@@ -645,6 +646,54 @@ func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message
 		return Message{}, fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
 	return message, nil
+}
+
+func (wa *WAManager) MarkRead(ctx context.Context, chatID string, sendReceipt bool) error {
+	chatJID, err := types.ParseJID(chatID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errInvalidChatID, err)
+	}
+	if chatJID.User == "" || chatJID.Server == "" {
+		return errInvalidChatID
+	}
+
+	wa.mu.RLock()
+	client := wa.client
+	store := wa.store
+	wa.mu.RUnlock()
+
+	if store == nil {
+		return errPersistMessage
+	}
+	if sendReceipt && client == nil {
+		return errWAUnavailable
+	}
+	messages, err := store.GetUnreadInboundMessages(chatJID.String())
+	if err != nil {
+		return fmt.Errorf("%w: %v", errPersistMessage, err)
+	}
+
+	if sendReceipt && len(messages) > 0 {
+		bySender := map[string][]types.MessageID{}
+		for _, message := range messages {
+			bySender[message.SenderID] = append(bySender[message.SenderID], types.MessageID(message.ID))
+
+		}
+		now := time.Now()
+		for senderID, ids := range bySender {
+			senderJID, err := types.ParseJID(senderID)
+			if err != nil {
+				return fmt.Errorf("%w: invalid sender jid %q: %v", errInvalidChatID, senderID, err)
+			}
+			if err := client.MarkRead(ctx, ids, now, chatJID, senderJID); err != nil {
+				return err
+			}
+		}
+	}
+	if err := store.MarkChatRead(chatJID.String()); err != nil {
+		return fmt.Errorf("%w: %v", errPersistMessage, err)
+	}
+	return nil
 }
 
 func (wa *WAManager) Disconnect() { wa.client.Disconnect() }

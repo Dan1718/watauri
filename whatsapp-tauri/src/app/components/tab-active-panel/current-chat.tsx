@@ -315,6 +315,8 @@ function Composer({
   const [isPlaying, setIsPlaying] = useState(false);
   const [viewOnce, setViewOnce] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isDrawerReady, setIsDrawerReady] = useState(false);
+  const [isAttachmentDrawerOpen, setIsAttachmentDrawerOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useLayoutEffect(() => {
@@ -326,6 +328,14 @@ function Composer({
     const timer = window.setInterval(() => setRecordingSeconds((seconds) => seconds + 1), 1000);
     return () => window.clearInterval(timer);
   }, [recordingState]);
+
+  useEffect(() => {
+    setIsAttachmentDrawerOpen(false);
+    setIsDrawerReady(false);
+    if (!isDrawerOpen) return;
+    const timer = window.setTimeout(() => setIsDrawerReady(true), 250);
+    return () => window.clearTimeout(timer);
+  }, [isDrawerOpen]);
 
   const discardRecording = () => {
     setRecordingState("idle");
@@ -378,15 +388,57 @@ function Composer({
               add
             </span>
           </button>
-          <button
-            type="button"
-            aria-label="Attach file"
-            tabIndex={isDrawerOpen ? 0 : -1}
-            className={`absolute grid size-6 cursor-pointer place-items-center motion-reduce:transition-none ${isDrawerOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
-            style={{ left: 52, top: "50%", backgroundColor: "transparent", transform: `translate(${isDrawerOpen ? 0 : -42}px, -50%)`, transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
+          <div
+            className={`absolute z-20 size-6 motion-reduce:transition-none ${isDrawerOpen ? "opacity-100" : "opacity-0"} ${isDrawerReady ? "" : "pointer-events-none"}`}
+            style={{ left: 52, top: "50%", transform: `translate(${isDrawerOpen ? 0 : -42}px, -50%)`, transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
+            onMouseEnter={() => {
+              if (isDrawerReady) setIsAttachmentDrawerOpen(true);
+            }}
+            onMouseLeave={() => setIsAttachmentDrawerOpen(false)}
+            onFocus={() => {
+              if (isDrawerReady) setIsAttachmentDrawerOpen(true);
+            }}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setIsAttachmentDrawerOpen(false);
+            }}
           >
-            <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>attach_file</span>
-          </button>
+            <span
+              aria-hidden="true"
+              className={`absolute ${isAttachmentDrawerOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+              style={{ top: -90, left: -10, width: 44, height: 82, borderRadius: 999, backgroundColor: "#242626", opacity: isAttachmentDrawerOpen ? 1 : 0, transform: `scaleY(${isAttachmentDrawerOpen ? 1 : 0})`, transformOrigin: "bottom", transition: "transform 150ms ease-out, opacity 75ms ease-out" }}
+            />
+            <span
+              aria-hidden="true"
+              className={`absolute ${isAttachmentDrawerOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+              style={{ top: -8, left: -10, width: 44, height: 12 }}
+            />
+            <span
+              aria-hidden="true"
+              className={`absolute ${isDrawerReady ? "pointer-events-auto" : "pointer-events-none"}`}
+              style={{ top: -18, left: -17, width: 22, height: 24, borderRadius: 999 }}
+            />
+            <button type="button" aria-label="Attach file" aria-expanded={isAttachmentDrawerOpen} tabIndex={isDrawerReady ? 0 : -1} className="absolute z-20 grid size-6 cursor-pointer place-items-center bg-transparent" style={{ backgroundColor: "transparent" }}>
+              <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>attach_file</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Attach contact"
+              tabIndex={isDrawerOpen ? 0 : -1}
+              className={`absolute z-10 grid h-6 cursor-pointer place-items-center bg-transparent ${isAttachmentDrawerOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+              style={{ top: -77, left: -10, width: 44, backgroundColor: "transparent", opacity: isAttachmentDrawerOpen ? 1 : 0, transform: `translateY(${isAttachmentDrawerOpen ? 0 : 8}px)`, transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
+            >
+              <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>person</span>
+            </button>
+            <button
+              type="button"
+              aria-label="Attach photo"
+              tabIndex={isDrawerOpen ? 0 : -1}
+              className={`absolute z-10 grid h-6 cursor-pointer place-items-center bg-transparent ${isAttachmentDrawerOpen ? "pointer-events-auto" : "pointer-events-none"}`}
+              style={{ top: -45, left: -10, width: 44, backgroundColor: "transparent", opacity: isAttachmentDrawerOpen ? 1 : 0, transform: `translateY(${isAttachmentDrawerOpen ? 0 : 8}px)`, transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
+            >
+              <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>photo_camera</span>
+            </button>
+          </div>
           <button
             type="button"
             aria-label="Add media"

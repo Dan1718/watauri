@@ -235,7 +235,7 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
               key={f}
               className={`${
                 f === filter
-                  ? "bg-green-700/30 text-green-100 border-green-600/30"
+                  ? "selected-filter bg-green-700/30 text-green-100 border-green-600/30"
                   : "border-white/20 hover:bg-white/10"
               } text-sm p-1 px-3 border-[1px] rounded-full cursor-pointer capitalize`}
               onClick={() => updateFilter(f)}

@@ -612,7 +612,7 @@ export default function CurrentChat() {
   const { profile: { blueTickEnabled, id: userId } } = useProfile();
   if (!chatId) {
     return (
-      <section className="flex h-full w-full items-center justify-center text-white">
+      <section className="flex h-full w-full items-center justify-center bg-[#1d1f1f] text-white">
         Please select a chat to see messages
       </section>
     );

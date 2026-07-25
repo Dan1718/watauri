@@ -370,11 +370,6 @@ function Composer({
           className="relative h-11 shrink-0 motion-reduce:transition-none"
           style={{ width: isDrawerOpen ? 140 : 44, zIndex: 1, transition: "width 250ms ease-out" }}
         >
-          <span
-            aria-hidden="true"
-            className="absolute inset-y-0 left-11 w-24 rounded-full bg-[#242626] motion-reduce:transition-none"
-            style={{ opacity: isDrawerOpen ? 1 : 0, transform: `scaleX(${isDrawerOpen ? 1 : 0})`, transformOrigin: "left", transition: "transform 250ms ease-out, opacity 150ms ease-out" }}
-          />
           <button
             type="button"
             aria-label={isDrawerOpen ? "Close attachments" : "Open attachments"}

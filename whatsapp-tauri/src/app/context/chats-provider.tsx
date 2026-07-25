@@ -46,6 +46,10 @@ export type Chat = {
   read: boolean;
   group: boolean;
   favorite: boolean;
+  archived: boolean;
+  pinned: boolean;
+  muted: boolean;
+  canSend: boolean;
   messages: Message[];
 };
 
@@ -103,7 +107,9 @@ function sameChat(a: Chat, b: Chat) {
   return a.id === b.id && contactsEqual && a.groupName === b.groupName &&
     a.groupAvatar === b.groupAvatar && a.unreadCount === b.unreadCount &&
     a.read === b.read && a.group === b.group &&
-    a.favorite === b.favorite && a.messages.length === b.messages.length &&
+    a.favorite === b.favorite && a.archived === b.archived &&
+    a.pinned === b.pinned && a.muted === b.muted && a.canSend === b.canSend &&
+    a.messages.length === b.messages.length &&
     a.messages.every((message, index) => sameMessage(message, b.messages[index]));
 }
 
@@ -134,6 +140,10 @@ function toChat(chat: BackendChat): Chat {
     read: chat.unreadCount === 0,
     group: chat.isGroup,
     favorite: Boolean(chat.isStarred),
+    archived: chat.isArchived,
+    pinned: chat.isPinned,
+    muted: chat.isMuted,
+    canSend: chat.canSend,
     messages: chat.lastMessage
       ? [toMessage(chat.lastMessage, chat.isGroup ? "me" : directContactId)]
       : [],

@@ -5,6 +5,7 @@ import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Message } from "@/app/context/chats-provider";
 import { CurrentChatContacts } from "@/app/context/current-chat-provider";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
+import { useChats } from "@/app/hooks/use-chats";
 import { useProfile } from "@/app/hooks/use-profile";
 import { getDisplayNameFromJid } from "@/app/utils";
 import Reaction from "../message/reaction";
@@ -609,6 +610,7 @@ export default function CurrentChat() {
     sendMessage,
     loadOlderMessages,
   } = useCurrentChat();
+  const { chats: { complete } } = useChats();
   const { profile: { blueTickEnabled, id: userId } } = useProfile();
   if (!chatId) {
     return (
@@ -617,6 +619,7 @@ export default function CurrentChat() {
       </section>
     );
   }
+  const cannotSend = complete.some((chat) => chat.id === chatId && chat.group && !chat.canSend);
 
   return (
     <section className="flex h-full min-h-0 w-full flex-col overflow-hidden">
@@ -640,11 +643,17 @@ export default function CurrentChat() {
             unreadCount={unreadCount}
             scrollToBottomRequest={scrollToBottomRequest}
           />
-          <Composer
-            chatId={chatId}
-            sendMessage={sendMessage}
-            onSent={() => setScrollToBottomRequest((request) => request + 1)}
-          />
+          {cannotSend ? (
+            <div className="z-30 w-full px-4 pb-2 pt-2">
+              <p className="rounded-full bg-[#242626] px-4 py-3 text-center text-sm text-white/55" role="status">You don&apos;t have permission to send a message</p>
+            </div>
+          ) : (
+            <Composer
+              chatId={chatId}
+              sendMessage={sendMessage}
+              onSent={() => setScrollToBottomRequest((request) => request + 1)}
+            />
+          )}
         </div>
         {infoOpen ? (
           <ChatInfoPanel

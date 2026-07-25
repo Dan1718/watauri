@@ -4,7 +4,7 @@ import Chats from "./chats";
 export default function TabPanelSwitcher() {
   const { selectedTab } = useTab();
 
-  if (selectedTab === "chats") {
+  if (selectedTab === "chats" || selectedTab === "archived") {
     return <Chats selectedTab={selectedTab} />;
   }
 

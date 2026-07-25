@@ -67,6 +67,7 @@ export const ChatsContext = createContext<
       updateFilter: (filter: string) => void;
       search: string;
       updateSearch: (query: string) => void;
+      setChatArchived: (chatId: string, archived: boolean) => void;
       chats: Chats;
     }
 >(undefined);
@@ -160,6 +161,7 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
   });
   const pollingActive = useChatPollingActive();
   const loadedRef = useRef(false);
+  const archivedOverridesRef = useRef(new Map<string, boolean>());
 
   const updateFilter = useCallback((filter: string) => {
     setFilter(filter as Filters);
@@ -167,6 +169,14 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
 
   const updateSearch = useCallback((query: string) => {
     setSearch(query);
+  }, []);
+
+  const setChatArchived = useCallback((chatId: string, archived: boolean) => {
+    archivedOverridesRef.current.set(chatId, archived);
+    setChatState((prev) => ({
+      ...prev,
+      complete: prev.complete.map((chat) => chat.id === chatId ? { ...chat, archived } : chat),
+    }));
   }, []);
 
   useEffect(() => {
@@ -181,7 +191,10 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
         setChatState((prev) => ({ ...prev, isLoading: true }));
       }
       try {
-        const data = (await listBackendChats(controller.signal)).map(toChat);
+        const data = (await listBackendChats(controller.signal)).map(toChat).map((chat) => {
+          const archived = archivedOverridesRef.current.get(chat.id);
+          return archived === undefined ? chat : { ...chat, archived };
+        });
         loadedRef.current = true;
         setChatState((prev) => {
           const complete = mergeChats(prev.complete, data);
@@ -217,8 +230,8 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
   }), [filter, chatState.complete]);
   const chats = useMemo(() => ({ ...chatState, filtered }), [chatState, filtered]);
   const value = useMemo(
-    () => ({ chats, filter, search, updateFilter, updateSearch }),
-    [chats, filter, search, updateFilter, updateSearch]
+    () => ({ chats, filter, search, updateFilter, updateSearch, setChatArchived }),
+    [chats, filter, search, updateFilter, updateSearch, setChatArchived]
   );
 
   return (

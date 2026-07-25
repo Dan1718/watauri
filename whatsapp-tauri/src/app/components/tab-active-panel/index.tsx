@@ -5,7 +5,7 @@ import CurrentChat from "./current-chat";
 export default function TabActivePanel() {
   const { selectedTab } = useTab();
 
-  if (selectedTab === "chats") {
+  if (selectedTab === "chats" || selectedTab === "archived") {
     return (
       <section className="col-span-6 md:col-span-16 h-full w-full bg-black/90">
         <CurrentChat />

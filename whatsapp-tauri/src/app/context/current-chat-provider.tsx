@@ -262,7 +262,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
         const groupContacts: CurrentChatContacts = {};
         chat.contactId.forEach((groupContact: string) => {
           const participant = chat.participants?.find(({ id }) => id === groupContact);
-          const contact = getContact(groupContact) ?? (participant?.phone ? getContact(participant.phone) : undefined);
+          const contact = (participant?.phone ? getContact(participant.phone) : undefined) ?? getContact(groupContact);
           const displayName = participant?.name && !isPhonePlaceholder(participant.name)
             ? participant.name
             : undefined;

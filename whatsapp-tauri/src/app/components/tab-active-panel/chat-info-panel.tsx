@@ -161,7 +161,9 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
                   <input aria-label="Search group members" className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40 [&::-webkit-search-cancel-button]:hidden" onChange={(event) => setMemberSearch(event.target.value)} placeholder={`Search ${members.length} group members`} type="search" value={memberSearch} />
                   {memberSearch ? <button aria-label="Clear search" className="flex rounded-full p-1 text-white/80" onClick={() => setMemberSearch("")} type="button"><XIcon className="size-4" weight="bold" /></button> : null}
                 </div>
-                <button className="mx-2 flex w-[calc(100%-1rem)] items-center gap-3 rounded-lg px-2 py-2 text-left text-sm font-medium text-emerald-400 transition-colors hover:bg-white/8 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button"><span className="grid size-8 place-items-center rounded-full bg-emerald-400/15"><Icon>group_add</Icon></span>Add members</button>
+                <div className="px-2">
+                  <button className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm font-medium text-emerald-400 transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button"><span className="grid size-8 place-items-center rounded-full bg-emerald-400/15"><Icon>group_add</Icon></span>Add members</button>
+                </div>
                 <div className="px-2 pb-2">
                   {visibleMembers.map(({ contact: member, id, isSelf, name }) => (
                     <div className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-white/10" key={id}>
@@ -176,7 +178,7 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
                     </div>
                   ))}
                   {visibleMembers.length === 0 ? <p className="py-5 text-center text-sm text-white/35">{memberSearch ? "No members found" : "No member data available"}</p> : null}
-                  {matchingMembers.length > 5 && !showAllMembers ? <button className="flex w-full items-center justify-center gap-1 rounded-lg py-3 text-sm font-medium text-emerald-400 hover:bg-white/8 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setShowAllMembers(true)} type="button">Show all <Icon>expand_more</Icon></button> : null}
+                  {matchingMembers.length > 5 && !showAllMembers ? <button className="green-action flex w-full items-center justify-center gap-1 rounded-lg py-2.5 text-sm font-medium text-emerald-400 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setShowAllMembers(true)} type="button">Show all <Icon>expand_more</Icon></button> : null}
                 </div>
               </div>
             </section>

@@ -165,7 +165,7 @@ const ChatList = memo(function ChatList({
       ? chat.participants?.find(({ id }) => id === lastMessage.contactId)
       : undefined;
     const senderContact = lastMessage && chat.group
-      ? getContact(lastMessage.contactId) ?? (sender?.phone ? getContact(sender.phone) : undefined)
+      ? (sender?.phone ? getContact(sender.phone) : undefined) ?? getContact(lastMessage.contactId)
       : undefined;
     const senderDisplayName = sender?.name && !isPhonePlaceholder(sender.name) ? sender.name : undefined;
     const contactDisplayName = senderContact?.displayName && !isPhonePlaceholder(senderContact.displayName)

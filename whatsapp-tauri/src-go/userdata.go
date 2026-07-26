@@ -493,6 +493,9 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 			} else if ok {
 				displayName := contactDisplayName(contact, c.ID)
 				c.Name = &displayName
+				if contact.Avatar != "" {
+					c.Avatar = &contact.Avatar
+				}
 			} else if c.Name == nil || *c.Name == "" {
 				displayName := displayNameFromJID(c.ID)
 				c.Name = &displayName

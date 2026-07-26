@@ -611,14 +611,14 @@ func (wa *WAManager) SyncGroups(ctx context.Context) {
 		}
 
 		if err := wa.SyncPicture(ctx, group.JID, false); err != nil {
-			log.Printf("[wa] failed to sync group avatar %s; %v", chatJID, err)
+			log.Printf("[wa] failed to sync group avatar %s: %v", chatJID, err)
 			avatarsSkipped++
 		} else {
 			avatarsStored++
 		}
 	}
 
-	log.Printf("[wa] Group sync complete: groups=%d skipped=%d participants=%d avatars =%d avatarsskipped=%d total=%d", groupsStored, groupsSkipped, participantsStored, avatarsStored, avatarsSkipped, len(groups))
+	log.Printf("[wa] Group sync complete: groups=%d skipped=%d participants=%d avatars=%d avatarSkipped=%d total=%d", groupsStored, groupsSkipped, participantsStored, avatarsStored, avatarsSkipped, len(groups))
 }
 
 func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message, error) {

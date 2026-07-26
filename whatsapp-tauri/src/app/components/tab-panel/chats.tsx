@@ -17,6 +17,11 @@ import MessageStatusIcon from "../message-status-icon";
 import { useProfile } from "@/app/hooks/use-profile";
 import { createPortal } from "react-dom";
 
+const unreadCountFormatter = new Intl.NumberFormat("en", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
 const headerMenuItems = [
   { label: "New group", icon: "M500-482q29-32 44.5-73t15.5-85q0-44-15.5-85T500-798q60 8 100 53t40 105q0 60-40 105t-100 53Zm220 322v-120q0-36-16-68.5T662-406q51 18 94.5 46.5T800-280v120h-80Zm80-280v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80Zm-593-87q-47-47-47-113t47-113q47-47 113-47t113 47q47 47 47 113t-47 113q-47 47-113 47t-113-47ZM0-160v-112q0-34 17.5-62.5T64-378q62-31 126-46.5T320-440q66 0 130 15.5T576-378q29 15 46.5 43.5T640-272v112H0Zm320-400q33 0 56.5-23.5T400-640q0-33-23.5-56.5T320-720q-33 0-56.5 23.5T240-640q0 33 23.5 56.5T320-560ZM80-240h480v-32q0-11-5.5-20T540-306q-54-27-109-40.5T320-360q-56 0-111 13.5T100-306q-9 5-14.5 14T80-272v32Zm240-400Zm0 400Z" },
   { label: "Starred messages", icon: "m354-287 126-76 126 77-33-144 111-96-146-13-58-136-58 135-146 13 111 97-33 143ZM233-120l65-281L80-590l288-25 112-265 112 265 288 25-218 189 65 281-247-149-247 149Zm247-350Z" },
@@ -118,6 +123,21 @@ const ChatRow = memo(function ChatRow({
         >
           {lastMessage ? formatTime(lastMessage.timestamp) : ""}
         </p>
+        {chat.unreadCount > 0 ? (
+          <span
+            aria-label={`${chat.unreadCount} unread ${chat.unreadCount === 1 ? "message" : "messages"}`}
+            className="mt-1 grid place-items-center rounded-full text-[11px] font-semibold leading-4"
+            style={{
+              backgroundColor: "#21c063",
+              color: "#081c15",
+              height: 20,
+              minWidth: 20,
+              paddingInline: chat.unreadCount < 10 ? 0 : 6,
+            }}
+          >
+            {unreadCountFormatter.format(chat.unreadCount).toLowerCase()}
+          </span>
+        ) : null}
       </div>
     </button>
   );

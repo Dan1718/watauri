@@ -1,9 +1,11 @@
 import { useNewChat } from "@/app/hooks/use-new-chat";
 import {
   ArrowLeftIcon,
+  MagnifyingGlassIcon,
   UserPlusIcon,
   UsersIcon,
   UsersThreeIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 import TooltipWrapper from "../tooltip-wrapper";
 import Profile from "../profile";
@@ -54,12 +56,21 @@ export default function NewChatWindow() {
               <p className="text-white ml-2">New Chat</p>
         </section>
         <section className="pt-4 px-4 w-full">
+          <div className="relative">
+            <MagnifyingGlassIcon aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 z-10 size-5 -translate-y-1/2 text-white/60" />
               <input
-                className="rounded-full w-full p-2 px-4 outline-none bg-white/10 hover:ring-[1px] hover:ring-gray-600 focus:ring-2 focus:ring-green-500 ring-0 ring-transparent focus:bg-transparent placeholder-gray-400 focus:placeholder-gray-400 text-white"
+                className="w-full rounded-full border-2 border-transparent bg-[#2e2f2f] p-2 pl-10 pr-10 text-white caret-[#21c063] outline-none placeholder-gray-400 hover:border-gray-600 focus:border-[#21c063] focus:bg-[#161717]"
                 placeholder="Search for name or number"
                 onChange={(event) => filterContacts(event.target.value)}
                 ref={inputRef}
+                value={search}
               />
+              {search ? (
+                <button aria-label="Clear search" className="absolute right-2 top-1/2 flex -translate-y-1/2 cursor-pointer rounded-full p-1 text-white/80" onClick={() => filterContacts("")} type="button">
+                  <XIcon className="size-4" weight="bold" />
+                </button>
+              ) : null}
+          </div>
         </section>
         <section className="w-full h-full overflow-y-scroll scrollbar-hide pb-4">
               {search.length === 0 && (

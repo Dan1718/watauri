@@ -1,4 +1,5 @@
 import {
+  ArchiveBoxIcon,
   ChatCircleTextIcon,
   ChatTextIcon,
   CircleDashedIcon,
@@ -21,6 +22,8 @@ export default function TabIcon({ tab }: { tab?: string }) {
     Component = UsersThreeIcon;
   } else if (tab === "settings") {
     Component = GearSixIcon;
+  } else if (tab === "archived") {
+    Component = ArchiveBoxIcon;
   }
 
   return (

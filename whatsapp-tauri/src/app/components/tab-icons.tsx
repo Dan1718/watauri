@@ -37,6 +37,13 @@ export default function TabIcons() {
         </TooltipWrapper>
       </section>
       <section className="flex flex-col justify-between items-center gap-2 py-4">
+        <TooltipWrapper
+          selected={selectedTab === "archived"}
+          onClick={() => selectTab("archived")}
+          tab="archived"
+        >
+          <TabIcon tab="archived" />
+        </TooltipWrapper>
         <hr className="px-4 w-full border-[1px] border-gray-500/65" />
         <TooltipWrapper
           selected={selectedTab === "settings"}

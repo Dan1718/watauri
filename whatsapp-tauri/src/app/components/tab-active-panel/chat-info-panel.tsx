@@ -57,8 +57,11 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
   messages: Message[];
   userId: string;
 }) {
-  const [muted, setMuted] = useState(false);
-  const [pinned, setPinned] = useState(false);
+  const { chats: { complete }, setChatArchived } = useChats();
+  const chat = complete.find((chat) => chat.id === chatId);
+  const [muted, setMuted] = useState(() => Boolean(chat?.muted));
+  const [pinned, setPinned] = useState(() => Boolean(chat?.pinned));
+  const archived = Boolean(chat?.archived);
   const [showAll, setShowAll] = useState(false);
   const [mediaFilter, setMediaFilter] = useState<(typeof mediaFilters)[number][0]>("image");
   const [duration, setDuration] = useState("Off");
@@ -69,7 +72,6 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
   const [showAllMembers, setShowAllMembers] = useState(false);
   const [commonGroupsOpen, setCommonGroupsOpen] = useState(false);
   const [commonGroupSearch, setCommonGroupSearch] = useState("");
-  const { chats: { complete } } = useChats();
   const [{ all: commonGroups, preview: commonGroupPreview }] = useState(() => {
     const directContactId = complete.find((chat) => chat.id === chatId && !chat.group)?.contactId;
     const all = typeof directContactId === "string"
@@ -258,7 +260,10 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
       </div>
 
       <nav aria-label="Chat actions" className="relative grid shrink-0 grid-cols-4 bg-[#161717] px-2 py-2">
-        {[{ icon: "archive", label: "Archive" }, { icon: "schedule", label: "Remind me" }, { icon: "search", label: "Search" }].map((action) => (
+        <button aria-pressed={archived} className={`flex min-w-0 flex-col items-center gap-1 rounded-lg py-2 text-[11px] hover:bg-white/8 focus-visible:outline-2 focus-visible:outline-emerald-400 ${archived ? "text-emerald-400" : "text-white/60 hover:text-white"}`} onClick={() => setChatArchived(chatId, !archived)} type="button">
+          <Icon>{archived ? "unarchive" : "archive"}</Icon><span className="truncate">{archived ? "Unarchive" : "Archive"}</span>
+        </button>
+        {[{ icon: "schedule", label: "Remind me" }, { icon: "search", label: "Search" }].map((action) => (
           <button className="flex min-w-0 flex-col items-center gap-1 rounded-lg py-2 text-[11px] text-white/60 hover:bg-white/8 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400" key={action.label} type="button">
             <Icon>{action.icon}</Icon><span className="truncate">{action.label}</span>
           </button>

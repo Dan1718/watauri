@@ -25,13 +25,13 @@ export default function NewChatWindow() {
     inputRef.current?.focus();
   }, []);
 
-  const savedContactCount = dictionary.reduce(
-    (count, [, contacts]) => count + contacts.filter(({ isSaved }) => isSaved).length,
+  const contactCount = dictionary.reduce(
+    (count, [, contacts]) => count + contacts.length,
     0,
   );
   let remainingContacts = visibleContactCount;
   const visibleDictionary = dictionary.flatMap(([letter, contacts]) => {
-    const visibleContacts = contacts.filter(({ isSaved }) => isSaved).slice(0, remainingContacts);
+    const visibleContacts = contacts.slice(0, remainingContacts);
     remainingContacts -= visibleContacts.length;
     return visibleContacts.length ? [[letter, visibleContacts] as [string, Contact[]]] : [];
   });
@@ -95,7 +95,7 @@ export default function NewChatWindow() {
           onScroll={(event) => {
             const { clientHeight, scrollHeight, scrollTop } = event.currentTarget;
             if (scrollTop + clientHeight < scrollHeight - 200) return;
-            setVisibleContactCount((count) => Math.min(count + CONTACT_PAGE_SIZE, savedContactCount));
+            setVisibleContactCount((count) => Math.min(count + CONTACT_PAGE_SIZE, contactCount));
           }}
         >
               {search.length === 0 && (

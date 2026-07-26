@@ -21,6 +21,7 @@ const unreadCountFormatter = new Intl.NumberFormat("en", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
+const CHAT_PAGE_SIZE = 50;
 
 const headerMenuItems = [
   { label: "New group", icon: "M500-482q29-32 44.5-73t15.5-85q0-44-15.5-85T500-798q60 8 100 53t40 105q0 60-40 105t-100 53Zm220 322v-120q0-36-16-68.5T662-406q51 18 94.5 46.5T800-280v120h-80Zm80-280v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80Zm-593-87q-47-47-47-113t47-113q47-47 113-47t113 47q47 47 47 113t-47 113q-47 47-113 47t-113-47ZM0-160v-112q0-34 17.5-62.5T64-378q62-31 126-46.5T320-440q66 0 130 15.5T576-378q29 15 46.5 43.5T640-272v112H0Zm320-400q33 0 56.5-23.5T400-640q0-33-23.5-56.5T320-720q-33 0-56.5 23.5T240-640q0 33 23.5 56.5T320-560ZM80-240h480v-32q0-11-5.5-20T540-306q-54-27-109-40.5T320-360q-56 0-111 13.5T100-306q-9 5-14.5 14T80-272v32Zm240-400Zm0 400Z" },
@@ -164,6 +165,8 @@ const ChatList = memo(function ChatList({
   blueTickEnabled: boolean;
   loadCurrentChat: ChatRowProps["loadCurrentChat"];
 }) {
+  const [pagination, setPagination] = useState({ search, count: CHAT_PAGE_SIZE });
+
   if (isLoading) {
     return (
       <div className="w-full h-full flex justify-center items-center text-white/50">
@@ -180,21 +183,28 @@ const ChatList = memo(function ChatList({
     );
   }
 
+  const visibleCount = pagination.search === search ? pagination.count : CHAT_PAGE_SIZE;
   const normalizedSearch = search.toLowerCase();
-  const renderedChats = chats.flatMap((chat) => {
+  const getChatName = (chat: Chat) => {
     const contactId = typeof chat.contactId === "string" ? chat.contactId : undefined;
     const contact = contactId ? getContact(contactId) : undefined;
-    const name = contactId
+    return contactId
       ? contact?.displayName ?? getDisplayNameFromJid(contactId)
       : chat.groupName ?? getDisplayNameFromJid(chat.id);
-    if (normalizedSearch && !name.toLowerCase().includes(normalizedSearch)) return [];
+  };
+  const matchingChats = chats.filter((chat) =>
+    !normalizedSearch || getChatName(chat).toLowerCase().includes(normalizedSearch)
+  );
 
+  const renderChat = (chat: Chat) => {
+    const contactId = typeof chat.contactId === "string" ? chat.contactId : undefined;
+    const contact = contactId ? getContact(contactId) : undefined;
     const lastMessage = chat.messages[chat.messages.length - 1];
-    return [
+    return (
       <ChatRow
         key={chat.id}
         chat={chat}
-        name={name}
+        name={getChatName(chat)}
         avatar={contact?.contactAvatar}
         senderName={lastMessage && chat.group
           ? getContact(lastMessage.contactId)?.displayName ?? getDisplayNameFromJid(lastMessage.contactId)
@@ -203,13 +213,30 @@ const ChatList = memo(function ChatList({
         typingMatchesLastSender={Boolean(lastMessage && typingContactId === lastMessage.contactId)}
         blueTickEnabled={blueTickEnabled}
         loadCurrentChat={loadCurrentChat}
-      />,
-    ];
-  });
+      />
+    );
+  };
 
-  return renderedChats.length > 0
-    ? renderedChats
-    : <div className="flex h-full items-center justify-center px-4 text-center text-xl text-white">No chats, contacts or messages found</div>;
+  return matchingChats.length > 0 ? (
+    <div
+      className="h-full w-full overflow-y-auto"
+      onScroll={(event) => {
+        const { clientHeight, scrollHeight, scrollTop } = event.currentTarget;
+        if (scrollTop + clientHeight < scrollHeight - 200) return;
+        setPagination((current) => ({
+          search,
+          count: Math.min(
+            (current.search === search ? current.count : CHAT_PAGE_SIZE) + CHAT_PAGE_SIZE,
+            matchingChats.length,
+          ),
+        }));
+      }}
+    >
+      {matchingChats.slice(0, visibleCount).map(renderChat)}
+    </div>
+  ) : (
+    <div className="flex h-full items-center justify-center px-4 text-center text-xl text-white">No chats, contacts or messages found</div>
+  );
 });
 
 function ChatHeaderMenu() {
@@ -280,7 +307,7 @@ function ChatHeaderMenu() {
               pointerEvents: isOpen ? "auto" : "none",
               position: "absolute",
               top: position.top,
-              transform: isOpen ? "scale(0.85)" : "scale(0.72)",
+              transform: isOpen ? "scale(0.86)" : "scale(0.72)",
               transformOrigin: "top left",
               transition: `opacity ${isOpen ? 140 : 70}ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1)`,
               zIndex: 9999,
@@ -318,7 +345,7 @@ function ChatHeaderMenu() {
   );
 }
 
-export default function Chats({ selectedTab }: { selectedTab: string }) {
+function Chats({ selectedTab }: { selectedTab: string }) {
   const { openNewChatWindow } = useNewChat();
   const {
     filter,
@@ -380,7 +407,7 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
           ))}
         </div>
       </section>
-      <section className="flex min-h-0 w-full flex-1 flex-col gap-1 overflow-y-auto">
+      <section className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
         <ChatList
           chats={filtered}
           search={search}
@@ -396,3 +423,5 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
     </section>
   );
 }
+
+export default memo(Chats);

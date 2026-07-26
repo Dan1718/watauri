@@ -4,12 +4,16 @@ import Settings from "./settings";
 
 export default function TabPanelSwitcher() {
   const { selectedTab } = useTab();
+  const showChats = selectedTab === "chats";
 
-  if (selectedTab === "chats") {
-    return <Chats selectedTab={selectedTab} />;
-  }
-
-  if (selectedTab === "settings") return <Settings />;
-
-  return <div className="text-white">Coming soon...</div>;
+  return (
+    <div className="relative h-full w-full">
+      <div className={`absolute inset-0 ${showChats ? "visible" : "invisible pointer-events-none"}`}>
+        <Chats selectedTab="chats" />
+      </div>
+      {!showChats && (selectedTab === "settings"
+        ? <Settings />
+        : <div className="text-white">Coming soon...</div>)}
+    </div>
+  );
 }

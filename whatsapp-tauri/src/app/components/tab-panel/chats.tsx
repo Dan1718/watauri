@@ -4,6 +4,7 @@ import {
   UsersThreeIcon,
   XIcon,
 } from "@phosphor-icons/react";
+import { memo, useEffect, useRef, useState } from "react";
 import TooltipWrapper from "../tooltip-wrapper";
 import { useNewChat } from "@/app/hooks/use-new-chat";
 import { useChats } from "@/app/hooks/use-chats";
@@ -14,7 +15,16 @@ import { useCurrentChat } from "@/app/hooks/use-current-chat";
 import { formatTime, getDisplayNameFromJid } from "@/app/utils";
 import MessageStatusIcon from "../message-status-icon";
 import { useProfile } from "@/app/hooks/use-profile";
-import { memo } from "react";
+import { createPortal } from "react-dom";
+
+const headerMenuItems = [
+  { label: "New group", icon: "M500-482q29-32 44.5-73t15.5-85q0-44-15.5-85T500-798q60 8 100 53t40 105q0 60-40 105t-100 53Zm220 322v-120q0-36-16-68.5T662-406q51 18 94.5 46.5T800-280v120h-80Zm80-280v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80Zm-593-87q-47-47-47-113t47-113q47-47 113-47t113 47q47 47 47 113t-47 113q-47 47-113 47t-113-47ZM0-160v-112q0-34 17.5-62.5T64-378q62-31 126-46.5T320-440q66 0 130 15.5T576-378q29 15 46.5 43.5T640-272v112H0Zm320-400q33 0 56.5-23.5T400-640q0-33-23.5-56.5T320-720q-33 0-56.5 23.5T240-640q0 33 23.5 56.5T320-560ZM80-240h480v-32q0-11-5.5-20T540-306q-54-27-109-40.5T320-360q-56 0-111 13.5T100-306q-9 5-14.5 14T80-272v32Zm240-400Zm0 400Z" },
+  { label: "Starred messages", icon: "m354-287 126-76 126 77-33-144 111-96-146-13-58-136-58 135-146 13 111 97-33 143ZM233-120l65-281L80-590l288-25 112-265 112 265 288 25-218 189 65 281-247-149-247 149Zm247-350Z" },
+  { label: "Select chats", icon: "m424-312 282-282-56-56-226 226-114-114-56 56 170 170ZM200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z" },
+  { label: "Mark all as read", icon: "M694-160 553-302l56-56 85 85 170-170 56 57-226 226ZM80-80v-720q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v280h-80v-280H160v525l46-45h274v80H240L80-80Zm80-240v-480 480Z", dividerAfter: true },
+  { label: "App lock", icon: "M240-80q-33 0-56.5-23.5T160-160v-400q0-33 23.5-56.5T240-640h40v-80q0-83 58.5-141.5T480-920q83 0 141.5 58.5T680-720v80h40q33 0 56.5 23.5T800-560v400q0 33-23.5 56.5T720-80H240Zm0-80h480v-400H240v400Zm296.5-143.5Q560-327 560-360t-23.5-56.5Q513-440 480-440t-56.5 23.5Q400-393 400-360t23.5 56.5Q447-280 480-280t56.5-23.5ZM360-640h240v-80q0-50-35-85t-85-35q-50 0-85 35t-35 85v80ZM240-160v-400 400Z" },
+  { label: "Log out", icon: "M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h280v80H200Zm440-160-55-58 102-102H360v-80h327L585-622l55-58 200 200-200 200Z", dangerous: true },
+] as const;
 
 type ChatRowProps = {
   chat: Chat;
@@ -194,6 +204,51 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
   const { getContact } = useContacts();
   const { loadCurrentChat, contact, chatId } = useCurrentChat();
   const { profile: { blueTickEnabled } } = useProfile();
+  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
+  const headerMenuRef = useRef<HTMLDivElement>(null);
+  const headerMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const [headerMenuPosition, setHeaderMenuPosition] = useState({ left: 0, top: 0 });
+
+  const updateHeaderMenuPosition = () => {
+    const rect = headerMenuTriggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    setHeaderMenuPosition({
+      left: rect.left + window.scrollX,
+      top: rect.bottom + window.scrollY + 6,
+    });
+  };
+
+  const toggleHeaderMenu = () => {
+    if (!isHeaderMenuOpen) updateHeaderMenuPosition();
+    setIsHeaderMenuOpen((open) => !open);
+  };
+
+  useEffect(() => {
+    if (!isHeaderMenuOpen) return;
+
+    const closeMenu = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (headerMenuRef.current?.contains(target) || headerMenuTriggerRef.current?.contains(target)) return;
+      setIsHeaderMenuOpen(false);
+    };
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsHeaderMenuOpen(false);
+    };
+
+    updateHeaderMenuPosition();
+
+    document.addEventListener("mousedown", closeMenu);
+    document.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", updateHeaderMenuPosition);
+
+    return () => {
+      document.removeEventListener("mousedown", closeMenu);
+      document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", updateHeaderMenuPosition);
+    };
+  }, [isHeaderMenuOpen]);
 
   return (
     <section className="w-full h-full flex flex-col gap-3 p-4 relative">
@@ -208,12 +263,21 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
               <path fill="currentColor" fillRule="evenodd" d="M.94 5.53 3 8.85v8.48C3 18.81 4.2 20 5.67 20h13.66c1.48 0 2.67-1.2 2.67-2.67V6.67C22 5.19 20.8 4 19.33 4H1.8a1 1 0 0 0-.85 1.53ZM5 8.28v9.05c0 .37.3.67.67.67h13.66c.37 0 .67-.3.67-.67V6.67c0-.37-.3-.67-.67-.67H3.6L5 8.28Z" clipRule="evenodd" />
             </svg>
           </TooltipWrapper>
-          <TooltipWrapper showTooltip={false}>
-            <DotsThreeVerticalIcon
-              className="text-white size-6"
-              weight="bold"
-            />
-          </TooltipWrapper>
+          <div className="relative">
+            <button
+              aria-expanded={isHeaderMenuOpen}
+              aria-label="Open chat menu"
+              className="flex cursor-pointer items-center justify-center rounded-full bg-transparent p-2 outline-none hover:bg-gray-700/90"
+              onClick={toggleHeaderMenu}
+              ref={headerMenuTriggerRef}
+              type="button"
+            >
+              <DotsThreeVerticalIcon
+                className="size-6 text-white"
+                weight="bold"
+              />
+            </button>
+          </div>
         </section>
       </section>
       <section className="w-full flex flex-col gap-1">
@@ -260,6 +324,53 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
           loadCurrentChat={loadCurrentChat}
         />
       </section>
+      {typeof document !== "undefined"
+        ? createPortal(
+          <div
+            className="rounded-2xl border border-white/10 p-2 shadow-[0_18px_48px_rgba(0,0,0,0.45)]"
+            ref={headerMenuRef}
+            role="menu"
+            style={{
+              backgroundColor: "#161717",
+              left: headerMenuPosition.left,
+              opacity: isHeaderMenuOpen ? 1 : 0,
+              pointerEvents: isHeaderMenuOpen ? "auto" : "none",
+              position: "absolute",
+              top: headerMenuPosition.top,
+              transform: isHeaderMenuOpen ? "scale(0.85)" : "scale(0.72)",
+              transformOrigin: "top left",
+              transition: `opacity ${isHeaderMenuOpen ? 140 : 70}ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1)`,
+              zIndex: 9999,
+            }}
+          >
+            {headerMenuItems.map(({ label, icon, dangerous, dividerAfter }) => (
+              <div key={label}>
+                <button
+                  className="my-0.5 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[15px] leading-5 whitespace-nowrap transition-colors duration-150"
+                  role="menuitem"
+                  style={{ color: "#ffffff" }}
+                  type="button"
+                  onMouseOver={(event) => {
+                    event.currentTarget.style.backgroundColor = dangerous ? "#2e1d1f" : "#2e2f2f";
+                    event.currentTarget.style.color = dangerous ? "#db8690" : "#ffffff";
+                  }}
+                  onMouseOut={(event) => {
+                    event.currentTarget.style.backgroundColor = "transparent";
+                    event.currentTarget.style.color = "#ffffff";
+                  }}
+                >
+                  <svg aria-hidden="true" className="size-5 shrink-0" fill="currentColor" viewBox="0 -960 960 960">
+                    <path d={icon} />
+                  </svg>
+                  <span>{label}</span>
+                </button>
+                {dividerAfter ? <div className="mx-3 mt-1 mb-2 h-px bg-white/10" /> : null}
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )
+        : null}
     </section>
   );
 }

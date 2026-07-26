@@ -212,6 +212,112 @@ const ChatList = memo(function ChatList({
     : <div className="flex h-full items-center justify-center px-4 text-center text-xl text-white">No chats, contacts or messages found</div>;
 });
 
+function ChatHeaderMenu() {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [position, setPosition] = useState({ left: 0, top: 0 });
+
+  const updatePosition = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPosition({
+      left: rect.left + window.scrollX,
+      top: rect.bottom + window.scrollY + 6,
+    });
+  };
+
+  const toggleMenu = () => {
+    if (!isOpen) updatePosition();
+    setIsOpen((open) => !open);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const closeMenu = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      setIsOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsOpen(false);
+    };
+
+    updatePosition();
+    document.addEventListener("mousedown", closeMenu);
+    document.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      document.removeEventListener("mousedown", closeMenu);
+      document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [isOpen]);
+
+  return (
+    <>
+      <button
+        aria-expanded={isOpen}
+        aria-label="Open chat menu"
+        className="flex cursor-pointer items-center justify-center rounded-full bg-transparent p-2 outline-none hover:bg-gray-700/90"
+        onClick={toggleMenu}
+        ref={triggerRef}
+        type="button"
+      >
+        <DotsThreeVerticalIcon className="size-6 text-white" weight="bold" />
+      </button>
+      {typeof document !== "undefined"
+        ? createPortal(
+          <div
+            className="rounded-2xl border border-white/10 p-2 shadow-[0_18px_48px_rgba(0,0,0,0.45)]"
+            ref={menuRef}
+            role="menu"
+            style={{
+              backgroundColor: "#161717",
+              left: position.left,
+              opacity: isOpen ? 1 : 0,
+              pointerEvents: isOpen ? "auto" : "none",
+              position: "absolute",
+              top: position.top,
+              transform: isOpen ? "scale(0.85)" : "scale(0.72)",
+              transformOrigin: "top left",
+              transition: `opacity ${isOpen ? 140 : 70}ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1)`,
+              zIndex: 9999,
+            }}
+          >
+            {headerMenuItems.map(({ label, icon, dangerous, dividerAfter }) => (
+              <div key={label}>
+                <button
+                  className="my-0.5 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[15px] leading-5 whitespace-nowrap transition-colors duration-150"
+                  role="menuitem"
+                  style={{ color: "#ffffff" }}
+                  type="button"
+                  onMouseOver={(event) => {
+                    event.currentTarget.style.backgroundColor = dangerous ? "#2e1d1f" : "#2e2f2f";
+                    event.currentTarget.style.color = dangerous ? "#db8690" : "#ffffff";
+                  }}
+                  onMouseOut={(event) => {
+                    event.currentTarget.style.backgroundColor = "transparent";
+                    event.currentTarget.style.color = "#ffffff";
+                  }}
+                >
+                  <svg aria-hidden="true" className="size-5 shrink-0" fill="currentColor" viewBox="0 -960 960 960">
+                    <path d={icon} />
+                  </svg>
+                  <span>{label}</span>
+                </button>
+                {dividerAfter ? <div className="mx-3 mt-1 mb-2 h-px bg-white/10" /> : null}
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )
+        : null}
+    </>
+  );
+}
+
 export default function Chats({ selectedTab }: { selectedTab: string }) {
   const { openNewChatWindow } = useNewChat();
   const {
@@ -224,51 +330,6 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
   const { getContact } = useContacts();
   const { loadCurrentChat, contact, chatId } = useCurrentChat();
   const { profile: { blueTickEnabled } } = useProfile();
-  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
-  const headerMenuRef = useRef<HTMLDivElement>(null);
-  const headerMenuTriggerRef = useRef<HTMLButtonElement>(null);
-  const [headerMenuPosition, setHeaderMenuPosition] = useState({ left: 0, top: 0 });
-
-  const updateHeaderMenuPosition = () => {
-    const rect = headerMenuTriggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    setHeaderMenuPosition({
-      left: rect.left + window.scrollX,
-      top: rect.bottom + window.scrollY + 6,
-    });
-  };
-
-  const toggleHeaderMenu = () => {
-    if (!isHeaderMenuOpen) updateHeaderMenuPosition();
-    setIsHeaderMenuOpen((open) => !open);
-  };
-
-  useEffect(() => {
-    if (!isHeaderMenuOpen) return;
-
-    const closeMenu = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (headerMenuRef.current?.contains(target) || headerMenuTriggerRef.current?.contains(target)) return;
-      setIsHeaderMenuOpen(false);
-    };
-
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsHeaderMenuOpen(false);
-    };
-
-    updateHeaderMenuPosition();
-
-    document.addEventListener("mousedown", closeMenu);
-    document.addEventListener("keydown", closeOnEscape);
-    window.addEventListener("resize", updateHeaderMenuPosition);
-
-    return () => {
-      document.removeEventListener("mousedown", closeMenu);
-      document.removeEventListener("keydown", closeOnEscape);
-      window.removeEventListener("resize", updateHeaderMenuPosition);
-    };
-  }, [isHeaderMenuOpen]);
 
   return (
     <section className="w-full h-full flex flex-col gap-3 p-4 relative">
@@ -284,19 +345,7 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
             </svg>
           </TooltipWrapper>
           <div className="relative">
-            <button
-              aria-expanded={isHeaderMenuOpen}
-              aria-label="Open chat menu"
-              className="flex cursor-pointer items-center justify-center rounded-full bg-transparent p-2 outline-none hover:bg-gray-700/90"
-              onClick={toggleHeaderMenu}
-              ref={headerMenuTriggerRef}
-              type="button"
-            >
-              <DotsThreeVerticalIcon
-                className="size-6 text-white"
-                weight="bold"
-              />
-            </button>
+            <ChatHeaderMenu />
           </div>
         </section>
       </section>
@@ -344,53 +393,6 @@ export default function Chats({ selectedTab }: { selectedTab: string }) {
           loadCurrentChat={loadCurrentChat}
         />
       </section>
-      {typeof document !== "undefined"
-        ? createPortal(
-          <div
-            className="rounded-2xl border border-white/10 p-2 shadow-[0_18px_48px_rgba(0,0,0,0.45)]"
-            ref={headerMenuRef}
-            role="menu"
-            style={{
-              backgroundColor: "#161717",
-              left: headerMenuPosition.left,
-              opacity: isHeaderMenuOpen ? 1 : 0,
-              pointerEvents: isHeaderMenuOpen ? "auto" : "none",
-              position: "absolute",
-              top: headerMenuPosition.top,
-              transform: isHeaderMenuOpen ? "scale(0.85)" : "scale(0.72)",
-              transformOrigin: "top left",
-              transition: `opacity ${isHeaderMenuOpen ? 140 : 70}ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1)`,
-              zIndex: 9999,
-            }}
-          >
-            {headerMenuItems.map(({ label, icon, dangerous, dividerAfter }) => (
-              <div key={label}>
-                <button
-                  className="my-0.5 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[15px] leading-5 whitespace-nowrap transition-colors duration-150"
-                  role="menuitem"
-                  style={{ color: "#ffffff" }}
-                  type="button"
-                  onMouseOver={(event) => {
-                    event.currentTarget.style.backgroundColor = dangerous ? "#2e1d1f" : "#2e2f2f";
-                    event.currentTarget.style.color = dangerous ? "#db8690" : "#ffffff";
-                  }}
-                  onMouseOut={(event) => {
-                    event.currentTarget.style.backgroundColor = "transparent";
-                    event.currentTarget.style.color = "#ffffff";
-                  }}
-                >
-                  <svg aria-hidden="true" className="size-5 shrink-0" fill="currentColor" viewBox="0 -960 960 960">
-                    <path d={icon} />
-                  </svg>
-                  <span>{label}</span>
-                </button>
-                {dividerAfter ? <div className="mx-3 mt-1 mb-2 h-px bg-white/10" /> : null}
-              </div>
-            ))}
-          </div>,
-          document.body,
-        )
-        : null}
     </section>
   );
 }

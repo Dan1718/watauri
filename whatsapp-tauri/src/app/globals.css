@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+:root {
+  --hover-background: #2e2f2f;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -16,8 +20,11 @@ body {
   background: #0b141a;
 }
 
-button:not(:disabled):hover {
-  background-color: #2e2f2f;
+button:not(:disabled):hover,
+a:hover,
+[role="button"]:hover,
+.cursor-pointer:hover {
+  background-color: var(--hover-background);
   cursor: pointer;
 }
 
@@ -44,7 +51,7 @@ button.selected-filter:not(:disabled):hover {
 }
 
 .composer-action-button:not(:disabled):hover {
-  background-color: #2e2f2f;
+  background-color: var(--hover-background);
 }
 
 .composer-action-button.is-send,

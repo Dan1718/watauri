@@ -45,6 +45,9 @@ export type BackendChat = {
   name?: string;
   avatar?: string;
   isArchived: boolean;
+  canSend: boolean;
+  isPinned: boolean;
+  isMuted: boolean;
   isStarred?: boolean;
   isCommunity?: boolean;
 };

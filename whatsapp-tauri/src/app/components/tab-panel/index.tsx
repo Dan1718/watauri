@@ -4,12 +4,12 @@ import Settings from "./settings";
 
 export default function TabPanelSwitcher() {
   const { selectedTab } = useTab();
-  const showChats = selectedTab === "chats";
+  const showChats = selectedTab === "chats" || selectedTab === "archived";
 
   return (
     <div className="relative h-full w-full">
       <div className={`absolute inset-0 ${showChats ? "visible" : "invisible pointer-events-none"}`}>
-        <Chats selectedTab="chats" />
+        <Chats selectedTab={selectedTab} />
       </div>
       {!showChats && (selectedTab === "settings"
         ? <Settings />

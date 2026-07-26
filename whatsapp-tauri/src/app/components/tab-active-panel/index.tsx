@@ -7,7 +7,7 @@ const MemoizedCurrentChat = memo(CurrentChat);
 
 export default function TabActivePanel() {
   const { selectedTab } = useTab();
-  const showChat = selectedTab === "chats";
+  const showChat = selectedTab === "chats" || selectedTab === "archived";
 
   return (
     <div className="relative h-full w-full">

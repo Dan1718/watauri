@@ -414,7 +414,7 @@ function Chats({ selectedTab }: { selectedTab: string }) {
       </section>
       <section className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
         <ChatList
-          chats={filtered}
+          chats={filtered.filter((chat) => chat.archived === (selectedTab === "archived"))}
           search={search}
           isLoading={isLoading}
           error={error}

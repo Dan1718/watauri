@@ -416,7 +416,7 @@ function Composer({
               style={{ top: -18, left: -17, width: 22, height: 24, borderRadius: 999 }}
             />
             <button type="button" aria-label="Attach file" aria-expanded={isAttachmentDrawerOpen} tabIndex={isDrawerReady ? 0 : -1} className="absolute z-20 grid size-6 cursor-pointer place-items-center bg-transparent" style={{ backgroundColor: "transparent" }} onClick={() => fileInputRef.current?.click()}>
-              <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>attach_file</span>
+              <span aria-hidden="true" className="material-symbols-outlined !text-[24px]" style={{ color: "#8a8a92" }}>attach_file</span>
             </button>
             <button
               type="button"
@@ -467,7 +467,7 @@ function Composer({
               style={{ top: -18, left: -15, width: 22, height: 24, borderRadius: 999 }}
             />
             <button type="button" aria-label="Add media" aria-expanded={isMediaDrawerOpen} tabIndex={isDrawerReady ? 0 : -1} className="absolute z-20 grid size-6 cursor-pointer place-items-center bg-transparent" style={{ backgroundColor: "transparent" }}>
-              <span aria-hidden="true" className="material-symbols-outlined !text-[18px]" style={{ color: "#8a8a92" }}>add_circle</span>
+              <span aria-hidden="true" className="material-symbols-outlined !text-[24px]" style={{ color: "#8a8a92" }}>add_circle</span>
             </button>
             <button
               type="button"
@@ -609,7 +609,7 @@ export default function CurrentChat() {
   const { profile: { blueTickEnabled, id: userId } } = useProfile();
   if (!chatId) {
     return (
-      <section className="flex h-full w-full items-center justify-center text-white">
+      <section className="flex h-full w-full items-center justify-center bg-[#1d1f1f] text-white">
         Please select a chat to see messages
       </section>
     );

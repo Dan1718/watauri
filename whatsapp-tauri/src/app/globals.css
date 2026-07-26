@@ -36,6 +36,10 @@ button.media-filter-action:not(:disabled):hover {
   background-color: transparent;
 }
 
+button.selected-filter:not(:disabled):hover {
+  background-color: #11442f;
+}
+
 .chat-info-action[aria-pressed="true"]:hover {
   background-color: #34d399;
 }

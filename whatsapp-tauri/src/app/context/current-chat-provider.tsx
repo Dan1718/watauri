@@ -12,8 +12,9 @@ import { useChats } from "../hooks/use-chats";
 import { useContacts } from "../hooks/use-contacts";
 import { Contact } from "./contacts-provider";
 import { getDisplayNameFromJid } from "../utils";
-import { BackendMessage, listBackendMessages, sendBackendMessage } from "../backend";
+import { BackendMessage, listBackendMessages, markBackendChatRead, sendBackendMessage } from "../backend";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
+import { useProfile } from "../hooks/use-profile";
 
 export type CurrentChatContacts = {
   [contactId: string]: Contact | undefined;
@@ -134,6 +135,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     chats: { complete },
   } = useChats();
   const { contacts } = useContacts();
+  const { profile: { readReceiptsEnabled } } = useProfile();
   const pollingActive = useChatPollingActive();
   const cacheRef = useRef(new Map<string, CachedMessages>());
   const requestRef = useRef<ActiveRequest | null>(null);
@@ -299,7 +301,14 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
         ...chat,
       };
     });
-  }, []);
+    if (chat.chatId && chat.unreadCount) {
+      void markBackendChatRead(chat.chatId, readReceiptsEnabled).catch((error) => {
+        setCurrentChat((current) => current.chatId === chat.chatId
+          ? { ...current, error: error instanceof Error ? error.message : "Failed to mark chat read" }
+          : current);
+      });
+    }
+  }, [readReceiptsEnabled]);
 
   const loadOlderMessages = useCallback(async () => {
     const chatId = currentChatRef.current.chatId;

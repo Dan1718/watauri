@@ -254,7 +254,6 @@ func handleReadMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 		SendReceipt *bool    `json:"sendReceipt"`
 		MessageIds  []string `json:"messageIds"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 1024)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&body); err != nil && !errors.Is(err, io.EOF) {

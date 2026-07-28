@@ -647,7 +647,7 @@ func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message
 	return message, nil
 }
 
-func (wa *WAManager) MarkRead(ctx context.Context, chatID string, sendReceipt bool) error {
+func (wa *WAManager) MarkRead(ctx context.Context, chatID string, sendReceipt bool, messageIDs []string) error {
 	chatJID, err := types.ParseJID(chatID)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errInvalidChatID, err)
@@ -667,7 +667,7 @@ func (wa *WAManager) MarkRead(ctx context.Context, chatID string, sendReceipt bo
 	if sendReceipt && client == nil {
 		return errWAUnavailable
 	}
-	messages, err := store.GetUnreadInboundMessages(chatJID.String())
+	messages, err := store.GetUnreadInboundMessages(chatJID.String(), messageIDs)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
@@ -689,7 +689,7 @@ func (wa *WAManager) MarkRead(ctx context.Context, chatID string, sendReceipt bo
 			}
 		}
 	}
-	if err := store.MarkChatRead(chatJID.String()); err != nil {
+	if err := store.MarkChatRead(chatJID.String(), messageIDs); err != nil {
 		return fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
 	return nil

@@ -251,9 +251,9 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 
 func handleReadMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 	var body struct {
-		SendReceipt *bool `json:"sendReceipt"`
+		SendReceipt *bool    `json:"sendReceipt"`
+		MessageIds  []string `json:"messageIds"`
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 1024)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
@@ -268,11 +268,13 @@ func handleReadMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 	if body.SendReceipt != nil {
 		sendReceipt = *body.SendReceipt
 	}
+
 	if wa == nil {
 		writeJSONError(w, "whatsapp is unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if err := wa.MarkRead(r.Context(), chatID, sendReceipt); err != nil {
+	unreadCount, err := wa.MarkRead(r.Context(), chatID, sendReceipt, body.MessageIds)
+	if err != nil {
 		log.Printf("[http] POST /api/chats/%s/read error: %v", chatID, err)
 		switch {
 		case errors.Is(err, errInvalidChatID):
@@ -287,7 +289,8 @@ func handleReadMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"unreadCount": unreadCount})
 }
 
 func writeJSONError(w http.ResponseWriter, message string, status int) {

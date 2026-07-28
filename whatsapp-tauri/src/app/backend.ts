@@ -48,6 +48,9 @@ export type BackendChat = {
   name?: string;
   avatar?: string;
   isArchived: boolean;
+  canSend: boolean;
+  isPinned: boolean;
+  isMuted: boolean;
   isStarred?: boolean;
   isCommunity?: boolean;
 };
@@ -55,6 +58,7 @@ export type BackendChat = {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, init);
   if (!response.ok) throw new Error(`${path} failed: ${response.status}`);
+  if (response.status === 204) return undefined as T;
   return response.json();
 }
 
@@ -83,4 +87,11 @@ export const sendBackendMessage = (chatId: string, text: string) =>
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
+  });
+
+export const markBackendChatRead = (chatId: string, sendReceipt: boolean) =>
+  request<void>(`/api/chats/${chatId}/read`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sendReceipt }),
   });

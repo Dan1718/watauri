@@ -47,6 +47,10 @@ export type Chat = {
   read: boolean;
   group: boolean;
   favorite: boolean;
+  archived: boolean;
+  pinned: boolean;
+  muted: boolean;
+  canSend: boolean;
   messages: Message[];
 };
 
@@ -64,6 +68,7 @@ export const ChatsContext = createContext<
       updateFilter: (filter: string) => void;
       search: string;
       updateSearch: (query: string) => void;
+      setChatArchived: (chatId: string, archived: boolean) => void;
       chats: Chats;
     }
 >(undefined);
@@ -111,7 +116,9 @@ function sameChat(a: Chat, b: Chat) {
   return a.id === b.id && contactsEqual && participantsEqual && a.groupName === b.groupName &&
     a.groupAvatar === b.groupAvatar && a.unreadCount === b.unreadCount &&
     a.read === b.read && a.group === b.group &&
-    a.favorite === b.favorite && a.messages.length === b.messages.length &&
+    a.favorite === b.favorite && a.archived === b.archived &&
+    a.pinned === b.pinned && a.muted === b.muted && a.canSend === b.canSend &&
+    a.messages.length === b.messages.length &&
     a.messages.every((message, index) => sameMessage(message, b.messages[index]));
 }
 
@@ -143,6 +150,10 @@ function toChat(chat: BackendChat): Chat {
     read: chat.unreadCount === 0,
     group: chat.isGroup,
     favorite: Boolean(chat.isStarred),
+    archived: chat.isArchived,
+    pinned: chat.isPinned,
+    muted: chat.isMuted,
+    canSend: chat.canSend,
     messages: chat.lastMessage
       ? [toMessage(chat.lastMessage, chat.isGroup ? "me" : directContactId)]
       : [],
@@ -159,6 +170,7 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
   });
   const pollingActive = useChatPollingActive();
   const loadedRef = useRef(false);
+  const archivedOverridesRef = useRef(new Map<string, boolean>());
 
   const updateFilter = useCallback((filter: string) => {
     setFilter(filter as Filters);
@@ -166,6 +178,14 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
 
   const updateSearch = useCallback((query: string) => {
     setSearch(query);
+  }, []);
+
+  const setChatArchived = useCallback((chatId: string, archived: boolean) => {
+    archivedOverridesRef.current.set(chatId, archived);
+    setChatState((prev) => ({
+      ...prev,
+      complete: prev.complete.map((chat) => chat.id === chatId ? { ...chat, archived } : chat),
+    }));
   }, []);
 
   useEffect(() => {
@@ -180,7 +200,10 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
         setChatState((prev) => ({ ...prev, isLoading: true }));
       }
       try {
-        const data = (await listBackendChats(controller.signal)).map(toChat);
+        const data = (await listBackendChats(controller.signal)).map(toChat).map((chat) => {
+          const archived = archivedOverridesRef.current.get(chat.id);
+          return archived === undefined ? chat : { ...chat, archived };
+        });
         loadedRef.current = true;
         setChatState((prev) => {
           const complete = mergeChats(prev.complete, data);
@@ -216,8 +239,8 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
   }), [filter, chatState.complete]);
   const chats = useMemo(() => ({ ...chatState, filtered }), [chatState, filtered]);
   const value = useMemo(
-    () => ({ chats, filter, search, updateFilter, updateSearch }),
-    [chats, filter, search, updateFilter, updateSearch]
+    () => ({ chats, filter, search, updateFilter, updateSearch, setChatArchived }),
+    [chats, filter, search, updateFilter, updateSearch, setChatArchived]
   );
 
   return (

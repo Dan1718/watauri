@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from "react";
 import ChatsProvider from "../context/chats-provider";
 import ContactsProvider from "../context/contacts-provider";
 import CurrentChatProvider from "../context/current-chat-provider";
@@ -17,9 +17,20 @@ type ResizeGeometry = {
   max: number;
 };
 
+const CHAT_LIST_WIDTH_KEY = "chat-list-width";
+
 export default function AuthenticatedShell() {
   const chatListRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<ResizeGeometry | null>(null);
+
+  useEffect(() => {
+    const element = chatListRef.current;
+    const storedWidth = Number(localStorage.getItem(CHAT_LIST_WIDTH_KEY));
+    if (!element || !Number.isFinite(storedWidth)) return;
+    const { left } = element.getBoundingClientRect();
+    const max = Math.max(320, window.innerWidth - left - 420);
+    element.style.width = `${Math.min(Math.max(storedWidth, 320), max)}px`;
+  }, []);
 
   const resizeWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -31,12 +42,15 @@ export default function AuthenticatedShell() {
     const next = event.key === "Home" ? 320 : event.key === "End" ? max
       : Math.min(Math.max(width + (event.key === "ArrowLeft" ? -20 : 20), 320), max);
     element.style.width = `${next}px`;
+    localStorage.setItem(CHAT_LIST_WIDTH_KEY, String(Math.round(next)));
     event.currentTarget.setAttribute("aria-valuemax", String(Math.round(max)));
     event.currentTarget.setAttribute("aria-valuenow", String(Math.round(next)));
   };
 
   const stopResize = (event: PointerEvent<HTMLDivElement>) => {
+    const resize = resizeRef.current;
     resizeRef.current = null;
+    if (resize) localStorage.setItem(CHAT_LIST_WIDTH_KEY, String(Math.round(resize.element.getBoundingClientRect().width)));
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -69,7 +83,7 @@ export default function AuthenticatedShell() {
                       aria-valuemin={320}
                       aria-valuemax={560}
                       aria-valuenow={320}
-                      className="absolute -right-1 top-0 z-50 h-full w-2 cursor-col-resize bg-transparent transition-colors hover:bg-emerald-400/20 active:bg-emerald-400/30"
+                      className="absolute -right-1 top-0 z-50 h-full w-2 cursor-col-resize bg-transparent"
                       onPointerCancel={stopResize}
                       onPointerDown={(event) => {
                         const element = chatListRef.current;

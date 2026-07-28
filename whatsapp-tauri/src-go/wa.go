@@ -354,8 +354,8 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 	if evt.Info.IsFromMe {
 		status = "sent"
 	}
-	log.Printf("[wa] Event: message id = %s chat = %s sender = %s text = %q media = %s isFromMe = %v ",
-		evt.Info.ID, evt.Info.Chat, evt.Info.Sender, text, mediaType, evt.Info.IsFromMe)
+	log.Printf("[wa] Event: message id = %s chat = %s sender = %s sender_push = %s text = %q media = %s isFromMe = %v ",
+		evt.Info.ID, evt.Info.Chat, evt.Info.Sender, evt.Info.PushName, text, mediaType, evt.Info.IsFromMe)
 
 	chatJID := evt.Info.Chat.String()
 	if evt.Info.Chat.Server != types.GroupServer {
@@ -366,7 +366,14 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 		}
 		chatJID = canonicalChatJID
 	}
-
+	if source == "history" && evt.Info.PushName != "" && evt.Info.Sender.User != "" && evt.Info.Sender.Server != "" {
+		if err := wa.store.UpsertContact(User{
+			ID:       evt.Info.Sender.String(),
+			PushName: evt.Info.PushName,
+		}); err != nil {
+			log.Printf("[wa] failed to upsert history message pushname %s: %v", evt.Info.Sender, err)
+		}
+	}
 	ourMsg := Message{
 		ID:        evt.Info.ID,
 		ChatJID:   chatJID,

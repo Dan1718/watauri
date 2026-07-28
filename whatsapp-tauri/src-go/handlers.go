@@ -274,7 +274,8 @@ func handleReadMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 		writeJSONError(w, "whatsapp is unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if err := wa.MarkRead(r.Context(), chatID, sendReceipt, body.MessageIds); err != nil {
+	unreadCount, err := wa.MarkRead(r.Context(), chatID, sendReceipt, body.MessageIds)
+	if err != nil {
 		log.Printf("[http] POST /api/chats/%s/read error: %v", chatID, err)
 		switch {
 		case errors.Is(err, errInvalidChatID):
@@ -289,7 +290,8 @@ func handleReadMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"unreadCount": unreadCount})
 }
 
 func writeJSONError(w http.ResponseWriter, message string, status int) {

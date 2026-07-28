@@ -783,84 +783,53 @@ func (s *UserDataStore) GetUnreadInboundMessages(chatJID string, messageIDs []st
 	return messages, nil
 }
 
-func (s *UserDataStore) MarkChatRead(chatJID string, messageIDs []string) error {
+func (s *UserDataStore) MarkChatRead(chatJID string, messageIDs []string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	start := time.Now()
+	if len(messageIDs) == 0 {
+		var unreadCount int
+		err := s.db.QueryRow(`SELECT unread_count FROM chats WHERE jid = ?`, chatJID).Scan(&unreadCount)
+		return unreadCount, err
+	}
+
 	tx, err := s.db.Begin()
 	if err != nil {
 		log.Printf("[store] MarkChatRead begin tx error : %v (%v) ", err, time.Since(start))
-		return err
-	}
-	var ids []string
-	if len(messageIDs) == 0 {
-		rows, err := tx.Query(
-			`SELECT id
-			FROM messages
-			WHERE chat_jid = ?
-			AND is_from_me = 0
-			AND status != 'read'
-			ORDER BY timestamp_epoch ASC, id ASC`,
-			chatJID,
-		)
-
-		if err != nil {
-			tx.Rollback()
-			log.Printf("[store] MarkChatRead(%s) select error :%v (%v) ", chatJID, err, time.Since(start))
-			return err
-		}
-
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				tx.Rollback()
-				log.Printf("[store] MarkChatRead(%s) scan error : %v (%v)", chatJID, err, time.Since(start))
-				return err
-			}
-			ids = append(ids, id)
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			tx.Rollback()
-			log.Printf("[store] MarkChatRead (%s) rows error : %v (%v)", chatJID, err, time.Since(start))
-			return err
-		}
-		rows.Close()
-	} else {
-		ids = messageIDs
+		return 0, err
 	}
 	stmt, err := tx.Prepare(`UPDATE messages SET status = 'read', revision = ? WHERE chat_jid = ? AND id = ? AND is_from_me = 0 AND status != 'read'`)
 	if err != nil {
 		tx.Rollback()
 		log.Printf("[store] MarkChatRead(%s) preparer errorr: %v (%v)", chatJID, err, time.Since(start))
-		return err
+		return 0, err
 	}
 	defer stmt.Close()
 
 	updatedCount := int64(0)
-	for _, id := range ids {
+	for _, id := range messageIDs {
 		revision, err := nextMessageRevision(tx)
 		if err != nil {
 			tx.Rollback()
-			return err
+			return 0, err
 		}
 		result, err := stmt.Exec(revision, chatJID, id)
 		if err != nil {
 			tx.Rollback()
 			log.Printf("[store] MarkChatRead(%s) update message %s error : %v (%v) ", chatJID, id, err, time.Since(start))
-			return err
+			return 0, err
 
 		}
 		rowsAffected, err := result.RowsAffected()
 		if err != nil {
 			tx.Rollback()
 			log.Printf("[store] MarkChatRead(%s) rows affected for message %s error : %v (%v) ", chatJID, id, err, time.Since(start))
-			return err
+			return 0, err
 		}
 		updatedCount += rowsAffected
 	}
+	var unreadCount int
 	if _, err := tx.Exec(`
 		UPDATE chats
 		SET unread_count = MAX(unread_count - ?, 0),
@@ -868,14 +837,19 @@ func (s *UserDataStore) MarkChatRead(chatJID string, messageIDs []string) error 
 		WHERE jid = ?`, updatedCount, time.Now().Format(time.RFC3339), chatJID); err != nil {
 		tx.Rollback()
 		log.Printf("[store] MarkChatRead(%s) update chat error : %v (%v) ", chatJID, err, time.Since(start))
-		return err
+		return 0, err
+	}
+	if err := tx.QueryRow(`SELECT unread_count FROM chats WHERE jid = ?`, chatJID).Scan(&unreadCount); err != nil {
+		tx.Rollback()
+		log.Printf("[store] MarkChatRead(%s) unread count query error : %v (%v) ", chatJID, err, time.Since(start))
+		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
 		log.Printf("[store] MarkChatRead(%s) commit error : %v (%v)", chatJID, err, time.Since(start))
-		return err
+		return 0, err
 	}
-	log.Printf("[store] MarkChatRead(%s) -> %d messages (%v)", chatJID, len(ids), time.Since(start))
-	return nil
+	log.Printf("[store] MarkChatRead(%s) -> %d messages, %d unread remaining (%v)", chatJID, updatedCount, unreadCount, time.Since(start))
+	return unreadCount, nil
 
 }
 

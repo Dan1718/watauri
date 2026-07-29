@@ -111,7 +111,7 @@ function sameChat(a: Chat, b: Chat) {
       const other = b.participants?.[index];
       return participant.id === other?.id && participant.name === other?.name &&
         participant.pushName === other?.pushName && participant.avatar === other?.avatar && participant.status === other?.status &&
-        participant.phone === other?.phone && participant.isSaved === other?.isSaved;
+        participant.phoneNumber === other?.phoneNumber && participant.isSaved === other?.isSaved;
     });
   return a.id === b.id && contactsEqual && participantsEqual && a.groupName === b.groupName &&
     a.groupAvatar === b.groupAvatar && a.unreadCount === b.unreadCount &&

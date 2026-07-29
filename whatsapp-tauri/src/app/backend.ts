@@ -6,7 +6,7 @@ export type BackendUser = {
   pushName?: string;
   avatar?: string;
   status?: string;
-  phone?: string;
+  phoneNumber?: string;
   isSaved?: boolean;
 };
 

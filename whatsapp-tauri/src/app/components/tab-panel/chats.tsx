@@ -209,7 +209,7 @@ const ChatList = memo(function ChatList({
       ? chat.participants?.find(({ id }) => id === lastMessage.contactId)
       : undefined;
     const senderContact = lastMessage && chat.group
-      ? (sender?.phone ? getContact(sender.phone) : undefined) ?? getContact(lastMessage.contactId)
+      ? (sender?.phoneNumber ? getContact(sender.phoneNumber) : undefined) ?? getContact(lastMessage.contactId)
       : undefined;
     const senderDisplayName = sender?.name && !isPhonePlaceholder(sender.name) ? sender.name : undefined;
     const contactDisplayName = senderContact?.displayName && !isPhonePlaceholder(senderContact.displayName)
@@ -217,7 +217,7 @@ const ChatList = memo(function ChatList({
       : undefined;
     const senderName = lastMessage && chat.group
       ? (senderContact?.isSaved ? senderContact.displayName : undefined) || senderDisplayName ||
-        contactDisplayName || (sender?.phone ? `+${sender.phone}` : getDisplayNameFromJid(lastMessage.contactId))
+        contactDisplayName || (sender?.phoneNumber ? `+${sender.phoneNumber}` : getDisplayNameFromJid(lastMessage.contactId))
       : undefined;
     return (
       <ChatRow

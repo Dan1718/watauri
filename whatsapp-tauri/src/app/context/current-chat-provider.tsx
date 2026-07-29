@@ -264,7 +264,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
         const groupContacts: CurrentChatContacts = {};
         chat.contactId.forEach((groupContact: string) => {
           const participant = chat.participants?.find(({ id }) => id === groupContact);
-          const contact = (participant?.phone ? getContact(participant.phone) : undefined) ?? getContact(groupContact);
+          const contact = (participant?.phoneNumber ? getContact(participant.phoneNumber) : undefined) ?? getContact(groupContact);
           const displayName = participant?.name && !isPhonePlaceholder(participant.name)
             ? participant.name
             : undefined;
@@ -274,10 +274,10 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
           groupContacts[groupContact] = participant ? {
             id: participant.id,
             displayName: (contact?.isSaved ? contact.displayName : undefined) || displayName || contactDisplayName ||
-              (participant.phone ? `+${participant.phone}` : getDisplayNameFromJid(participant.id)),
+              (participant.phoneNumber ? `+${participant.phoneNumber}` : getDisplayNameFromJid(participant.id)),
             contactAvatar: contact?.contactAvatar || participant.avatar || "",
             statusMessage: contact?.statusMessage || participant.status || "",
-            phone: participant.phone || contact?.phone,
+            phone: participant.phoneNumber || contact?.phone,
             isSaved: participant.isSaved,
           } : contact;
         });

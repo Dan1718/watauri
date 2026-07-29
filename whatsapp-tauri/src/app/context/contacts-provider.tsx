@@ -39,7 +39,7 @@ export const ContactsContext = createContext<ContactsContextType | undefined>(
 );
 
 function toContact(user: BackendUser): Contact {
-  const phone = user.phone || (user.id.endsWith("@s.whatsapp.net") ? getDisplayNameFromJid(user.id) : undefined);
+  const phone = user.phoneNumber || (user.id.endsWith("@s.whatsapp.net") ? getDisplayNameFromJid(user.id) : undefined);
   return {
     id: user.id,
     displayName: user.name || (!isPhonePlaceholder(user.pushName) ? user.pushName : undefined) || getDisplayNameFromJid(user.id),

@@ -586,9 +586,6 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 		); err != nil {
 			return nil, err
 		}
-		if phoneJID.Valid {
-			participant.Phone = displayNameFromJID(phoneJID.String)
-		}
 		participant.IsSaved = isSaved
 		if name.Valid {
 			participant.Name = name.String

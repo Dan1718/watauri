@@ -7,13 +7,15 @@ import {
   useState,
 } from "react";
 import { BackendUser, listBackendContacts } from "../backend";
-import { getDisplayNameFromJid } from "../utils";
+import { getDisplayNameFromJid, isPhonePlaceholder } from "../utils";
 
 export type Contact = {
   id: string;
   displayName: string;
   contactAvatar: string;
   statusMessage: string;
+  phone?: string;
+  isSaved?: boolean;
   typing?: boolean;
 };
 
@@ -37,11 +39,14 @@ export const ContactsContext = createContext<ContactsContextType | undefined>(
 );
 
 function toContact(user: BackendUser): Contact {
+  const phone = user.phoneNumber || (user.id.endsWith("@s.whatsapp.net") ? getDisplayNameFromJid(user.id) : undefined);
   return {
     id: user.id,
-    displayName: user.name || getDisplayNameFromJid(user.id),
+    displayName: user.name || (!isPhonePlaceholder(user.pushName) ? user.pushName : undefined) || getDisplayNameFromJid(user.id),
     contactAvatar: user.avatar ?? "",
     statusMessage: user.status ?? "",
+    phone,
+    isSaved: user.isSaved ?? Boolean(user.name),
   };
 }
 
@@ -96,7 +101,10 @@ export default function ContactsProvider({ children }: PropsWithChildren) {
   }, []);
 
   const contactMap = useMemo(
-    () => new Map(contacts.contacts.map((contact) => [contact.id, contact])),
+    () => new Map(contacts.contacts.flatMap((contact) => [
+      [contact.id, contact] as const,
+      ...(contact.phone ? [[contact.phone, contact] as const] : []),
+    ])),
     [contacts.contacts]
   );
   const filteredContacts = useMemo(() => {

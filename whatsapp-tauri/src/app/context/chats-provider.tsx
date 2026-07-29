@@ -7,8 +7,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { BackendChat, BackendMessage, listBackendChats } from "../backend";
-import { getDisplayNameFromJid } from "../utils";
+import { BackendChat, BackendMessage, BackendUser, listBackendChats } from "../backend";
+import { getDisplayNameFromJid, normalizeJid } from "../utils";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
 
 export enum Filters {
@@ -42,6 +42,7 @@ export type Chat = {
   contactId: string | string[];
   groupName?: string;
   groupAvatar?: string;
+  participants?: BackendUser[];
   unreadCount: number;
   read: boolean;
   group: boolean;
@@ -80,7 +81,7 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
   const isFromMe = Boolean(message.isFromMe);
   return {
     id: message.id,
-    contactId: isFromMe ? fallbackContactId : message.senderId,
+    contactId: isFromMe ? fallbackContactId : normalizeJid(message.senderId),
     message: message.text,
     timestamp: message.timestamp,
     isSentFromUser: isFromMe,
@@ -105,7 +106,14 @@ function sameChat(a: Chat, b: Chat) {
     ? a.contactId === b.contactId
     : Array.isArray(b.contactId) && a.contactId.length === b.contactId.length &&
       a.contactId.every((id, index) => id === b.contactId[index]);
-  return a.id === b.id && contactsEqual && a.groupName === b.groupName &&
+  const participantsEqual = a.participants?.length === b.participants?.length &&
+    a.participants?.every((participant, index) => {
+      const other = b.participants?.[index];
+      return participant.id === other?.id && participant.name === other?.name &&
+        participant.pushName === other?.pushName && participant.avatar === other?.avatar && participant.status === other?.status &&
+        participant.phoneNumber === other?.phoneNumber && participant.isSaved === other?.isSaved;
+    });
+  return a.id === b.id && contactsEqual && participantsEqual && a.groupName === b.groupName &&
     a.groupAvatar === b.groupAvatar && a.unreadCount === b.unreadCount &&
     a.read === b.read && a.group === b.group &&
     a.favorite === b.favorite && a.archived === b.archived &&
@@ -137,6 +145,7 @@ function toChat(chat: BackendChat): Chat {
     contactId,
     groupName: chat.name || (chat.isGroup ? getDisplayNameFromJid(chat.id) : undefined),
     groupAvatar: chat.avatar,
+    participants,
     unreadCount: chat.unreadCount,
     read: chat.unreadCount === 0,
     group: chat.isGroup,

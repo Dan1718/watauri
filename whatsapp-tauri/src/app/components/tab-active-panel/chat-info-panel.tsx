@@ -3,6 +3,7 @@ import { Contact } from "@/app/context/contacts-provider";
 import { CurrentChatContactsGroup } from "@/app/context/current-chat-provider";
 import { useChats } from "@/app/hooks/use-chats";
 import { getDisplayNameFromJid } from "@/app/utils";
+import { XIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import Profile from "../profile";
 
@@ -80,13 +81,21 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
     return { all, preview: orderGroups(all, 5) };
   });
   const [orderedCommonGroups, setOrderedCommonGroups] = useState<Chat[] | null>(null);
-  const members = group ? Object.entries(group.contacts) : [];
-  const matchingMembers = members.filter(([id, member]) =>
-    (id === userId ? "You" : member?.displayName ?? getDisplayNameFromJid(id))
-      .toLowerCase()
-      .includes(memberSearch.toLowerCase())
+  const members = (group ? Object.entries(group.contacts) : [])
+    .map(([id, contact]) => ({
+      contact,
+      id,
+      isSelf: id === userId || contact?.id === userId,
+      name: contact?.displayName || (contact?.phone ? `+${contact.phone}` : getDisplayNameFromJid(id)),
+    }))
+    .sort((a, b) => Number(Boolean(b.contact?.isSaved)) - Number(Boolean(a.contact?.isSaved)) ||
+      Number(b.isSelf) - Number(a.isSelf) ||
+      a.name.localeCompare(b.name));
+  const search = memberSearch.trim().toLowerCase();
+  const matchingMembers = members.filter(({ contact, id, isSelf, name }) =>
+    [name, id, contact?.phone, contact?.statusMessage, isSelf ? "You" : ""].some((value) => value?.toLowerCase().includes(search))
   );
-  const visibleMembers = memberSearch || showAllMembers ? matchingMembers : matchingMembers.slice(0, 5);
+  const visibleMembers = showAllMembers ? matchingMembers : matchingMembers.slice(0, 5);
   const media = messages.filter((message) =>
     message.mediaType || /https?:\/\/\S+/i.test(message.message)
   );
@@ -144,25 +153,34 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
 
         {group ? (
             <section className="py-3">
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex items-center justify-between py-1" style={showAllMembers ? { background: "#161717", position: "sticky", top: 0, zIndex: 20 } : undefined}>
                 <h3 className="text-sm font-medium text-white/70">Members</h3>
-                {members.length > 5 ? <button className="green-action rounded px-1 text-sm font-medium text-emerald-400 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setShowAllMembers((value) => !value)} type="button">{showAllMembers ? "Show less" : "Show all"}</button> : null}
+                {showAllMembers ? <button className="green-action w-20 rounded text-sm font-medium leading-5 text-emerald-400 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setShowAllMembers(false)} type="button">Show less</button> : null}
               </div>
               <div className="overflow-hidden rounded-xl border border-white/10 bg-white/3">
-                <label className="flex items-center gap-2 px-3 py-2 text-white/50">
+                <div className="flex items-center gap-2 px-3 py-2.5 text-white/50 focus-within:text-emerald-400">
                   <Icon>search</Icon>
-                  <input aria-label="Search group members" className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40" onChange={(event) => setMemberSearch(event.target.value)} placeholder={`Search ${members.length} group members`} type="search" value={memberSearch} />
-                </label>
-                <button className="flex w-full items-center gap-3 px-3 py-3 text-left text-sm font-medium text-white/80 hover:bg-white/8 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button"><Icon>group_add</Icon>Add members</button>
-                <div className="px-3 py-2">
-                  {visibleMembers.map(([id, member]) => (
-                    <div className="flex items-center gap-3 py-2" key={id}>
-                      <Profile size="10" url={member?.contactAvatar} />
-                      <span className="min-w-0 truncate text-sm text-white/85">{id === userId ? `${member?.displayName ?? "You"} (You)` : member?.displayName ?? getDisplayNameFromJid(id)}</span>
+                  <input aria-label="Search group members" className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40 [&::-webkit-search-cancel-button]:hidden" onChange={(event) => setMemberSearch(event.target.value)} placeholder={`Search ${members.length} group members`} type="search" value={memberSearch} />
+                  {memberSearch ? <button aria-label="Clear search" className="flex rounded-full p-1 text-white/80" onClick={() => setMemberSearch("")} type="button"><XIcon className="size-4" weight="bold" /></button> : null}
+                </div>
+                <div className="px-2">
+                  <button className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm font-medium text-emerald-400 transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button"><span className="grid size-8 place-items-center rounded-full bg-emerald-400/15"><Icon>group_add</Icon></span>Add members</button>
+                </div>
+                <div className="px-2 pb-2">
+                  {visibleMembers.map(({ contact: member, id, isSelf, name }) => (
+                    <div className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-white/10" key={id}>
+                      <Profile size="8" url={member?.contactAvatar} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm text-white/90">{name}</span>
+                          {isSelf ? <span className="rounded-full bg-emerald-400/12 px-2 py-0.5 text-[10px] font-medium text-emerald-400">You</span> : null}
+                        </div>
+                        {member?.statusMessage ? <p className="mt-0.5 truncate text-xs text-white/45">{member.statusMessage}</p> : null}
+                      </div>
                     </div>
                   ))}
                   {visibleMembers.length === 0 ? <p className="py-5 text-center text-sm text-white/35">{memberSearch ? "No members found" : "No member data available"}</p> : null}
-                  {showAllMembers && members.length > 5 && !memberSearch ? <button className="flex w-full items-center justify-center gap-1 rounded py-2 text-sm text-white/65 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setShowAllMembers(false)} type="button">Show less <Icon>expand_less</Icon></button> : null}
+                  {matchingMembers.length > 5 && !showAllMembers ? <button className="green-action flex w-full items-center justify-center gap-1 rounded-lg py-2.5 text-sm font-medium text-emerald-400 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setShowAllMembers(true)} type="button">Show all <Icon>expand_more</Icon></button> : null}
                 </div>
               </div>
             </section>
@@ -170,9 +188,9 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
 
         {media.length > 0 ? (
           <section className="pb-3 pt-3">
-            <div className="mb-3 flex items-center justify-between" style={showAll ? { background: "#161717", position: "sticky", top: 0, zIndex: 20 } : undefined}>
+            <div className="mb-3 flex items-center justify-between py-1" style={showAll ? { background: "#161717", position: "sticky", top: 0, zIndex: 20 } : undefined}>
               <h3 className="text-sm font-medium text-white/70">Media</h3>
-              <button className="green-action w-20 rounded py-1 text-sm font-medium text-emerald-400 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={toggleMedia} type="button">{showAll ? "Show less" : "Show all"}</button>
+              <button className="green-action w-20 rounded text-sm font-medium leading-5 text-emerald-400 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={toggleMedia} type="button">{showAll ? "Show less" : "Show all"}</button>
             </div>
             <div className={showAll ? "rounded-xl bg-white/5 p-2" : ""}>
               {showAll ? (

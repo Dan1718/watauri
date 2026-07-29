@@ -11,7 +11,7 @@ import { Chat, Message } from "./chats-provider";
 import { useChats } from "../hooks/use-chats";
 import { useContacts } from "../hooks/use-contacts";
 import { Contact } from "./contacts-provider";
-import { getDisplayNameFromJid } from "../utils";
+import { getDisplayNameFromJid, isPhonePlaceholder, normalizeJid } from "../utils";
 import { BackendMessage, listBackendMessages, markBackendChatRead, sendBackendMessage } from "../backend";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
 import { useProfile } from "../hooks/use-profile";
@@ -52,7 +52,7 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
   const isFromMe = Boolean(message.isFromMe);
   return {
     id: message.id,
-    contactId: isFromMe ? fallbackContactId : message.senderId,
+    contactId: isFromMe ? fallbackContactId : normalizeJid(message.senderId),
     message: message.text,
     timestamp: message.timestamp,
     isSentFromUser: isFromMe,
@@ -116,7 +116,8 @@ type ActiveRequest = {
 
 function sameContact(a: Contact | undefined | null, b: Contact | undefined | null) {
   return a === b || Boolean(a && b && a.id === b.id && a.displayName === b.displayName &&
-    a.contactAvatar === b.contactAvatar && a.statusMessage === b.statusMessage && a.typing === b.typing);
+    a.contactAvatar === b.contactAvatar && a.statusMessage === b.statusMessage &&
+    a.phone === b.phone && a.isSaved === b.isSaved && a.typing === b.typing);
 }
 
 export default function CurrentChatProvider({ children }: PropsWithChildren) {
@@ -134,7 +135,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   const {
     chats: { complete },
   } = useChats();
-  const { contacts } = useContacts();
+  const { contacts, getContact } = useContacts();
   const { profile: { readReceiptsEnabled } } = useProfile();
   const pollingActive = useChatPollingActive();
   const cacheRef = useRef(new Map<string, CachedMessages>());
@@ -262,9 +263,23 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
       } else {
         const groupContacts: CurrentChatContacts = {};
         chat.contactId.forEach((groupContact: string) => {
-          groupContacts[groupContact] = contacts.find(
-            (contact: Contact) => contact.id === groupContact
-          );
+          const participant = chat.participants?.find(({ id }) => id === groupContact);
+          const contact = (participant?.phoneNumber ? getContact(participant.phoneNumber) : undefined) ?? getContact(groupContact);
+          const displayName = participant?.name && !isPhonePlaceholder(participant.name)
+            ? participant.name
+            : undefined;
+          const contactDisplayName = contact?.displayName && !isPhonePlaceholder(contact.displayName)
+            ? contact.displayName
+            : undefined;
+          groupContacts[groupContact] = participant ? {
+            id: participant.id,
+            displayName: (contact?.isSaved ? contact.displayName : undefined) || displayName || contactDisplayName ||
+              (participant.phoneNumber ? `+${participant.phoneNumber}` : getDisplayNameFromJid(participant.id)),
+            contactAvatar: contact?.contactAvatar || participant.avatar || "",
+            statusMessage: contact?.statusMessage || participant.status || "",
+            phone: participant.phoneNumber || contact?.phone,
+            isSaved: participant.isSaved,
+          } : contact;
         });
         const group = {
           name: chat.groupName ?? getDisplayNameFromJid(chat.id),
@@ -282,7 +297,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
         });
       }
     }
-  }, [complete, contacts, currentChat.chatId]);
+  }, [complete, contacts, currentChat.chatId, getContact]);
 
   const loadCurrentChat = useCallback((chat: Partial<CurrentChatData>) => {
     setCurrentChat((prev) => {

@@ -18,3 +18,8 @@ export const getDisplayNameFromJid = (jid: string) => {
   const [user] = jid.split("@");
   return user || jid || "Unknown chat";
 };
+
+export const isPhonePlaceholder = (name?: string) =>
+  Boolean(name && /^\+?[\d\s∙•*….-]+$/u.test(name));
+
+export const normalizeJid = (jid: string) => jid.replace(/:\d+(?=@)/, "");

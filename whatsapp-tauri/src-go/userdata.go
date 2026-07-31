@@ -873,7 +873,7 @@ func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *me
 	}
 	query := `SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, revision FROM messages WHERE chat_jid = ?`
 	args := []any{chatJID}
-	orderBy := `ORDER BY timestamp_epoch asc, id desc`
+	orderBy := ` ORDER BY timestamp_epoch DESC, id DESC`
 	reverse := true
 
 	if before != nil {
@@ -883,12 +883,12 @@ func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *me
 	} else if after != nil && after.Mode == "after" {
 		query += ` AND revision > ?`
 		args = append(args, after.Revision)
-		orderBy = `ORDER BY revision ASC`
+		orderBy = ` ORDER BY revision ASC`
 		reverse = false
-	} else if after != nil && after.Mode != "after" {
-		query += `AND (timestamp_epoch > ? OR (timestamp_epoch = ? AND id > ? )) `
+	} else if after != nil && after.Mode == "afterTime" {
+		query += ` AND (timestamp_epoch > ? OR (timestamp_epoch = ? AND id > ?))`
 		args = append(args, after.TimestampEpoch, after.TimestampEpoch, after.ID)
-		orderBy = `ORDER BY timestamp_epoch ASC, id ASC`
+		orderBy = ` ORDER BY timestamp_epoch ASC, id ASC`
 		reverse = false
 	}
 	query += orderBy

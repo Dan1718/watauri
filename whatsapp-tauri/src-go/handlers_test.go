@@ -107,7 +107,7 @@ func TestHandleMessagesRejectsInvalidPagination(t *testing.T) {
 	newTestStore(t)
 	valid := encodeMessageCursor(messageCursor{Version: 1, Mode: "before", TimestampEpoch: 1, ID: "m1"})
 	missingEpoch := encodeMessageCursor(messageCursor{Version: 1, Mode: "before", ID: "m1"})
-		after := encodeMessageCursor(messageCursor{Version: 1, Mode: "after", Revision: 1})
+	after := encodeMessageCursor(messageCursor{Version: 1, Mode: "after", Revision: 1})
 	tests := []string{
 		"/api/chats/c1?limit=",
 		"/api/chats/c1?limit=0",

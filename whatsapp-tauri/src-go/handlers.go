@@ -162,7 +162,7 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	var nextCursor *string
 	revision := latestRevision
-	if after != nil && (hasMore || len(messages) == 0) {
+	if after != nil && after.Mode == "after" && (hasMore || len(messages) == 0) {
 		revision = after.Revision
 		if len(messages) > 0 {
 			revision = messages[len(messages)-1].Revision
@@ -170,20 +170,36 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	latest := encodeMessageCursor(messageCursor{Version: 1, Mode: "after", Revision: revision})
 	latestCursor := &latest
+	var olderCursor *string
+	var newerCursor *string
+	hasOlder := false
+	hasNewer := false
 	if hasMore && len(messages) > 0 {
 		message := messages[0]
 		cursor := messageCursor{Version: 1, Mode: "before", ID: message.ID}
-		if after != nil {
+		if after != nil && after.Mode == "after" {
 			message = messages[len(messages)-1]
 			cursor = messageCursor{Version: 1, Mode: "after", Revision: message.Revision}
+		} else if after != nil && after.Mode == "afterTime" {
+			message = messages[len(messages)-1]
+			cursor = messageCursor{Version: 1, Mode: "afterTime", ID: message.ID}
+			epoch, _ := timestampEpoch(message.Timestamp)
+			cursor.TimestampEpoch = epoch
+			hasNewer = true
 		} else {
 			epoch, _ := timestampEpoch(message.Timestamp)
 			cursor.TimestampEpoch = epoch
+			hasOlder = true
 		}
 		encoded := encodeMessageCursor(cursor)
 		nextCursor = &encoded
+		if hasNewer {
+			newerCursor = nextCursor
+		} else if hasOlder {
+			olderCursor = nextCursor
+		}
 	}
-	json.NewEncoder(w).Encode(MessagePage{Messages: messages, NextCursor: nextCursor, LatestCursor: latestCursor, HasMore: hasMore})
+	json.NewEncoder(w).Encode(MessagePage{Messages: messages, NextCursor: nextCursor, LatestCursor: latestCursor, HasMore: hasMore, OlderCursor: olderCursor, NewerCursor: newerCursor, HasOlder: hasOlder, HasNewer: hasNewer})
 	log.Printf("[http] GET /api/chats/%s -> %d messages", chatID, len(messages))
 }
 

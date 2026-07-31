@@ -110,9 +110,45 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	limit, before, after, anchor, err := messagePageParams(r)
-	_ = anchor
+
 	if err != nil {
 		http.Error(w, `{"error":"invalid pagination parameters"}`, http.StatusBadRequest)
+		return
+	}
+	if anchor == "oldestUnread" {
+		messages, hasOlder, hasNewer, latestRevision, err := store.GetMessagesAnchoredAtOldestUnread(chatID, limit)
+		if err != nil {
+			log.Printf("[http] GET /api/chats/%s error: %v", chatID, err)
+			http.Error(w, `{"error":"failed to fetch messages"}`, http.StatusInternalServerError)
+			return
+		}
+		if messages == nil {
+			messages = []Message{}
+		}
+
+		var olderCursor *string
+		var newerCursor *string
+		if len(messages) > 0 {
+			if hasOlder {
+				olderCursor = beforeMessageCursor(messages[0])
+			}
+			if hasNewer {
+				newerCursor = afterTimeMessageCursor(messages[len(messages)-1])
+			}
+		}
+
+		json.NewEncoder(w).Encode(MessagePage{
+			Messages:     messages,
+			NextCursor:   olderCursor,
+			LatestCursor: latestRevisionCursor(latestRevision),
+			HasMore:      hasOlder,
+			OlderCursor:  olderCursor,
+			NewerCursor:  newerCursor,
+			HasOlder:     hasOlder,
+			HasNewer:     hasNewer,
+		})
+
+		log.Printf("[http] GET /api/chats/%s -> %d anchored messages", chatID, len(messages))
 		return
 	}
 	messages, hasMore, latestRevision, err := store.GetMessages(chatID, limit, before, after)
@@ -189,7 +225,7 @@ func messagePageParams(r *http.Request) (int, *messageCursor, *messageCursor, st
 	if err != nil {
 		return 0, nil, nil, "", err
 	}
-	after, err := decodeMessageCursorParam(query, "after", "after")
+	after, err := decodeMessageCursorParam(query, "after", "")
 	return limit, before, after, anchor, err
 }
 
@@ -206,13 +242,22 @@ func decodeMessageCursorParam(query map[string][]string, name, mode string) (*me
 		return nil, errors.New("invalid cursor")
 	}
 	var cursor messageCursor
-	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Version != 1 || cursor.Mode != mode {
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Version != 1 {
 		return nil, errors.New("invalid cursor")
 	}
-	if mode == "before" && (cursor.ID == "" || cursor.TimestampEpoch == 0 || cursor.Revision != 0) {
+	if mode != "" && cursor.Mode != mode {
 		return nil, errors.New("invalid cursor")
 	}
-	if mode == "after" && (cursor.ID != "" || cursor.TimestampEpoch != 0 || cursor.Revision < 0) {
+	if mode == "" && cursor.Mode != "after" && cursor.Mode != "afterTime" {
+		return nil, errors.New("invalid cursor")
+	}
+	if cursor.Mode == "before" && (cursor.ID == "" || cursor.TimestampEpoch == 0 || cursor.Revision != 0) {
+		return nil, errors.New("invalid cursor")
+	}
+	if cursor.Mode == "after" && (cursor.ID != "" || cursor.TimestampEpoch != 0 || cursor.Revision < 0) {
+		return nil, errors.New("invalid cursor")
+	}
+	if cursor.Mode == "afterTime" && (cursor.ID == "" || cursor.TimestampEpoch == 0 || cursor.Revision != 0) {
 		return nil, errors.New("invalid cursor")
 	}
 	return &cursor, nil
@@ -221,6 +266,29 @@ func decodeMessageCursorParam(query map[string][]string, name, mode string) (*me
 func encodeMessageCursor(cursor messageCursor) string {
 	payload, _ := json.Marshal(cursor)
 	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func latestRevisionCursor(revision int64) *string {
+	encoded := encodeMessageCursor(messageCursor{Version: 1, Mode: "after", Revision: revision})
+	return &encoded
+}
+
+func beforeMessageCursor(message Message) *string {
+	epoch, err := timestampEpoch(message.Timestamp)
+	if err != nil {
+		return nil
+	}
+	encoded := encodeMessageCursor(messageCursor{Version: 1, Mode: "before", TimestampEpoch: epoch, ID: message.ID})
+	return &encoded
+}
+
+func afterTimeMessageCursor(message Message) *string {
+	epoch, err := timestampEpoch(message.Timestamp)
+	if err != nil {
+		return nil
+	}
+	encoded := encodeMessageCursor(messageCursor{Version: 1, Mode: "afterTime", TimestampEpoch: epoch, ID: message.ID})
+	return &encoded
 }
 
 func handleSendMessage(w http.ResponseWriter, r *http.Request, chatID string) {

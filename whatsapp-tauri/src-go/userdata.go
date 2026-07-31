@@ -873,19 +873,25 @@ func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *me
 	}
 	query := `SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, revision FROM messages WHERE chat_jid = ?`
 	args := []any{chatJID}
-	ascending := after != nil
+	orderBy := `ORDER BY timestamp_epoch asc, id desc`
+	reverse := true
+
 	if before != nil {
 		query += ` AND (timestamp_epoch < ? OR (timestamp_epoch = ? AND id < ?))`
 		args = append(args, before.TimestampEpoch, before.TimestampEpoch, before.ID)
-	} else if after != nil {
+
+	} else if after != nil && after.Mode == "after" {
 		query += ` AND revision > ?`
 		args = append(args, after.Revision)
+		orderBy = `ORDER BY revision ASC`
+		reverse = false
+	} else if after != nil && after.Mode != "after" {
+		query += `AND (timestamp_epoch > ? OR (timestamp_epoch = ? AND id > ? )) `
+		args = append(args, after.TimestampEpoch, after.TimestampEpoch, after.ID)
+		orderBy = `ORDER BY timestamp_epoch ASC, id ASC`
+		reverse = false
 	}
-	if ascending {
-		query += ` ORDER BY revision ASC`
-	} else {
-		query += ` ORDER BY timestamp_epoch DESC, id DESC`
-	}
+	query += orderBy
 	query += ` LIMIT ?`
 	args = append(args, limit+1)
 
@@ -921,7 +927,7 @@ func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *me
 	if hasMore {
 		messages = messages[:limit]
 	}
-	if !ascending {
+	if reverse {
 		slices.Reverse(messages)
 	}
 	log.Printf("[store] GetMessages(%s) -> %d messages (%v)", chatJID, len(messages), time.Since(start))

@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -539,7 +540,6 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 				CASE WHEN p.user_jid LIKE '%@lid' THEN p.user_jid END,
 				phone_map.lid_jid
 			) AS lid_jid,
-			CASE WHEN COALESCE(NULLIF(c.name, ''), NULLIF(pc.name, ''), NULLIF(lc.name, '')) IS NOT NULL THEN 1 ELSE 0 END AS is_saved,
 			COALESCE(NULLIF(c.name, ''), NULLIF(pc.name, ''), NULLIF(lc.name, '')) AS name,
 			COALESCE(NULLIF(c.avatar, ''), NULLIF(pc.avatar, ''), NULLIF(lc.avatar, '')) AS avatar,
 			COALESCE(NULLIF(c.push_name, ''), NULLIF(pc.push_name, ''), NULLIF(lc.push_name, '')) AS push_name,
@@ -573,12 +573,10 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 	for rows.Next() {
 		var participant User
 		var name, avatar, pushName, status, phoneJID, lidJID sql.NullString
-		var isSaved bool
 		if err := rows.Scan(
 			&participant.ID,
 			&phoneJID,
 			&lidJID,
-			&isSaved,
 			&name,
 			&avatar,
 			&pushName,
@@ -586,7 +584,6 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 		); err != nil {
 			return nil, err
 		}
-		participant.IsSaved = isSaved
 		if name.Valid {
 			participant.Name = name.String
 		}
@@ -876,19 +873,25 @@ func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *me
 	}
 	query := `SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, revision FROM messages WHERE chat_jid = ?`
 	args := []any{chatJID}
-	ascending := after != nil
+	orderBy := ` ORDER BY timestamp_epoch DESC, id DESC`
+	reverse := true
+
 	if before != nil {
 		query += ` AND (timestamp_epoch < ? OR (timestamp_epoch = ? AND id < ?))`
 		args = append(args, before.TimestampEpoch, before.TimestampEpoch, before.ID)
-	} else if after != nil {
+
+	} else if after != nil && after.Mode == "after" {
 		query += ` AND revision > ?`
 		args = append(args, after.Revision)
+		orderBy = ` ORDER BY revision ASC`
+		reverse = false
+	} else if after != nil && after.Mode == "afterTime" {
+		query += ` AND (timestamp_epoch > ? OR (timestamp_epoch = ? AND id > ?))`
+		args = append(args, after.TimestampEpoch, after.TimestampEpoch, after.ID)
+		orderBy = ` ORDER BY timestamp_epoch ASC, id ASC`
+		reverse = false
 	}
-	if ascending {
-		query += ` ORDER BY revision ASC`
-	} else {
-		query += ` ORDER BY timestamp_epoch DESC, id DESC`
-	}
+	query += orderBy
 	query += ` LIMIT ?`
 	args = append(args, limit+1)
 
@@ -924,7 +927,7 @@ func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *me
 	if hasMore {
 		messages = messages[:limit]
 	}
-	if !ascending {
+	if reverse {
 		slices.Reverse(messages)
 	}
 	log.Printf("[store] GetMessages(%s) -> %d messages (%v)", chatJID, len(messages), time.Since(start))
@@ -1125,4 +1128,144 @@ func boolToInt(b bool) int {
 
 func intToBool(i int) bool {
 	return i == 1
+}
+
+func (s *UserDataStore) GetMessagesAnchoredAtOldestUnread(chatJID string, limit int) ([]Message, bool, bool, int64, error) {
+	s.mu.RLock()
+	var anchorID string
+	var anchorEpoch int64
+
+	err := s.db.QueryRow(`
+		SELECT id, timestamp_epoch
+		FROM messages
+		WHERE chat_jid = ?
+		AND is_from_me = 0
+		AND status != 'read'
+		ORDER BY timestamp_epoch ASC, id ASC
+		LIMIT 1`, chatJID).Scan(&anchorID, &anchorEpoch)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		s.mu.RUnlock()
+		messages, hasMore, latestRevision, err := s.GetMessages(chatJID, limit, nil, nil)
+		return messages, hasMore, false, latestRevision, err
+	}
+
+	if err != nil {
+		s.mu.RUnlock()
+		return nil, false, false, 0, err
+	}
+
+	defer s.mu.RUnlock()
+
+	var latestRevision int64
+	if err := s.db.QueryRow(`
+		SELECT COALESCE(MAX(revision), 0) FROM messages where chat_jid = ? `, chatJID).Scan(&latestRevision); err != nil {
+		return nil, false, false, 0, err
+	}
+	beforeLimit := limit / 2
+	afterLimit := limit - beforeLimit
+
+	older, hasOlder, err := s.getMessagesBeforeAnchor(chatJID, anchorEpoch, anchorID, beforeLimit)
+	if err != nil {
+		return nil, false, false, 0, err
+	}
+
+	newer, hasNewer, err := s.getMessagesFromAnchor(chatJID, anchorEpoch, anchorID, afterLimit)
+	if err != nil {
+		return nil, false, false, 0, err
+	}
+
+	messages := append(older, newer...)
+	return messages, hasOlder, hasNewer, latestRevision, nil
+
+}
+
+func (s *UserDataStore) getMessagesBeforeAnchor(chatJID string, anchorEpoch int64, anchorID string, limit int) ([]Message, bool, error) {
+	if limit <= 0 {
+		return []Message{}, false, nil
+	}
+	rows, err := s.db.Query(`
+		SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, revision
+		FROM messages
+		WHERE chat_jid = ?
+		  AND (timestamp_epoch < ? OR (timestamp_epoch = ? AND id < ?))
+		ORDER BY timestamp_epoch DESC, id DESC
+		LIMIT ?`,
+		chatJID, anchorEpoch, anchorEpoch, anchorID, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	messages, err := scanMessageRows(rows, chatJID)
+	if err != nil {
+		return nil, false, err
+	}
+	hasOlder := len(messages) > limit
+	if hasOlder {
+		messages = messages[:limit]
+	}
+	slices.Reverse(messages)
+	return messages, hasOlder, nil
+}
+
+func (s *UserDataStore) getMessagesFromAnchor(chatJID string, anchorEpoch int64, anchorID string, limit int) ([]Message, bool, error) {
+	if limit <= 0 {
+		return []Message{}, false, nil
+	}
+
+	rows, err := s.db.Query(`
+		SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, revision
+		FROM messages
+		WHERE chat_jid = ?
+		  AND (timestamp_epoch > ? OR (timestamp_epoch = ? AND id >= ?))
+		ORDER BY timestamp_epoch ASC, id ASC
+		LIMIT ?`, chatJID, anchorEpoch, anchorEpoch, anchorID, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	messages, err := scanMessageRows(rows, chatJID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	hasNewer := len(messages) > limit
+	if hasNewer {
+		messages = messages[:limit]
+	}
+	return messages, hasNewer, nil
+}
+
+func scanMessageRows(rows *sql.Rows, chatJID string) ([]Message, error) {
+
+	var messages []Message
+	for rows.Next() {
+		var message Message
+		var mediaType sql.NullString
+		var isFromMe int
+		if err := rows.Scan(
+			&message.ID,
+			&message.SenderID,
+			&message.Text,
+			&message.Timestamp,
+			&message.Status,
+			&mediaType,
+			&isFromMe,
+			&message.Revision,
+		); err != nil {
+			return nil, err
+		}
+		message.ChatJID = chatJID
+		message.IsFromMe = intToBool(isFromMe)
+		if mediaType.Valid {
+			message.MediaType = mediaType.String
+		}
+		messages = append(messages, message)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return messages, nil
+
 }

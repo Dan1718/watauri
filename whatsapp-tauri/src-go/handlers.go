@@ -109,9 +109,46 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[http] GET /api/chats/%s/messages", chatID)
 
 	w.Header().Set("Content-Type", "application/json")
-	limit, before, after, err := messagePageParams(r)
+	limit, before, after, anchor, err := messagePageParams(r)
+
 	if err != nil {
 		http.Error(w, `{"error":"invalid pagination parameters"}`, http.StatusBadRequest)
+		return
+	}
+	if anchor == "oldestUnread" {
+		messages, hasOlder, hasNewer, latestRevision, err := store.GetMessagesAnchoredAtOldestUnread(chatID, limit)
+		if err != nil {
+			log.Printf("[http] GET /api/chats/%s error: %v", chatID, err)
+			http.Error(w, `{"error":"failed to fetch messages"}`, http.StatusInternalServerError)
+			return
+		}
+		if messages == nil {
+			messages = []Message{}
+		}
+
+		var olderCursor *string
+		var newerCursor *string
+		if len(messages) > 0 {
+			if hasOlder {
+				olderCursor = beforeMessageCursor(messages[0])
+			}
+			if hasNewer {
+				newerCursor = afterTimeMessageCursor(messages[len(messages)-1])
+			}
+		}
+
+		json.NewEncoder(w).Encode(MessagePage{
+			Messages:     messages,
+			NextCursor:   olderCursor,
+			LatestCursor: latestRevisionCursor(latestRevision),
+			HasMore:      hasOlder,
+			OlderCursor:  olderCursor,
+			NewerCursor:  newerCursor,
+			HasOlder:     hasOlder,
+			HasNewer:     hasNewer,
+		})
+
+		log.Printf("[http] GET /api/chats/%s -> %d anchored messages", chatID, len(messages))
 		return
 	}
 	messages, hasMore, latestRevision, err := store.GetMessages(chatID, limit, before, after)
@@ -125,7 +162,7 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	var nextCursor *string
 	revision := latestRevision
-	if after != nil && (hasMore || len(messages) == 0) {
+	if after != nil && after.Mode == "after" && (hasMore || len(messages) == 0) {
 		revision = after.Revision
 		if len(messages) > 0 {
 			revision = messages[len(messages)-1].Revision
@@ -133,48 +170,79 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	latest := encodeMessageCursor(messageCursor{Version: 1, Mode: "after", Revision: revision})
 	latestCursor := &latest
+	var olderCursor *string
+	var newerCursor *string
+	hasOlder := false
+	hasNewer := false
 	if hasMore && len(messages) > 0 {
 		message := messages[0]
 		cursor := messageCursor{Version: 1, Mode: "before", ID: message.ID}
-		if after != nil {
+		if after != nil && after.Mode == "after" {
 			message = messages[len(messages)-1]
 			cursor = messageCursor{Version: 1, Mode: "after", Revision: message.Revision}
+		} else if after != nil && after.Mode == "afterTime" {
+			message = messages[len(messages)-1]
+			cursor = messageCursor{Version: 1, Mode: "afterTime", ID: message.ID}
+			epoch, _ := timestampEpoch(message.Timestamp)
+			cursor.TimestampEpoch = epoch
+			hasNewer = true
 		} else {
 			epoch, _ := timestampEpoch(message.Timestamp)
 			cursor.TimestampEpoch = epoch
+			hasOlder = true
 		}
 		encoded := encodeMessageCursor(cursor)
 		nextCursor = &encoded
+		if hasNewer {
+			newerCursor = nextCursor
+		} else if hasOlder {
+			olderCursor = nextCursor
+		}
 	}
-	json.NewEncoder(w).Encode(MessagePage{Messages: messages, NextCursor: nextCursor, LatestCursor: latestCursor, HasMore: hasMore})
+	json.NewEncoder(w).Encode(MessagePage{Messages: messages, NextCursor: nextCursor, LatestCursor: latestCursor, HasMore: hasMore, OlderCursor: olderCursor, NewerCursor: newerCursor, HasOlder: hasOlder, HasNewer: hasNewer})
 	log.Printf("[http] GET /api/chats/%s -> %d messages", chatID, len(messages))
 }
 
-func messagePageParams(r *http.Request) (int, *messageCursor, *messageCursor, error) {
+func messagePageParams(r *http.Request) (int, *messageCursor, *messageCursor, string, error) {
 	limit := defaultMessageLimit
 	query := r.URL.Query()
+	anchor := ""
+	if values, ok := query["anchor"]; ok {
+		if len(values) != 1 || values[0] != "oldestUnread" {
+			return 0, nil, nil, "", errors.New("invalid anchor")
+		}
+		anchor = values[0]
+	}
 	if values, ok := query["limit"]; ok {
 		if len(values) != 1 {
-			return 0, nil, nil, errors.New("invalid limit")
+			return 0, nil, nil, "", errors.New("invalid limit")
 		}
 		parsed, err := strconv.Atoi(values[0])
 		if err != nil || parsed < 1 || parsed > maxMessageLimit {
-			return 0, nil, nil, errors.New("invalid limit")
+			return 0, nil, nil, "", errors.New("invalid limit")
 		}
 		limit = parsed
 	}
 
 	if _, hasBefore := query["before"]; hasBefore {
 		if _, hasAfter := query["after"]; hasAfter {
-			return 0, nil, nil, errors.New("before and after are mutually exclusive")
+			return 0, nil, nil, "", errors.New("before and after are mutually exclusive")
+		}
+	}
+	if anchor != "" {
+		if _, hasBefore := query["before"]; hasBefore {
+			return 0, nil, nil, "", errors.New("anchor and before are mutually exclusive")
+		}
+		if _, hasAfter := query["after"]; hasAfter {
+			return 0, nil, nil, "", errors.New("anchor and after are mutually exclusive")
 		}
 	}
 	before, err := decodeMessageCursorParam(query, "before", "before")
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, "", err
 	}
-	after, err := decodeMessageCursorParam(query, "after", "after")
-	return limit, before, after, err
+	after, err := decodeMessageCursorParam(query, "after", "")
+	return limit, before, after, anchor, err
 }
 
 func decodeMessageCursorParam(query map[string][]string, name, mode string) (*messageCursor, error) {
@@ -190,13 +258,22 @@ func decodeMessageCursorParam(query map[string][]string, name, mode string) (*me
 		return nil, errors.New("invalid cursor")
 	}
 	var cursor messageCursor
-	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Version != 1 || cursor.Mode != mode {
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Version != 1 {
 		return nil, errors.New("invalid cursor")
 	}
-	if mode == "before" && (cursor.ID == "" || cursor.TimestampEpoch == 0 || cursor.Revision != 0) {
+	if mode != "" && cursor.Mode != mode {
 		return nil, errors.New("invalid cursor")
 	}
-	if mode == "after" && (cursor.ID != "" || cursor.TimestampEpoch != 0 || cursor.Revision < 0) {
+	if mode == "" && cursor.Mode != "after" && cursor.Mode != "afterTime" {
+		return nil, errors.New("invalid cursor")
+	}
+	if cursor.Mode == "before" && (cursor.ID == "" || cursor.TimestampEpoch == 0 || cursor.Revision != 0) {
+		return nil, errors.New("invalid cursor")
+	}
+	if cursor.Mode == "after" && (cursor.ID != "" || cursor.TimestampEpoch != 0 || cursor.Revision < 0) {
+		return nil, errors.New("invalid cursor")
+	}
+	if cursor.Mode == "afterTime" && (cursor.ID == "" || cursor.TimestampEpoch == 0 || cursor.Revision != 0) {
 		return nil, errors.New("invalid cursor")
 	}
 	return &cursor, nil
@@ -205,6 +282,29 @@ func decodeMessageCursorParam(query map[string][]string, name, mode string) (*me
 func encodeMessageCursor(cursor messageCursor) string {
 	payload, _ := json.Marshal(cursor)
 	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func latestRevisionCursor(revision int64) *string {
+	encoded := encodeMessageCursor(messageCursor{Version: 1, Mode: "after", Revision: revision})
+	return &encoded
+}
+
+func beforeMessageCursor(message Message) *string {
+	epoch, err := timestampEpoch(message.Timestamp)
+	if err != nil {
+		return nil
+	}
+	encoded := encodeMessageCursor(messageCursor{Version: 1, Mode: "before", TimestampEpoch: epoch, ID: message.ID})
+	return &encoded
+}
+
+func afterTimeMessageCursor(message Message) *string {
+	epoch, err := timestampEpoch(message.Timestamp)
+	if err != nil {
+		return nil
+	}
+	encoded := encodeMessageCursor(messageCursor{Version: 1, Mode: "afterTime", TimestampEpoch: epoch, ID: message.ID})
+	return &encoded
 }
 
 func handleSendMessage(w http.ResponseWriter, r *http.Request, chatID string) {

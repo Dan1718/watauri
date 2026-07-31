@@ -107,16 +107,21 @@ func TestHandleMessagesRejectsInvalidPagination(t *testing.T) {
 	newTestStore(t)
 	valid := encodeMessageCursor(messageCursor{Version: 1, Mode: "before", TimestampEpoch: 1, ID: "m1"})
 	missingEpoch := encodeMessageCursor(messageCursor{Version: 1, Mode: "before", ID: "m1"})
-	after := encodeMessageCursor(messageCursor{Version: 1, Mode: "after", Revision: 1})
+		after := encodeMessageCursor(messageCursor{Version: 1, Mode: "after", Revision: 1})
 	tests := []string{
 		"/api/chats/c1?limit=",
 		"/api/chats/c1?limit=0",
 		"/api/chats/c1?limit=201",
 		"/api/chats/c1?limit=nope",
 		"/api/chats/c1?limit=1&limit=2",
+		"/api/chats/c1?anchor=",
+		"/api/chats/c1?anchor=nope",
+		"/api/chats/c1?anchor=oldestUnread&anchor=oldestUnread",
 		"/api/chats/c1?before=not-base64!",
 		"/api/chats/c1?after=",
 		"/api/chats/c1?before=" + valid + "&after=" + valid,
+		"/api/chats/c1?anchor=oldestUnread&before=" + valid,
+		"/api/chats/c1?anchor=oldestUnread&after=" + after,
 		"/api/chats/c1?before=" + missingEpoch,
 		"/api/chats/c1?after=" + valid,
 		"/api/chats/c1?before=" + after,

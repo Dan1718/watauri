@@ -109,7 +109,8 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[http] GET /api/chats/%s/messages", chatID)
 
 	w.Header().Set("Content-Type", "application/json")
-	limit, before, after, err := messagePageParams(r)
+	limit, before, after, anchor, err := messagePageParams(r)
+	_ = anchor
 	if err != nil {
 		http.Error(w, `{"error":"invalid pagination parameters"}`, http.StatusBadRequest)
 		return
@@ -150,31 +151,46 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[http] GET /api/chats/%s -> %d messages", chatID, len(messages))
 }
 
-func messagePageParams(r *http.Request) (int, *messageCursor, *messageCursor, error) {
+func messagePageParams(r *http.Request) (int, *messageCursor, *messageCursor, string, error) {
 	limit := defaultMessageLimit
 	query := r.URL.Query()
+	anchor := ""
+	if values, ok := query["anchor"]; ok {
+		if len(values) != 1 || values[0] != "oldestUnread" {
+			return 0, nil, nil, "", errors.New("invalid anchor")
+		}
+		anchor = values[0]
+	}
 	if values, ok := query["limit"]; ok {
 		if len(values) != 1 {
-			return 0, nil, nil, errors.New("invalid limit")
+			return 0, nil, nil, "", errors.New("invalid limit")
 		}
 		parsed, err := strconv.Atoi(values[0])
 		if err != nil || parsed < 1 || parsed > maxMessageLimit {
-			return 0, nil, nil, errors.New("invalid limit")
+			return 0, nil, nil, "", errors.New("invalid limit")
 		}
 		limit = parsed
 	}
 
 	if _, hasBefore := query["before"]; hasBefore {
 		if _, hasAfter := query["after"]; hasAfter {
-			return 0, nil, nil, errors.New("before and after are mutually exclusive")
+			return 0, nil, nil, "", errors.New("before and after are mutually exclusive")
+		}
+	}
+	if anchor != "" {
+		if _, hasBefore := query["before"]; hasBefore {
+			return 0, nil, nil, "", errors.New("anchor and before are mutually exclusive")
+		}
+		if _, hasAfter := query["after"]; hasAfter {
+			return 0, nil, nil, "", errors.New("anchor and after are mutually exclusive")
 		}
 	}
 	before, err := decodeMessageCursorParam(query, "before", "before")
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, "", err
 	}
 	after, err := decodeMessageCursorParam(query, "after", "after")
-	return limit, before, after, err
+	return limit, before, after, anchor, err
 }
 
 func decodeMessageCursorParam(query map[string][]string, name, mode string) (*messageCursor, error) {

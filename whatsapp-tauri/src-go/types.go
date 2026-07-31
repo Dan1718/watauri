@@ -36,6 +36,10 @@ type MessagePage struct {
 	NextCursor   *string   `json:"nextCursor"`
 	LatestCursor *string   `json:"latestCursor"`
 	HasMore      bool      `json:"hasMore"`
+	OlderCursor  *string   `json:"olderCursor"`
+	NewerCursor  *string   `json:"newerCursor"`
+	HasOlder     bool      `json:"hasOlder"`
+	HasNewer     bool      `json:"hasNewer"`
 }
 
 type Chat struct {

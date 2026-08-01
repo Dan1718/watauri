@@ -34,12 +34,12 @@ Each chat should return this shape:
 
 Required details:
 
-- Return `participants: []` instead of `null` when participants are unknown.
+- Return `participants: []` instead of `null` when participants are unknown. ✅ Done
 - Include `lastMessage.isFromMe` so frontend can render sent/received bubbles correctly.
 - Use RFC3339 timestamps consistently.
 - Keep `lastMessage.status` as one of `received`, `sent`, `delivered`, or `read`.
-- Fill `name` for groups and known direct contacts when possible.
-- Fill `isGroup` based on the JID server, not only history metadata.
+- Fill `name` for groups and known direct contacts when possible. ✅ Done for stored contacts/groups
+- Fill `isGroup` based on the JID server, not only history metadata. ✅ Done
 
 ### `GET /api/chats/:id`
 
@@ -52,6 +52,7 @@ Required details:
 - Return `[]` for unknown/empty chats, not `null`.
 - Escape or route chat IDs safely because JIDs contain `@` and may contain other URL-sensitive characters.
 - Support `limit`, `before`, and `after` cursors for older-page loading and polling deltas.
+- Support `anchor=oldestUnread` for loading a window around the oldest unread inbound message. ✅ Done
 
 ### `GET /api/contacts`
 
@@ -145,7 +146,7 @@ Current issue:
 
 - `events.HistorySync` now persists conversations and parseable messages.
 - Initial pairing can backfill old chats/messages.
-- Group participants, avatars, push names, and richer group metadata are still incomplete.
+- Group participants from joined-group sync, avatars, and richer group metadata are still incomplete.
 
 Required implementation:
 
@@ -153,8 +154,8 @@ Required implementation:
 - ✅ For each conversation, upsert a chat using conversation ID, name/display name, unread count, archive status, and group status.
 - ✅ For each `HistorySyncMsg`, use `wa.client.ParseWebMessage(chatJID, historyMsg.GetMessage())` to convert it into the same shape used for live messages.
 - ✅ Reuse the same message persistence path used by `events.Message`.
-- ❌ Store participants for groups if available from the history sync conversation.
-- ❌ Store push names/contact names where available.
+- ⚠️ Store participants for groups from joined-group sync; history-sync conversation participant extraction remains incomplete.
+- ✅ Store push names/contact names where available.
 - ✅ Log sync type, chunk order, progress, conversations inserted, messages inserted, and skipped messages.
 
 Files:
@@ -170,18 +171,18 @@ Acceptance criteria:
 - Groups show a group name when history sync provides one.
 - Duplicate chunks do not duplicate messages.
 
-### 3. Return Participants Safely
+### 3. Return Participants Safely - ✅ Done
 
 Current issue:
 
-- `Chat.Participants` is often nil and serializes as `null`.
+- Older versions returned `Chat.Participants` as `null`; current `GetChats()` initializes it to an empty array.
 
 Required implementation:
 
 - Initialize `Participants` to `[]User{}` in `GetChats()`.
 - Prefer joining contact/group participant data when available.
 - If participants are unknown, return an empty array.
-- For direct chats, consider returning the direct contact once known.
+- For direct chats, resolve the stored direct contact once known.
 
 Files:
 
@@ -192,7 +193,7 @@ Acceptance criteria:
 
 - `/api/chats` never returns `participants: null`.
 
-### 4. Use `isFromMe` As First-Class Data
+### 4. Use `isFromMe` As First-Class Data - ⚠️ Partial
 
 Current issue:
 
@@ -301,6 +302,8 @@ Storage already has FTS support. Add an HTTP endpoint:
 - Validate and sanitize FTS queries.
 - Return matching messages with chat IDs.
 
+Current status: SQLite FTS storage and search queries exist, but the HTTP endpoint and frontend integration are still missing.
+
 ### Group Metadata
 
 Persist group details from history sync and group events:
@@ -327,6 +330,6 @@ Added `GET /api/profile`:
 - ✅ Migration backfills existing message timestamp metadata and revisions.
 - ❌ `InsertMessage` updates chat metadata.
 - ❌ Duplicate message insert does not duplicate rows.
-- ❌ `GetChats()` returns `participants: []`, not `null`.
+- ✅ `GetChats()` returns `participants: []`, not `null`.
 - ❌ `GetChats()` includes `lastMessage.isFromMe`.
 - ❌ History sync sample data inserts chats/messages idempotently.

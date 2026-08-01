@@ -33,7 +33,7 @@ Look at [FEATURES.md](./FEATURES.md) for everything.
 - [ ] Real-time updates with Server-Sent Events
 - [x] Contact name sync
 - [ ] Group metadata
-- [ ] Group participants
+- [ ] Group participants (in progress; joined-group sync is implemented)
 - [ ] Contact and group avatars
 - [ ] Communities and related group metadata
 - [ ] Pinned chats

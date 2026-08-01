@@ -89,9 +89,9 @@
 | All others (KeepAliveTimeout, StreamReplaced, TemporaryBan, ConnectFailure, ChatPresence, Picture, etc.) | ❌ | Fall to `default: unhandled` |
 
 **Known issues in Phase 3**:
-- `GetChats()` never joins with `contacts` → 1-on-1 chats have `participants: null` and no display name (frontend works around with `chatName()` deriving from JID)
-- `GetChats()` lastMessage does not yet expose the full message contract (`chatJid`, `status`, `mediaType`, `isFromMe`)
-- History sync persists conversations/messages and core contact identity data, but group participants, contact/group avatars, and group update events are incomplete
+- `GetChats()` now resolves stored direct contacts and initializes unknown participants as `[]`; group participants are included when persisted
+- `GetChats()` lastMessage still does not yet expose the full message contract (`chatJid`, `status`, `mediaType`, `isFromMe`)
+- History sync persists conversations/messages and core contact identity data; group participant extraction from history chunks, contact/group avatars, and group update events are incomplete
 - History sync currently performs many per-row SQLite writes; batch inserts/transactions are needed for large initial syncs
 - Contact/group avatars: fetch profile picture URLs with whatsmeow, persist them in existing `contacts.avatar` and `chats.avatar`, and handle `*events.Picture` updates
 - Later safety net: merge existing duplicate direct chats/messages when `jid_mappings` shows an `@lid` chat and an `@s.whatsapp.net` chat belong to the same person. Full resets plus canonicalized writes should avoid most duplicates, so this is lower priority.

@@ -25,7 +25,7 @@ This file tracks user-facing product features. For implementation details, archi
 | Contact names | in-progress | Saved names, push names, and LID/phone display fallback are being wired into backend chat/contact display |
 | Contact and group avatars | planned | Fetch and persist WhatsApp profile picture URLs for contacts and groups |
 | Group metadata | in-progress | Group names are partially supported through history sync; live metadata changes and avatars are pending |
-| Group participants | planned | Requires participant persistence in the local database |
+| Group participants | in-progress | Joined-group sync persists participants; history-sync extraction and live updates remain incomplete |
 | Communities | planned | Support WhatsApp community parent groups and related announcement/subgroup metadata |
 | Community subgroups | planned | Display linked community groups and parent/subgroup relationships when available |
 | Send text messages | done | Composer endpoint and whatsmeow send path |
@@ -66,7 +66,7 @@ This file tracks user-facing product features. For implementation details, archi
 
 | Feature | Status | Notes |
 | ------- | ------ | ----- |
-| Full-text message search | planned | SQLite FTS-backed search |
+| Full-text message search | planned | SQLite FTS storage/query support exists; the HTTP endpoint and frontend search UI are not wired |
 | Search by sender | planned | Filter messages by sender |
 | Search by date | planned | Time-based filtering |
 | Search by media type | planned | Images, videos, audio, and documents |

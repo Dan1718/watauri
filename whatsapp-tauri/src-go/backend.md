@@ -77,7 +77,7 @@ Triggers new QR pairing. If already connected/connecting, should be a no-op (not
 - `Connect()` is blocking — must run in a goroutine.
 - QR codes arrive via `events.QR` event handler which sets `wa.qrCode` and `wa.status`.
 
-**Status**: ✅ Existing, needs concurrency fix
+**Status**: ✅ Existing
 
 ---
 
@@ -88,10 +88,10 @@ Disconnects the client and revokes the device session. Deletes session DB.
 **Response `200`** — empty body.
 
 **Behavior**:
-- Currently only calls `Disconnect()`.
-- **Needs**: Call whatsmeow `client.Logout()` to revoke device, delete `wa-session.db`, reset `wa.qrCode` and `wa.status`.
+- Calls whatsmeow `client.Logout()` to revoke the device session.
+- Resets `wa.qrCode` and `wa.status`.
 
-**Status**: ⚠️ Needs fix (currently disconnect-only, no revocation)
+**Status**: ✅ Existing
 
 ---
 
@@ -107,7 +107,7 @@ Convenience endpoint for testing. Clears session without revoking — just disco
 - Resets `wa.status = "unauthenticated"`, `wa.qrCode = ""`
 - Useful during development to start fresh without scanning again
 
-**Status**: ❌ Missing
+**Status**: ✅ Existing (development reset)
 
 ---
 
@@ -115,7 +115,7 @@ Convenience endpoint for testing. Clears session without revoking — just disco
 
 ### `GET /api/chats`
 
-Returns all chats for the authenticated user.
+Returns all chats for the authenticated user from local SQLite storage.
 
 **Response `200`**
 ```json
@@ -138,39 +138,55 @@ Returns all chats for the authenticated user.
 ```
 
 **Behavior**:
-- Phase 3: Replace `mockChats` with real SQLite query.
-- Phase 3: Add real-time updates via SSE.
-- Archived chats should be included but filtered by frontend.
+- Reads chat metadata from local SQLite.
+- Includes archived chats; the frontend filters them.
+- Direct-chat names are resolved from stored contacts when available.
+- Group participants are returned when stored; otherwise `participants` is `[]`.
+- Real-time updates are not yet available; the frontend currently polls.
 
-**Status**: ✅ Existing (mocks), ⚠️ Needs real DB query
+**Status**: ✅ Existing (SQLite)
 
 ---
 
 ### `GET /api/chats/:id`
 
-Returns messages for a specific chat.
+Returns a cursor-paginated message page for a specific chat. Messages are ordered oldest-to-newest in the response.
 
 **Response `200`**
 ```json
-[
-  {
+{
+  "messages": [
+    {
     "id": "msg-456",
     "senderId": "me",
     "text": "Sure, see you then!",
     "timestamp": "10:31 AM",
     "status": "read"
-  }
-]
+    }
+  ],
+  "nextCursor": "...",
+  "latestCursor": "...",
+  "hasMore": true,
+  "olderCursor": "...",
+  "newerCursor": "...",
+  "hasOlder": true,
+  "hasNewer": false
+}
 ```
 
 **Response `404`** — chat not found.
 
-**Behavior**:
-- Phase 3: Replace `mockMessages` with real SQLite query.
-- Messages ordered by timestamp ascending.
-- Consider pagination for large chats (`?limit=50&before=msg-xxx`).
+**Query parameters**:
+- `limit` — bounded page size.
+- `before` — cursor for older messages.
+- `after` — revision cursor for polling deltas, or a time cursor for newer messages.
+- `anchor=oldestUnread` — returns a window around the oldest unread inbound message.
 
-**Status**: ✅ Existing (mocks), ⚠️ Needs real DB query + pagination
+**Behavior**:
+- Returns `[]` in `messages` for unknown or empty chats.
+- Message responses include `chatJid`, `senderId`, `text`, `timestamp`, `status`, `mediaType`, and `isFromMe`.
+
+**Status**: ✅ Existing (SQLite, pagination, oldest-unread anchor)
 
 ---
 
@@ -185,12 +201,17 @@ Sends a text message to a chat. Attachments handled via separate media flow.
 }
 ```
 
-**Response `201`**
+**Response `200`**
 ```json
 {
   "id": "msg-789",
   "status": "sent",
-  "timestamp": "10:32 AM"
+  "chatJid": "123@s.whatsapp.net",
+  "senderId": "me-or-own-jid",
+  "text": "Hello! How are you?",
+  "timestamp": "2026-07-19T12:00:00Z",
+  "mediaType": "",
+  "isFromMe": true
 }
 ```
 
@@ -200,10 +221,10 @@ Sends a text message to a chat. Attachments handled via separate media flow.
 
 **Behavior**:
 - Calls `wa.client.SendMessage()`.
-- Returns the message ID and server timestamp.
-- Message should also be persisted to local SQLite.
+- Returns the stored/sent message as JSON.
+- Persists the sent message to local SQLite and updates chat metadata.
 
-**Status**: ❌ Missing
+**Status**: ✅ Existing
 
 ---
 
@@ -234,16 +255,16 @@ Sends a typing/presence indicator.
 
 Marks all messages in a chat as read.
 
-**Request**: No body.
+**Response `200`**
 
-**Response `204`**
+**Request**: Optional JSON body with `sendReceipt` and `messageIds`.
 
 **Behavior**:
 - Called when user opens a chat.
-- Calls `wa.client.MarkRead()` with the last message ID.
-- Resets `unreadCount` in local DB.
+- Calls `wa.client.MarkRead()` when `sendReceipt` is enabled.
+- Marks selected unread inbound messages read and updates local `unreadCount`.
 
-**Status**: ❌ Missing
+**Status**: ✅ Existing
 
 ---
 
@@ -324,9 +345,9 @@ Returns all known contacts.
 ]
 ```
 
-**Behavior**: Phase 3 — populated from whatsmeow contact sync events.
+**Behavior**: Populated from whatsmeow contact/history sync events and push-name events.
 
-**Status**: ❌ Missing
+**Status**: ✅ Existing
 
 ---
 
@@ -338,6 +359,24 @@ Returns a single contact.
 **Response `404`**
 
 **Status**: ❌ Missing
+
+---
+
+## Profile
+
+### `GET /api/profile`
+
+Returns the authenticated user's own JID and push name when available.
+
+**Response `200`**
+```json
+{
+  "id": "123@s.whatsapp.net",
+  "pushName": "Alex"
+}
+```
+
+**Status**: ✅ Existing
 
 ---
 

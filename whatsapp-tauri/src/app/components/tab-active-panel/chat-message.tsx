@@ -11,10 +11,21 @@ const senderColors = [
   "text-green-300",
 ];
 
-const messageUrlPattern = /(\bhttps?:\/\/[^\s<]+[^\s<.,:;"')\]}])/gi;
+const supportedTlds = new Set([
+  "ai", "app", "asia", "au", "biz", "blog", "ca", "cc", "cloud", "co", "com", "dev", "edu",
+  "gov", "in", "info", "int", "io", "me", "mil", "mobi", "name", "net", "online", "org", "pro",
+  "site", "tech", "tel", "travel", "tv", "uk", "us", "xyz",
+]);
+const messageUrlPattern = /(\bhttps?:\/\/[^\s<]+[^\s<.,:;"')\]}]|(?<![@\w.-])\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?(?:[/?#][^\s<]*[^\s<.,:;"')\]}])?)/gi;
 
 export function splitMessageText(message: string) {
   return message.split(messageUrlPattern);
+}
+
+export function getMessageHref(text: string) {
+  if (/^https?:\/\//i.test(text)) return text;
+  const tld = text.split(/[/:?#]/)[0].split(".").pop()?.toLowerCase();
+  return tld && supportedTlds.has(tld) ? `https://${text}` : null;
 }
 
 function getContactColor(contactId: string) {
@@ -51,17 +62,20 @@ export default function ChatMessage({
       ) : null}
       <div className="flex min-w-0 max-w-full items-end justify-between gap-2">
         <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-white">
-          {splitMessageText(message.message).map((part, index) => index % 2 === 1 ? (
-            <a
-              className="text-sky-300 underline hover:text-sky-200"
-              href={part}
-              key={index}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {part}
-            </a>
-          ) : part)}
+          {splitMessageText(message.message).map((part, index) => {
+            const href = getMessageHref(part);
+            return href ? (
+              <a
+                className="text-sky-300 underline hover:text-sky-200"
+                href={href}
+                key={index}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {part}
+              </a>
+            ) : part;
+          })}
         </p>
         <p className="shrink-0 text-xs text-white/80">{formatTime(message.timestamp)}</p>
         <MessageStatusIcon

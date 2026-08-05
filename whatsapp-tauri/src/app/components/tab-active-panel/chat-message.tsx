@@ -72,12 +72,12 @@ export default function ChatMessage({
                 rel="noreferrer"
                 target="_blank"
               >
-                <span style={{ borderBottom: "2px solid currentColor", paddingBottom: "2px" }}>
+                <span style={{ borderBottom: "1px solid currentColor", paddingBottom: "2px" }}>
                   {part}
                   <span
                     aria-hidden="true"
                     className="material-symbols-outlined ml-0.5 align-middle !text-[14px]"
-                    style={{ fontVariationSettings: '"FILL" 0, "wght" 500, "GRAD" 0, "opsz" 24' }}
+                    style={{ fontVariationSettings: '"FILL" 0, "wght" 600, "GRAD" 0, "opsz" 24' }}
                   >
                     arrow_outward
                   </span>

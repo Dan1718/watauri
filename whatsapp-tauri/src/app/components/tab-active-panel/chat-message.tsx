@@ -11,6 +11,12 @@ const senderColors = [
   "text-green-300",
 ];
 
+const messageUrlPattern = /(\bhttps?:\/\/[^\s<]+[^\s<.,:;"')\]}])/gi;
+
+export function splitMessageText(message: string) {
+  return message.split(messageUrlPattern);
+}
+
 function getContactColor(contactId: string) {
   let hash = 0;
   for (const character of contactId) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
@@ -45,7 +51,17 @@ export default function ChatMessage({
       ) : null}
       <div className="flex min-w-0 max-w-full items-end justify-between gap-2">
         <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-white">
-          {message.message}
+          {splitMessageText(message.message).map((part, index) => index % 2 === 1 ? (
+            <a
+              className="text-sky-300 underline hover:text-sky-200"
+              href={part}
+              key={index}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {part}
+            </a>
+          ) : part)}
         </p>
         <p className="shrink-0 text-xs text-white/80">{formatTime(message.timestamp)}</p>
         <MessageStatusIcon

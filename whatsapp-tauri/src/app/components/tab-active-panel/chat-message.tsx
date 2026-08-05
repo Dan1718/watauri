@@ -73,7 +73,7 @@ export default function ChatMessage({
                 target="_blank"
               >
                 <span className="underline">{part}</span>
-                <span aria-hidden="true" className="ml-0.5 text-[0.75em]">↗</span>
+                <span aria-hidden="true" className="material-symbols-outlined ml-0.5 align-middle !text-[14px]">arrow_outward</span>
                 <span className="sr-only"> (opens in a new tab)</span>
               </a>
             ) : part;

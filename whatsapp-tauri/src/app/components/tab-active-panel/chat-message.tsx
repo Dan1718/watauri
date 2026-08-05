@@ -72,7 +72,7 @@ export default function ChatMessage({
                 rel="noreferrer"
                 target="_blank"
               >
-                <span className="box-decoration-clone border-b-2 border-current pb-0.5">
+                <span style={{ borderBottom: "2px solid currentColor", paddingBottom: "2px" }}>
                   {part}
                   <span
                     aria-hidden="true"

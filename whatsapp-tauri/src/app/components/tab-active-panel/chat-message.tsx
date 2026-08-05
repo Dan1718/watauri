@@ -66,13 +66,13 @@ export default function ChatMessage({
             const href = getMessageHref(part);
             return href ? (
               <a
-                className="hover:opacity-80"
+                className="underline decoration-2 underline-offset-2 hover:opacity-80"
                 href={href}
                 key={index}
                 rel="noreferrer"
                 target="_blank"
               >
-                <span className="underline">{part}</span>
+                {part}
                 <span aria-hidden="true" className="material-symbols-outlined ml-0.5 align-middle !text-[14px]">arrow_outward</span>
                 <span className="sr-only"> (opens in a new tab)</span>
               </a>

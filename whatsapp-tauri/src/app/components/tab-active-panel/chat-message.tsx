@@ -11,6 +11,23 @@ const senderColors = [
   "text-green-300",
 ];
 
+const supportedTlds = new Set([
+  "ai", "app", "asia", "au", "biz", "blog", "ca", "cc", "cloud", "co", "com", "dev", "edu",
+  "gov", "in", "info", "int", "io", "me", "mil", "mobi", "name", "net", "online", "org", "pro",
+  "site", "tech", "tel", "travel", "tv", "uk", "us", "xyz",
+]);
+const messageUrlPattern = /(\bhttps?:\/\/[^\s<]+[^\s<.,:;"')\]}]|(?<![@\w.-])\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?(?:[/?#][^\s<]*[^\s<.,:;"')\]}])?)/gi;
+
+export function splitMessageText(message: string) {
+  return message.split(messageUrlPattern);
+}
+
+export function getMessageHref(text: string) {
+  if (/^https?:\/\//i.test(text)) return text;
+  const tld = text.split(/[/:?#]/)[0].split(".").pop()?.toLowerCase();
+  return tld && supportedTlds.has(tld) ? `https://${text}` : null;
+}
+
 function getContactColor(contactId: string) {
   let hash = 0;
   for (const character of contactId) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
@@ -45,7 +62,30 @@ export default function ChatMessage({
       ) : null}
       <div className="flex min-w-0 max-w-full items-end justify-between gap-2">
         <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-white">
-          {message.message}
+          {splitMessageText(message.message).map((part, index) => {
+            const href = getMessageHref(part);
+            return href ? (
+              <a
+                className="hover:opacity-80"
+                href={href}
+                key={index}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <span style={{ borderBottom: "1px solid currentColor", paddingBottom: "1px" }}>
+                  {part}
+                  <span
+                    aria-hidden="true"
+                    className="material-symbols-outlined ml-0.5 align-middle !text-[14px]"
+                    style={{ fontVariationSettings: '"FILL" 0, "wght" 600, "GRAD" 0, "opsz" 24' }}
+                  >
+                    arrow_outward
+                  </span>
+                </span>
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            ) : part;
+          })}
         </p>
         <p className="shrink-0 text-xs text-white/80">{formatTime(message.timestamp)}</p>
         <MessageStatusIcon

@@ -139,7 +139,10 @@ whatsapp-tauri/
 - [x] Local message persistence
 - [x] Historical chat sync
 - [x] Sending messages
-- [ ] Contacts, group metadata, participants, and avatars
+- [x] Contacts
+- [ ] Group metadata
+- [ ] Group participants
+- [ ] Local avatars
 - [x] Message pagination
 - [ ] Real-time updates with Server-Sent Events
 - [x] Read receipts

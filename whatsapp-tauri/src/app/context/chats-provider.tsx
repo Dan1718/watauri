@@ -68,6 +68,7 @@ export const ChatsContext = createContext<
       updateFilter: (filter: string) => void;
       search: string;
       updateSearch: (query: string) => void;
+      setChatUnreadCount: (chatId: string, unreadCount: number) => void;
       setChatArchived: (chatId: string, archived: boolean) => void;
       chats: Chats;
     }
@@ -170,6 +171,8 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
   });
   const pollingActive = useChatPollingActive();
   const loadedRef = useRef(false);
+  const readRevisionRef = useRef(new Map<string, number>());
+  const unreadCountsRef = useRef(new Map<string, number>());
   const archivedOverridesRef = useRef(new Map<string, boolean>());
 
   const updateFilter = useCallback((filter: string) => {
@@ -178,6 +181,17 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
 
   const updateSearch = useCallback((query: string) => {
     setSearch(query);
+  }, []);
+
+  const setChatUnreadCount = useCallback((chatId: string, unreadCount: number) => {
+    readRevisionRef.current.set(chatId, (readRevisionRef.current.get(chatId) ?? 0) + 1);
+    unreadCountsRef.current.set(chatId, unreadCount);
+    setChatState((prev) => ({
+      ...prev,
+      complete: prev.complete.map((chat) => chat.id === chatId
+        ? { ...chat, unreadCount, read: unreadCount === 0 }
+        : chat),
+    }));
   }, []);
 
   const setChatArchived = useCallback((chatId: string, archived: boolean) => {
@@ -196,11 +210,17 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
     const fetchChats = async () => {
       if (inFlight) return;
       inFlight = true;
+      const readRevisions = new Map(readRevisionRef.current);
       if (!loadedRef.current) {
         setChatState((prev) => ({ ...prev, isLoading: true }));
       }
       try {
         const data = (await listBackendChats(controller.signal)).map(toChat).map((chat) => {
+          // Ignore counts from a poll started before a successful read batch.
+          if (readRevisions.get(chat.id) !== readRevisionRef.current.get(chat.id)) {
+            chat = { ...chat, unreadCount: unreadCountsRef.current.get(chat.id) ?? chat.unreadCount };
+            chat.read = chat.unreadCount === 0;
+          }
           const archived = archivedOverridesRef.current.get(chat.id);
           return archived === undefined ? chat : { ...chat, archived };
         });
@@ -239,8 +259,8 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
   }), [filter, chatState.complete]);
   const chats = useMemo(() => ({ ...chatState, filtered }), [chatState, filtered]);
   const value = useMemo(
-    () => ({ chats, filter, search, updateFilter, updateSearch, setChatArchived }),
-    [chats, filter, search, updateFilter, updateSearch, setChatArchived]
+    () => ({ chats, filter, search, updateFilter, updateSearch, setChatArchived, setChatUnreadCount }),
+    [chats, filter, search, updateFilter, updateSearch, setChatArchived, setChatUnreadCount]
   );
 
   return (

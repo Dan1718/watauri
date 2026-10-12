@@ -51,6 +51,7 @@ export default function ChatMessage({
 }) {
   const bubble = (
     <div
+      data-unread-message-id={!message.isSentFromUser && !message.read ? message.id : undefined}
       className={`min-w-0 rounded-lg px-2 py-1.5 ${
         message.isSentFromUser ? "bg-[#144D37]" : "bg-[#242626]"
       }`}

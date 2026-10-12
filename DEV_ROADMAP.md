@@ -80,7 +80,7 @@
 | `*events.Presence` | ⚠️ | Logged only, no status persisted |
 | `*events.HistorySync` | ⚠️ | Conversations/messages, push names, contact names, and LID mappings are persisted; group participants and avatars remain incomplete |
 | `*events.GroupInfo` | ❌ | Skipped — group name/topic changes not persisted |
-| `*events.JoinedGroup` | ❌ | Skipped |
+| `*events.JoinedGroup` | ✅ | Joined-group sync persists group participants |
 | `*events.LoggedOut` | ✅ | Status + QR reset |
 | `*events.PairSuccess` | ❌ | Skipped |
 | `*events.PairError` | ❌ | Skipped |
@@ -91,7 +91,7 @@
 **Known issues in Phase 3**:
 - `GetChats()` now resolves stored direct contacts and initializes unknown participants as `[]`; group participants are included when persisted
 - `GetChats()` lastMessage still does not yet expose the full message contract (`chatJid`, `status`, `mediaType`, `isFromMe`)
-- History sync persists conversations/messages and core contact identity data; group participant extraction from history chunks, contact/group avatars, and group update events are incomplete
+- History sync persists conversations/messages and core contact identity data; joined-group sync persists participants, while history-chunk participant extraction, contact/group avatars, and group update events remain incomplete
 - History sync currently performs many per-row SQLite writes; batch inserts/transactions are needed for large initial syncs
 - Contact/group avatars: fetch profile picture URLs with whatsmeow, persist them in existing `contacts.avatar` and `chats.avatar`, and handle `*events.Picture` updates
 - Later safety net: merge existing duplicate direct chats/messages when `jid_mappings` shows an `@lid` chat and an `@s.whatsapp.net` chat belong to the same person. Full resets plus canonicalized writes should avoid most duplicates, so this is lower priority.

@@ -278,13 +278,13 @@ Implemented query params and cursor response fields for `GET /api/chats/:id`:
 - `after` cursor for polling message/status deltas.
 - Responses include `messages`, `nextCursor`, `latestCursor`, and `hasMore`.
 
-### Read Receipts
+### Read Receipts - ✅ Done
 
-Implement `POST /api/chats/:id/read`:
+Implemented `POST /api/chats/:id/read`:
 
 - Mark local unread count as zero.
 - Call the appropriate whatsmeow read receipt method.
-- Return `204` or a JSON result.
+- Return the updated unread count as JSON.
 
 ### Typing Indicators
 
@@ -306,12 +306,13 @@ Current status: SQLite FTS storage and search queries exist, but the HTTP endpoi
 
 ### Group Metadata
 
-Persist group details from history sync and group events:
+Persist the remaining group details from history sync and group events:
 
-- Group name/topic.
-- Group participants.
-- Group avatar when available.
-- Group update events.
+- ✅ Group names from history sync.
+- ✅ Group participants from joined-group sync.
+- ⚠️ Group participants from history-sync conversation chunks.
+- ⚠️ Group avatar when available.
+- ⚠️ Group name/topic update events.
 
 ### Profile/Current User Endpoint - ✅ Done
 
@@ -331,5 +332,5 @@ Added `GET /api/profile`:
 - ❌ `InsertMessage` updates chat metadata.
 - ❌ Duplicate message insert does not duplicate rows.
 - ✅ `GetChats()` returns `participants: []`, not `null`.
-- ❌ `GetChats()` includes `lastMessage.isFromMe`.
+- ❌ `GetChats()` includes the full `lastMessage` contract, including `isFromMe`.
 - ❌ History sync sample data inserts chats/messages idempotently.

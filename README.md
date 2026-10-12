@@ -32,9 +32,9 @@ Look at [FEATURES.md](./FEATURES.md) for everything.
 - [x] Read receipts
 - [ ] Real-time updates with Server-Sent Events
 - [x] Contact name sync
-- [ ] Group metadata
+- [ ] Group metadata (in progress; names are persisted, live updates are pending)
 - [ ] Group participants (in progress; joined-group sync is implemented)
-- [ ] Contact and group avatars
+- [ ] Contact and group avatars (storage exists; fetching and update events are pending)
 - [ ] Communities and related group metadata
 - [ ] Pinned chats
 - [ ] Pinned messages
@@ -140,9 +140,9 @@ whatsapp-tauri/
 - [x] Historical chat sync
 - [x] Sending messages
 - [x] Contacts
-- [ ] Group metadata
-- [ ] Group participants
-- [ ] Local avatars
+- [ ] Group metadata (in progress; names are persisted, live updates are pending)
+- [ ] Group participants (in progress; joined-group sync is implemented)
+- [ ] Local avatars (storage exists; fetching is pending)
 - [x] Message pagination
 - [ ] Real-time updates with Server-Sent Events
 - [x] Read receipts

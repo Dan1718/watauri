@@ -92,6 +92,7 @@
 - `GetChats()` now resolves stored direct contacts and initializes unknown participants as `[]`; group participants are included when persisted
 - `GetChats()` now loads the referenced message row for the full `lastMessage` contract; it omits `lastMessage` when that row is missing
 - Unread counts are preserved by metadata-only chat upserts, history-sync counts remain authoritative, and only new live inbound messages increment the count
+- `anchor=oldestUnread` uses the chat unread count to select the Nth newest inbound message, rather than relying on per-message read status
 - History sync persists conversations/messages and core contact identity data; joined-group sync persists participants, while history-chunk participant extraction, contact/group avatars, and group update events remain incomplete
 - History sync currently performs many per-row SQLite writes; batch inserts/transactions are needed for large initial syncs
 - Contact/group avatars: fetch profile picture URLs with whatsmeow, persist them in existing `contacts.avatar` and `chats.avatar`, and handle `*events.Picture` updates

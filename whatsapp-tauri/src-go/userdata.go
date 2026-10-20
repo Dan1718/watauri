@@ -1172,24 +1172,41 @@ func intToBool(i int) bool {
 
 func (s *UserDataStore) GetMessagesAnchoredAtOldestUnread(chatJID string, limit int) ([]Message, bool, bool, int64, error) {
 	s.mu.RLock()
-	var anchorID string
-	var anchorEpoch int64
-
-	err := s.db.QueryRow(`
-		SELECT id, timestamp_epoch
-		FROM messages
-		WHERE chat_jid = ?
-		AND is_from_me = 0
-		AND status != 'read'
-		ORDER BY timestamp_epoch ASC, id ASC
-		LIMIT 1`, chatJID).Scan(&anchorID, &anchorEpoch)
-
-	if errors.Is(err, sql.ErrNoRows) {
+	var unreadCount int
+	err := s.db.QueryRow(`SELECT unread_count FROM chats WHERE jid = ?`, chatJID).Scan(&unreadCount)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		s.mu.RUnlock()
+		return nil, false, false, 0, err
+	}
+	if errors.Is(err, sql.ErrNoRows) || unreadCount <= 0 {
 		s.mu.RUnlock()
 		messages, hasMore, latestRevision, err := s.GetMessages(chatJID, limit, nil, nil)
 		return messages, hasMore, false, latestRevision, err
 	}
 
+	var anchorID string
+	var anchorEpoch int64
+	err = s.db.QueryRow(`
+		SELECT id, timestamp_epoch
+		FROM messages
+		WHERE chat_jid = ? AND is_from_me = 0
+		ORDER BY timestamp_epoch DESC, id DESC
+		LIMIT 1 OFFSET ?`, chatJID, unreadCount-1).Scan(&anchorID, &anchorEpoch)
+	if errors.Is(err, sql.ErrNoRows) {
+		// A stale count can exceed the number of stored inbound messages. Anchor
+		// at the oldest available inbound message rather than the latest page.
+		err = s.db.QueryRow(`
+			SELECT id, timestamp_epoch
+			FROM messages
+			WHERE chat_jid = ? AND is_from_me = 0
+			ORDER BY timestamp_epoch ASC, id ASC
+			LIMIT 1`, chatJID).Scan(&anchorID, &anchorEpoch)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		s.mu.RUnlock()
+		messages, hasMore, latestRevision, err := s.GetMessages(chatJID, limit, nil, nil)
+		return messages, hasMore, false, latestRevision, err
+	}
 	if err != nil {
 		s.mu.RUnlock()
 		return nil, false, false, 0, err

@@ -286,6 +286,12 @@ Implemented `POST /api/chats/:id/read`:
 - Call the appropriate whatsmeow read receipt method.
 - Return the updated unread count as JSON.
 
+### Oldest-Unread Message Anchor - ✅ Done
+
+- Anchor `anchor=oldestUnread` using the chat's authoritative `unread_count`, selecting the Nth newest inbound message for a count of N.
+- Outgoing messages do not contribute to the boundary, and individual message statuses do not override the chat count.
+- A zero count returns the latest page; a count larger than the stored inbound-message total falls back to the oldest available inbound message.
+
 ### Typing Indicators
 
 Implement `POST /api/chats/:id/typing`:
@@ -332,6 +338,7 @@ Added `GET /api/profile`:
 - ❌ Add tests proving `InsertMessage` updates chat metadata transactionally.
 - ✅ Tests prove metadata-only chat upserts preserve unread counts, authoritative zero can replace a prior count, and imported/outgoing/duplicate messages do not increment unread counts.
 - ✅ Tests prove duplicate message inserts do not duplicate rows.
+- ✅ Oldest-unread anchor tests cover status/count disagreement, outgoing messages interleaved with inbound messages, zero unread count, and counts larger than stored inbound history.
 - ✅ `GetChats()` returns `participants: []`, not `null`.
 - ✅ `GetChats()` returns the full `lastMessage` contract for stored messages and omits it when the referenced message row is absent.
 - ❌ Add history-sync sample tests proving repeated chunks are idempotent.

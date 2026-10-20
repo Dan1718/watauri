@@ -76,6 +76,90 @@ func TestHandleMessagesPaginatesAtPageBoundaries(t *testing.T) {
 	}
 }
 
+func TestOldestUnreadAnchorUsesChatUnreadCount(t *testing.T) {
+	newTestStore(t)
+	messages := []Message{
+		{ID: "m1", ChatJID: "c1", SenderID: "alice", Text: "old inbound", Timestamp: "2026-07-21T10:01:00Z", Status: "received"},
+		{ID: "m2", ChatJID: "c1", SenderID: "me", Text: "outgoing", Timestamp: "2026-07-21T10:02:00Z", Status: "sent", IsFromMe: true},
+		{ID: "m3", ChatJID: "c1", SenderID: "alice", Text: "read inbound", Timestamp: "2026-07-21T10:03:00Z", Status: "read"},
+		{ID: "m4", ChatJID: "c1", SenderID: "me", Text: "outgoing", Timestamp: "2026-07-21T10:04:00Z", Status: "sent", IsFromMe: true},
+		{ID: "m5", ChatJID: "c1", SenderID: "alice", Text: "unread inbound", Timestamp: "2026-07-21T10:05:00Z", Status: "received"},
+		{ID: "m6", ChatJID: "c1", SenderID: "alice", Text: "read inbound", Timestamp: "2026-07-21T10:06:00Z", Status: "read"},
+	}
+	for _, message := range messages {
+		if err := store.InsertMessage(message, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.UpsertChat(Chat{ID: "c1", UnreadCount: 2, UnreadCountSet: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	status, page := getMessagePage(t, "/api/chats/c1?limit=4&anchor=oldestUnread")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want %d", status, http.StatusOK)
+	}
+	if ids(page.Messages) != "m3,m4,m5,m6" {
+		t.Fatalf("anchored page ids = %q, want m3,m4,m5,m6", ids(page.Messages))
+	}
+	if !page.HasOlder || page.HasNewer {
+		t.Fatalf("hasOlder = %v, hasNewer = %v; want true, false", page.HasOlder, page.HasNewer)
+	}
+	if page.Messages[2].ID != "m5" {
+		t.Fatalf("anchor message = %q, want the 2nd newest inbound message m5", page.Messages[2].ID)
+	}
+	inboundAtOrAfterAnchor := 0
+	for _, message := range page.Messages[2:] {
+		if !message.IsFromMe {
+			inboundAtOrAfterAnchor++
+		}
+	}
+	if inboundAtOrAfterAnchor != 2 {
+		t.Fatalf("inbound messages from anchor through latest = %d, want 2", inboundAtOrAfterAnchor)
+	}
+}
+
+func TestOldestUnreadAnchorUsesLatestPageWhenUnreadCountIsZero(t *testing.T) {
+	newTestStore(t)
+	insertTestMessages(t,
+		Message{ID: "m1", Timestamp: "2026-07-21T10:01:00Z"},
+		Message{ID: "m2", Timestamp: "2026-07-21T10:02:00Z"},
+		Message{ID: "m3", Timestamp: "2026-07-21T10:03:00Z"},
+	)
+	if err := store.UpsertChat(Chat{ID: "c1", UnreadCountSet: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	status, page := getMessagePage(t, "/api/chats/c1?limit=2&anchor=oldestUnread")
+	if status != http.StatusOK || ids(page.Messages) != "m2,m3" || !page.HasMore || !page.HasOlder || page.HasNewer {
+		t.Fatalf("status = %d, ids = %q, hasMore = %v, hasOlder = %v, hasNewer = %v", status, ids(page.Messages), page.HasMore, page.HasOlder, page.HasNewer)
+	}
+}
+
+func TestOldestUnreadAnchorFallsBackToOldestInboundWhenCountExceedsMessages(t *testing.T) {
+	newTestStore(t)
+	for _, message := range []Message{
+		{ID: "m1", ChatJID: "c1", SenderID: "alice", Timestamp: "2026-07-21T10:01:00Z", Status: "read"},
+		{ID: "m2", ChatJID: "c1", SenderID: "me", Timestamp: "2026-07-21T10:02:00Z", Status: "sent", IsFromMe: true},
+		{ID: "m3", ChatJID: "c1", SenderID: "alice", Timestamp: "2026-07-21T10:03:00Z", Status: "read"},
+	} {
+		if err := store.InsertMessage(message, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.UpsertChat(Chat{ID: "c1", UnreadCount: 5, UnreadCountSet: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	status, page := getMessagePage(t, "/api/chats/c1?limit=2&anchor=oldestUnread")
+	if status != http.StatusOK || len(page.Messages) != 1 || page.Messages[0].ID != "m1" {
+		t.Fatalf("status = %d, messages = %#v; want oldest inbound m1 first", status, page.Messages)
+	}
+	if !page.HasNewer {
+		t.Fatal("expected newer messages after fallback anchor")
+	}
+}
+
 func TestHandleMessagesOrdersEqualTimestampsByIDAndFetchesDeltas(t *testing.T) {
 	newTestStore(t)
 	ts := "2026-07-21T10:00:00Z"

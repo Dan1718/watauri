@@ -41,7 +41,7 @@
 | 1.6  | Update `package.json` scripts to build Go binary before `tauri dev` / `tauri build`        | ✅ Done |
 | 1.7  | Resolve the `src-go/backend` naming confusion (binary vs source directory)                 | ✅ Done |
 
-**Deliverable**: App starts, spawns Go sidecar, frontend fetches mock data from Go over HTTP. `mode` badge reads `"go"` or `"mock"`.
+**Historical deliverable**: App starts the Go sidecar and the frontend communicates with it over HTTP. The backend now uses WhatsApp/SQLite implementations for the core routes rather than serving only mock data.
 
 ---
 
@@ -64,8 +64,8 @@
 
 | Task | Detail                                                                               | Status    |
 | ---- | ------------------------------------------------------------------------------------ | --------- |
-| 3.1  | Add SQLite to the Go sidecar (`modernc.org/sqlite` + `mattn/go-sqlite3`)            | ✅ Done   |
-| 3.2  | Wire whatsmeow event handlers → SQLite writes (messages, chats, contacts, presence)  | ⚠️ Partial |
+| 3.1  | Add SQLite to the Go sidecar (modernc.org/sqlite for user data; mattn/go-sqlite3 for whatsmeow session storage) | ✅ Done   |
+| 3.2  | Wire whatsmeow event handlers → SQLite writes (messages, chats, contacts; presence is logged only) | ⚠️ Partial |
 | 3.3  | Replace Go mock handlers with real DB queries for `/api/chats` and `/api/chats/{id}` | ✅ Done   |
 | 3.4  | Add real-time push from Go to frontend using Server-Sent Events                      | Planned |
 | 3.5  | Support offline startup — load from SQLite first, sync when connected                | ✅ Done   |
@@ -78,7 +78,7 @@
 | `*events.Receipt` | ✅ | Incoming delivery/read receipts update local message status; `/api/chats/{id}/read` marks inbound messages read and can send WhatsApp read receipts |
 | `*events.PushName` | ✅ | Upserted to `contacts` table |
 | `*events.Presence` | ⚠️ | Logged only, no status persisted |
-| `*events.HistorySync` | ⚠️ | Conversations/messages, push names, contact names, and LID mappings are persisted; group participants and avatars remain incomplete |
+| `*events.HistorySync` | ⚠️ | Conversations/messages, push names, available contact names, and LID mappings are persisted; history-chunk group participants and avatars remain incomplete |
 | `*events.GroupInfo` | ❌ | Skipped — group name/topic changes not persisted |
 | `*events.JoinedGroup` | ✅ | Joined-group sync persists group participants |
 | `*events.LoggedOut` | ✅ | Status + QR reset |
@@ -86,11 +86,11 @@
 | `*events.PairError` | ❌ | Skipped |
 | `*events.Connected` | ✅ | Status set |
 | `*events.Disconnected` | ✅ | Status reset |
-| All others (KeepAliveTimeout, StreamReplaced, TemporaryBan, ConnectFailure, ChatPresence, Picture, etc.) | ❌ | Fall to `default: unhandled` |
+| All others (including GroupInfo, PairSuccess/PairError, KeepAliveTimeout, StreamReplaced, TemporaryBan, ConnectFailure, ChatPresence, Picture, etc.) | ❌ | Fall to `default: unhandled` |
 
-**Known issues in Phase 3**:
+**Phase 3 status notes**:
 - `GetChats()` now resolves stored direct contacts and initializes unknown participants as `[]`; group participants are included when persisted
-- `GetChats()` lastMessage still does not yet expose the full message contract (`chatJid`, `status`, `mediaType`, `isFromMe`)
+- `GetChats()` now loads the referenced message row for the full `lastMessage` contract; it omits `lastMessage` when that row is missing
 - History sync persists conversations/messages and core contact identity data; joined-group sync persists participants, while history-chunk participant extraction, contact/group avatars, and group update events remain incomplete
 - History sync currently performs many per-row SQLite writes; batch inserts/transactions are needed for large initial syncs
 - Contact/group avatars: fetch profile picture URLs with whatsmeow, persist them in existing `contacts.avatar` and `chats.avatar`, and handle `*events.Picture` updates
@@ -117,7 +117,7 @@
 | Task | Detail                                                                        | Status |
 | ---- | ----------------------------------------------------------------------------- | ------ |
 | 4.1  | Send messages: `POST /api/chats/{id}/send` → `client.SendMessage()`           | ✅ Done |
-| 4.2  | Typing indicators: `PUT /api/chats/{id}/typing` → `client.SendChatPresence()` | 🔜 Planned |
+| 4.2  | Typing indicators: `POST /api/chats/{id}/typing` → `client.SendChatPresence()` | 🔜 Planned |
 | 4.3  | Read receipts: mark read on chat open with optional receipt suppression       | ✅ Done |
 | 4.4  | Attachments: Tauri file dialog → whatsmeow media upload                       | 🔜 Planned |
 | 4.5  | Archive / star: persist to SQLite + sync via whatsmeow app state              | 🔜 Planned |
@@ -180,9 +180,9 @@ Each risky feature should be behind a **feature flag** and isolated from core pr
 | ---- | ------ |
 | Frontend logging | `[api]`, `[sse]`, `[app]`, `[login]`, `[msgarea]`, `[sidebar]`, `[titlebar]`, `[nav]` — timing, state transitions, dedup |
 | Backend debug logging | `[store]` DB timing, `[http]` request/response, `[wa]` event types |
-| API reference | `src-go/backend.md` with 26 endpoints |
+| API reference | `src-go/backend.md` documents implemented backend routes and separately labels proposed endpoints |
 | Bruno collection | 24 `.bru` files under `docs/bruno/` (7 original + 17 planned) |
-| Cross-compilation | Go build script, binary naming for target triple, `modernc.org/sqlite` avoids CGo |
+| Cross-compilation | Go build script and binary naming for target triple; user-data storage uses `modernc.org/sqlite` (no CGo), while whatsmeow session storage imports `mattn/go-sqlite3` |
 | Blank-screen fixes | `getCurrentWindow()` try-catch, null-participant guards, message URL path fix |
 | SSE deferred | `GET /api/events` was dropped earlier; polling remains as the temporary replacement until SSE is reintroduced |
 | Chat display name | `chatName()` helper — derives from JID when name/participants are null |

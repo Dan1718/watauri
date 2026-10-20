@@ -1,6 +1,6 @@
 # Backend TODO
 
-This file tracks backend work needed to match the frontend contract and make real WhatsApp data reliable. The frontend now tolerates incomplete data, but these backend changes are still required for correct behavior.
+This file tracks backend work needed to match the frontend contract and make real WhatsApp data reliable. Status below is checked against the current Go implementation; tests are called out separately where coverage is absent.
 
 ## API Contract Required By Frontend
 
@@ -35,7 +35,7 @@ Each chat should return this shape:
 Required details:
 
 - Return `participants: []` instead of `null` when participants are unknown. ✅ Done
-- Include `lastMessage.isFromMe` so frontend can render sent/received bubbles correctly.
+- Include the full last-message fields (`chatJid`, `status`, `mediaType`, and `isFromMe`) so the frontend can render sent/received bubbles correctly. ✅ Done by loading the referenced stored message; omit `lastMessage` if that row is absent.
 - Use RFC3339 timestamps consistently.
 - Keep `lastMessage.status` as one of `received`, `sent`, `delivered`, or `read`.
 - Fill `name` for groups and known direct contacts when possible. ✅ Done for stored contacts/groups
@@ -115,11 +115,7 @@ Required behavior:
 
 ### 1. Update Chat Metadata When Inserting Messages - ✅ Done
 
-Current issue:
-
-- `InsertMessage` writes to `messages` only.
-- Chat list depends on `chats.last_message_*`.
-- Result: real messages can be stored but invisible in the chat list.
+Current status: implemented. `InsertMessage` inserts the message and upserts chat metadata in one transaction for newly inserted messages. Duplicate IDs are ignored; a duplicate does not replay metadata updates.
 
 Required implementation:
 
@@ -127,7 +123,7 @@ Required implementation:
 - Update `last_message_id`, `last_message_text`, `last_message_timestamp`, `last_message_sender`, and `updated_at`.
 - Increment `unread_count` for received messages when appropriate.
 - Do this transactionally so chats and messages cannot diverge.
-- Keep `INSERT OR IGNORE` duplicate handling, but still consider whether chat metadata should update when a duplicate newer last message is seen.
+- Consider whether a duplicate newer message should repair stale chat metadata; current duplicate handling skips that metadata update.
 
 Files:
 
@@ -202,7 +198,7 @@ Current issue:
 
 Required implementation:
 
-- ❌ Ensure `GetChats()` includes `is_from_me` when creating `LastMessage`.
+- ✅ Ensure `GetChats()` includes the full last-message contract, including `is_from_me`, status, media type, and chat JID when the referenced message exists.
 - ✅ Ensure all message responses include `isFromMe`.
 - ✅ Keep `senderId` as the real WhatsApp sender JID.
 
@@ -216,7 +212,7 @@ Acceptance criteria:
 - Own messages from `/api/chats` and `/api/chats/:id` contain `isFromMe: true`.
 - Incoming messages contain `isFromMe: false`.
 
-### 5. Add Real Routing And Method Validation - ✅ Done
+### 5. Add Real Routing And Method Validation - ⚠️ Partial
 
 Current issue:
 
@@ -225,7 +221,7 @@ Current issue:
 
 Required implementation:
 
-- Route based on path segments and HTTP method.
+- Chat subroutes are dispatched based on path segments and method, but validation is not consistent across all handlers.
 - Support at least:
   - `GET /api/chats`
   - `GET /api/chats/:id`
@@ -233,7 +229,7 @@ Required implementation:
   - future: `POST /api/chats/:id/typing`
   - future: `POST /api/chats/:id/read`
 - Return `405` for unsupported methods.
-- Return JSON errors consistently.
+- Return JSON errors consistently (currently some handlers and 405 responses use plain text).
 
 Files:
 
@@ -243,13 +239,11 @@ Files:
 Acceptance criteria:
 
 - `/api/chats/:id/send` does not hit the message-list handler.
-- Unknown nested paths return `404` JSON.
+- Unknown nested paths return `404`; response body is not guaranteed to be JSON.
 
 ### 6. Lock Down Local API Exposure
 
-Current issue:
-
-- Backend listens on all interfaces with permissive CORS.
+Current issue (confirmed in `main.go` and `handlers.go`): backend listens on all interfaces (`:8090`) and allows wildcard CORS (`*`).
 
 Required implementation:
 
@@ -282,7 +276,7 @@ Implemented query params and cursor response fields for `GET /api/chats/:id`:
 
 Implemented `POST /api/chats/:id/read`:
 
-- Mark local unread count as zero.
+- Mark selected unread inbound messages read locally and decrement unread count accordingly.
 - Call the appropriate whatsmeow read receipt method.
 - Return the updated unread count as JSON.
 
@@ -329,8 +323,8 @@ Added `GET /api/profile`:
 - ✅ `POST /api/chats/:id/send` validates malformed/empty/oversized text before network calls.
 - ✅ `POST /api/chats/:id/send` returns structured JSON errors for unavailable WhatsApp and invalid chat IDs.
 - ✅ Migration backfills existing message timestamp metadata and revisions.
-- ❌ `InsertMessage` updates chat metadata.
-- ❌ Duplicate message insert does not duplicate rows.
+- ❌ Add tests proving `InsertMessage` updates chat metadata transactionally.
+- ❌ Add tests proving duplicate message insertion does not duplicate rows or incorrectly increment unread counts.
 - ✅ `GetChats()` returns `participants: []`, not `null`.
-- ❌ `GetChats()` includes the full `lastMessage` contract, including `isFromMe`.
-- ❌ History sync sample data inserts chats/messages idempotently.
+- ✅ `GetChats()` returns the full `lastMessage` contract for stored messages and omits it when the referenced message row is absent.
+- ❌ Add history-sync sample tests proving repeated chunks are idempotent.

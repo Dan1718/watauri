@@ -1,7 +1,6 @@
 # Backend API Reference
 
-Base URL: `http://localhost:8090`
-All endpoints require CORS headers (`Access-Control-Allow-Origin: *`).
+Base URL: `http://127.0.0.1:8090` for local clients. **Current implementation caveat:** the server actually binds to `:8090` (all interfaces). Middleware sets `Access-Control-Allow-Origin: *`, allows `Content-Type`, and advertises `GET, POST, OPTIONS`; this permissive configuration is a known security issue. This document distinguishes implemented routes from proposed API contracts.
 
 ---
 
@@ -25,7 +24,7 @@ Returns server status. Used by the title bar badge and frontend connectivity che
 | `mode` | `"go"` — sidecar HTTP API |
 | `status` | `"ok"` |
 
-**Status**: ✅ Existing
+**Status**: Implemented (`GET`)
 
 ---
 
@@ -53,7 +52,7 @@ Returns current authentication state and any available QR code.
 - If status is `"connecting"`, `qr` should contain the current QR code.
 - Called on login screen mount and every 2s during polling.
 
-**Status**: ✅ Existing
+**Status**: Implemented (`GET`; method validation is not enforced on this route)
 
 ---
 
@@ -77,13 +76,13 @@ Triggers new QR pairing. If already connected/connecting, should be a no-op (not
 - `Connect()` is blocking — must run in a goroutine.
 - QR codes arrive via `events.QR` event handler which sets `wa.qrCode` and `wa.status`.
 
-**Status**: ✅ Existing
+**Status**: Implemented (`POST`; pairing is a no-op unless unauthenticated)
 
 ---
 
 ### `POST /api/auth/logout`
 
-Disconnects the client and revokes the device session. Deletes session DB.
+Disconnects the client and asks whatsmeow to revoke the device session. The handler does not explicitly delete the database file.
 
 **Response `200`** — empty body.
 
@@ -91,23 +90,23 @@ Disconnects the client and revokes the device session. Deletes session DB.
 - Calls whatsmeow `client.Logout()` to revoke the device session.
 - Resets `wa.qrCode` and `wa.status`.
 
-**Status**: ✅ Existing
+**Status**: Implemented (`POST`)
 
 ---
 
 ### `POST /api/auth/reset`
 
-Convenience endpoint for testing. Clears session without revoking — just disconnects and deletes the session DB file.
+Development convenience endpoint. Disconnects and deletes the stored whatsmeow device/session data without sending the normal logout/revoke flow.
 
 **Response `200`**
 
 **Behavior**:
 - Calls `Disconnect()`
-- Deletes `wa-session.db`
+- Deletes the stored device data through whatsmeow (the handler does not directly remove the database file)
 - Resets `wa.status = "unauthenticated"`, `wa.qrCode = ""`
 - Useful during development to start fresh without scanning again
 
-**Status**: ✅ Existing (development reset)
+**Status**: Implemented (`POST`; development reset)
 
 ---
 
@@ -125,7 +124,15 @@ Returns all chats for the authenticated user from local SQLite storage.
     "participants": [
       { "id": "user-1", "name": "Alice", "avatar": "https://...", "status": "online" }
     ],
-    "lastMessage": { "id": "msg-123", "senderId": "user-1", "text": "Hey!", "timestamp": "10:30 AM", "status": "read" },
+    "lastMessage": {
+      "id": "msg-123",
+      "chatJid": "chat-1",
+      "senderId": "user-1",
+      "text": "Hey!",
+      "timestamp": "2026-07-19T12:00:00Z",
+      "status": "delivered",
+      "isFromMe": false
+    },
     "unreadCount": 2,
     "isGroup": false,
     "name": null,
@@ -142,9 +149,10 @@ Returns all chats for the authenticated user from local SQLite storage.
 - Includes archived chats; the frontend filters them.
 - Direct-chat names are resolved from stored contacts when available.
 - Group participants are returned when stored; otherwise `participants` is `[]`.
+- A `lastMessage`, when present, is loaded from its stored message row and includes its chat JID, sender, text, timestamp, status, media type when non-empty, and `isFromMe` value. If the chat references a missing message row, `lastMessage` is omitted.
 - Real-time updates are not yet available; the frontend currently polls.
 
-**Status**: ✅ Existing (SQLite)
+**Status**: Implemented (`GET`, SQLite-backed)
 
 ---
 
@@ -174,7 +182,7 @@ Returns a cursor-paginated message page for a specific chat. Messages are ordere
 }
 ```
 
-**Response `404`** — chat not found.
+Unknown chat IDs currently return an empty message page (`200`), not `404`.
 
 **Query parameters**:
 - `limit` — bounded page size.
@@ -184,15 +192,15 @@ Returns a cursor-paginated message page for a specific chat. Messages are ordere
 
 **Behavior**:
 - Returns `[]` in `messages` for unknown or empty chats.
-- Message responses include `chatJid`, `senderId`, `text`, `timestamp`, `status`, `mediaType`, and `isFromMe`.
+- Message responses include `chatJid`, `senderId`, `text`, `timestamp`, `status`, and `isFromMe`; `mediaType` is omitted when empty because it uses `omitempty`.
 
-**Status**: ✅ Existing (SQLite, pagination, oldest-unread anchor)
+**Status**: Implemented (`GET`; SQLite, pagination, oldest-unread anchor)
 
 ---
 
 ### `POST /api/chats/:id/send`
 
-Sends a text message to a chat. Attachments handled via separate media flow.
+Sends and persists a text message to a chat. Attachment sending is not implemented.
 
 **Request**
 ```json
@@ -217,14 +225,14 @@ Sends a text message to a chat. Attachments handled via separate media flow.
 
 **Response `400`** — empty text.
 
-**Response `503`** — not connected to WhatsApp.
+**Response `503`** — WhatsApp client unavailable. Invalid chat IDs return `400`, persistence failures `500`, and send failures `502`.
 
 **Behavior**:
 - Calls `wa.client.SendMessage()`.
 - Returns the stored/sent message as JSON.
 - Persists the sent message to local SQLite and updates chat metadata.
 
-**Status**: ✅ Existing
+**Status**: Implemented (`POST`)
 
 ---
 
@@ -247,7 +255,7 @@ Sends a typing/presence indicator.
 - `"off"` immediately stops.
 - Calls `wa.client.SendChatPresence()`.
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -264,7 +272,7 @@ Marks all messages in a chat as read.
 - Calls `wa.client.MarkRead()` when `sendReceipt` is enabled.
 - Marks selected unread inbound messages read and updates local `unreadCount`.
 
-**Status**: ✅ Existing
+**Status**: Implemented (`POST`; optional `sendReceipt` and `messageIds` body)
 
 ---
 
@@ -285,7 +293,7 @@ Toggles archive status.
 - Persists to local SQLite.
 - Phase 4: Sync via whatsmeow app state mutation when available.
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -304,7 +312,7 @@ Toggles starred status.
 
 **Behavior**: Same as archive — local persistence first, protocol sync when available.
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -328,7 +336,7 @@ Returns media messages in a chat.
 ]
 ```
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -347,7 +355,7 @@ Returns all known contacts.
 
 **Behavior**: Populated from whatsmeow contact/history sync events and push-name events.
 
-**Status**: ✅ Existing
+**Status**: Implemented (`GET`)
 
 ---
 
@@ -358,7 +366,7 @@ Returns a single contact.
 **Response `200`** — single user object.
 **Response `404`**
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -376,7 +384,7 @@ Returns the authenticated user's own JID and push name when available.
 }
 ```
 
-**Status**: ✅ Existing
+**Status**: Implemented (`GET`)
 
 ---
 
@@ -405,7 +413,7 @@ Uploads a file to be sent as a message attachment.
 - Go sidecar buffers to a temp directory.
 - Actual send is triggered by `POST /api/chats/:id/send` with `mediaId` field.
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -415,7 +423,7 @@ Downloads a media blob (received or sent).
 
 **Response `200`** — binary with `Content-Type` header.
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -447,7 +455,7 @@ data: {"chatId":"chat-1","userId":"user-1","upToMessageId":"msg-123"}
 - Frontend connects on chat view mount, disconnects on unmount.
 - Go sidecar maintains a map of connected SSE clients and broadcasts to all.
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -477,9 +485,9 @@ Full-text search across messages and chats.
 
 **Behavior**:
 - Backend uses SQLite FTS5.
-- Highlight snippets are returned as part of results.
+- The current store query returns matching message records only; there is no endpoint or highlight-snippet implementation.
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -508,7 +516,7 @@ Create a local custom chat group (not a WhatsApp group — a UI filter set).
 }
 ```
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -523,7 +531,7 @@ List all custom groups.
 ]
 ```
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -535,7 +543,7 @@ Update a custom group.
 
 **Response `200`** — updated group object.
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -545,7 +553,7 @@ Delete a custom group. Does not affect the actual chats.
 
 **Response `204`**
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
@@ -569,19 +577,22 @@ Perform an action on multiple messages at once.
 - `star`: `204`
 - `export`: `201` with `{ "downloadUrl": "/api/export/..." }`
 
-**Status**: ❌ Missing
+**Status**: Not implemented; proposed contract only.
 
 ---
 
 ## Implementation Notes
 
+### Current registered routes
+
+Registered routes are `GET /health`, `GET /api/chats`, `GET /api/chats/:id`, `POST /api/chats/:id/send`, `POST /api/chats/:id/read`, `GET /api/contacts`, `GET /api/profile`, `GET /api/auth/status`, `POST /api/auth/start`, `POST /api/auth/logout`, and `POST /api/auth/reset`. Other endpoint descriptions above are proposed contracts, not live routes.
+
 ### Error Responses
 
-All endpoints return errors in a consistent format:
+Error formats are not yet consistent. Some handlers return JSON error objects, while others use `http.Error` and method errors are plain text. The current JSON error shape has no `code` field:
 ```json
 {
-  "error": "human-readable message",
-  "code": "ERROR_CODE"
+  "error": "human-readable message"
 }
 ```
 
@@ -589,14 +600,15 @@ All endpoints return errors in a consistent format:
 |-------------|------|
 | `400` | Bad request (missing/invalid params) |
 | `404` | Resource not found |
-| `409` | Conflict (e.g., auth already in progress) |
 | `500` | Internal server error |
 | `503` | Service unavailable (not connected to WhatsApp) |
 
-### Phase Migration Plan
+These are common statuses, not an exhaustive mapping. For example, invalid cursors return `400`, unknown routes return `404`, and unsupported methods return `405` with a plain-text body.
 
-1. **Phase 3** — Add SQLite schema (`chats`, `messages`, `contacts`, `media` tables). Wire whatsmeow event handlers to persist data. Replace mock handlers with real queries. Add SSE endpoint.
+### Historical phase notes (current status)
 
-2. **Phase 4** — Add send, typing, read receipts, archive/star, media upload/download, local-only sync version.
+1. **Phase 3** — SQLite schema, event persistence, and real chat/message queries are implemented in part. History sync is partial; SSE is not implemented.
 
-3. **Phase 5** — Add search (FTS5), custom groups, bulk actions behind feature flags.
+2. **Phase 4** — Text sending and read receipts are implemented. Typing, archive/star, and media upload/download are not implemented.
+
+3. **Phase 5** — FTS5 storage/query code exists, but there is no search HTTP endpoint; custom groups and bulk actions are not implemented.

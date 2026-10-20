@@ -457,7 +457,13 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 	defer s.mu.RUnlock()
 
 	start := time.Now()
-	rows, err := s.db.Query(`SELECT jid, name, avatar, last_message_id, last_message_text, last_message_timestamp, last_message_sender, unread_count, is_group, is_archived, is_starred, is_community FROM chats ORDER BY last_message_timestamp_epoch DESC`)
+	rows, err := s.db.Query(`SELECT
+		c.jid, c.name, c.avatar,
+		m.id, m.chat_jid, m.sender_jid, m.text, m.timestamp, m.status, m.media_type, m.is_from_me,
+		c.unread_count, c.is_group, c.is_archived, c.is_starred, c.is_community
+		FROM chats c
+		LEFT JOIN messages m ON m.id = c.last_message_id AND m.chat_jid = c.jid
+		ORDER BY c.last_message_timestamp_epoch DESC`)
 	if err != nil {
 		log.Printf("[store] GetChats query error: %v (%v)", err, time.Since(start))
 		return nil, err
@@ -469,10 +475,13 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 		var c Chat
 		c.Participants = []User{}
 		var name, avatar sql.NullString
-		var lastMsgID, lastMsgText, lastMsgTS, lastMsgSender sql.NullString
+		var lastMsgID, lastMsgChatJID, lastMsgSender, lastMsgText, lastMsgTS, lastMsgStatus, lastMsgMediaType sql.NullString
+		var lastMsgIsFromMe sql.NullInt64
 		var isGroup, isArchived, isStarred, isCommunity int
 
-		if err := rows.Scan(&c.ID, &name, &avatar, &lastMsgID, &lastMsgText, &lastMsgTS, &lastMsgSender, &c.UnreadCount, &isGroup, &isArchived, &isStarred, &isCommunity); err != nil {
+		if err := rows.Scan(&c.ID, &name, &avatar,
+			&lastMsgID, &lastMsgChatJID, &lastMsgSender, &lastMsgText, &lastMsgTS, &lastMsgStatus, &lastMsgMediaType, &lastMsgIsFromMe,
+			&c.UnreadCount, &isGroup, &isArchived, &isStarred, &isCommunity); err != nil {
 			log.Printf("[store] GetChats row scan error: %v (%v)", err, time.Since(start))
 			return nil, err
 		}
@@ -484,30 +493,29 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 			c.Avatar = &avatar.String
 		}
 		if lastMsgID.Valid {
-			c.LastMessage = &Message{ID: lastMsgID.String, Text: lastMsgText.String, Timestamp: lastMsgTS.String, SenderID: lastMsgSender.String}
+			lastMessage := &Message{ID: lastMsgID.String}
+			if lastMsgChatJID.Valid {
+				lastMessage.ChatJID = lastMsgChatJID.String
+			}
+			if lastMsgSender.Valid {
+				lastMessage.SenderID = lastMsgSender.String
+			}
+			if lastMsgText.Valid {
+				lastMessage.Text = lastMsgText.String
+			}
+			if lastMsgTS.Valid {
+				lastMessage.Timestamp = lastMsgTS.String
+			}
+			if lastMsgStatus.Valid {
+				lastMessage.Status = lastMsgStatus.String
+			}
+			if lastMsgMediaType.Valid {
+				lastMessage.MediaType = lastMsgMediaType.String
+			}
+			lastMessage.IsFromMe = lastMsgIsFromMe.Valid && intToBool(int(lastMsgIsFromMe.Int64))
+			c.LastMessage = lastMessage
 		}
 		c.IsGroup = intToBool(isGroup)
-		if !c.IsGroup {
-			contact, ok, err := s.resolveContactLocked(c.ID)
-			if err != nil {
-				log.Printf("[store] failed to resolve contact for chat %s: %v", c.ID, err)
-			} else if ok {
-				displayName := contactDisplayName(contact, c.ID)
-				c.Name = &displayName
-			} else if c.Name == nil || *c.Name == "" {
-				displayName := displayNameFromJID(c.ID)
-				c.Name = &displayName
-			}
-		}
-
-		if c.IsGroup {
-			participants, err := s.getChatParticipantsLocked(c.ID)
-			if err != nil {
-				log.Printf("[store] failed to load participants for group chat %s: %v", c.ID, err)
-			} else {
-				c.Participants = participants
-			}
-		}
 		c.IsArchived = intToBool(isArchived)
 		c.IsStarred = intToBool(isStarred)
 		c.IsCommunity = intToBool(isCommunity)
@@ -522,6 +530,38 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 	if err := rows.Err(); err != nil {
 		log.Printf("[store] GetChats rows iteration error: %v (%v)", err, time.Since(start))
 		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		log.Printf("[store] GetChats rows close error: %v (%v)", err, time.Since(start))
+		return nil, err
+	}
+
+	// Close the chat query before loading contacts or participants. Besides
+	// avoiding nested queries on an open result set, this works with stores
+	// configured to use a single SQLite connection (including the in-memory DB
+	// used by tests).
+	for i := range chats {
+		if !chats[i].IsGroup {
+			contact, ok, err := s.resolveContactLocked(chats[i].ID)
+			if err != nil {
+				log.Printf("[store] failed to resolve contact for chat %s: %v", chats[i].ID, err)
+			} else if ok {
+				displayName := contactDisplayName(contact, chats[i].ID)
+				chats[i].Name = &displayName
+			} else if chats[i].Name == nil || *chats[i].Name == "" {
+				displayName := displayNameFromJID(chats[i].ID)
+				chats[i].Name = &displayName
+			}
+		}
+
+		if chats[i].IsGroup {
+			participants, err := s.getChatParticipantsLocked(chats[i].ID)
+			if err != nil {
+				log.Printf("[store] failed to load participants for group chat %s: %v", chats[i].ID, err)
+			} else {
+				chats[i].Participants = participants
+			}
+		}
 	}
 	log.Printf("[store] GetChats -> %d chats (%v)", len(chats), time.Since(start))
 	return chats, nil

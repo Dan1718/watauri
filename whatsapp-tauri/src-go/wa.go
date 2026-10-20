@@ -31,12 +31,18 @@ var (
 )
 
 type WAManager struct {
-	client *whatsmeow.Client
-	status string // "unauthenticated" | "connecting" | "connected"
-	qrCode string // base64 PNG data URL of the current QR
-	store  *UserDataStore
-	mu     sync.RWMutex
+	client            *whatsmeow.Client
+	status            string // "unauthenticated" | "connecting" | "connected"
+	qrCode            string // base64 PNG data URL of the current QR
+	store             *UserDataStore
+	mu                sync.RWMutex
+	pairingAttempt    uint64
+	pairingQRTimeout  time.Duration // zero uses pairingQRTimeout
+	getQRChannel      func(context.Context) (<-chan whatsmeow.QRChannelItem, error)
+	connectForPairing func() error
 }
+
+const pairingQRTimeout = 30 * time.Second
 
 func newWAManager(store *UserDataStore) (*WAManager, error) {
 	log.Println("[wa] Opening session store: wa-session.db")
@@ -76,17 +82,10 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 	}
 	client.AddEventHandler(func(evt interface{}) {
 		switch v := evt.(type) {
-		case *events.QR:
-			png, _ := qrcode.Encode(v.Codes[0], qrcode.Medium, 256)
-			dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
-			wa.mu.Lock()
-			wa.qrCode = dataURL
-			wa.status = "connecting"
-			wa.mu.Unlock()
-			log.Println("[wa] New QR Code generated")
 		case *events.Connected:
 			wa.mu.Lock()
 			wa.status = "connected"
+			wa.qrCode = ""
 			wa.mu.Unlock()
 			log.Println("[wa] Connected to Whatsapp")
 			go wa.SyncGroups(context.Background())
@@ -94,6 +93,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 		case *events.Disconnected:
 			wa.mu.Lock()
 			wa.status = "unauthenticated"
+			wa.qrCode = ""
 			wa.mu.Unlock()
 			log.Println("[wa] Disconnected from WhatsApp")
 		case *events.Message:
@@ -401,44 +401,127 @@ func (wa *WAManager) StartPairing() {
 	}
 	wa.status = "connecting"
 	wa.qrCode = ""
+	wa.pairingAttempt++
+	attempt := wa.pairingAttempt
 	wa.mu.Unlock()
-	go func() {
-		ch, err := wa.client.GetQRChannel(context.Background())
-		if err != nil {
-			log.Println("[wa] GetQRChannel err: ", err)
-			wa.mu.Lock()
-			wa.status = "unauthenticated"
-			wa.mu.Unlock()
+	go wa.runPairingAttempt(attempt)
+}
+
+func (wa *WAManager) runPairingAttempt(attempt uint64) {
+	getQRChannel := wa.getQRChannel
+	connect := wa.connectForPairing
+	if getQRChannel == nil {
+		if wa.client == nil {
+			wa.failPairingAttempt(attempt, "WhatsApp client is unavailable")
 			return
 		}
-		if err := wa.client.Connect(); err != nil {
-			log.Println("[wa] Connect error:", err)
+		getQRChannel = wa.client.GetQRChannel
+	}
+	if connect == nil {
+		if wa.client == nil {
+			wa.failPairingAttempt(attempt, "WhatsApp client is unavailable")
+			return
 		}
-		for item := range ch {
+		connect = wa.client.Connect
+	}
+
+	ch, err := getQRChannel(context.Background())
+	if err != nil {
+		wa.failPairingAttempt(attempt, fmt.Sprintf("GetQRChannel failed: %v", err))
+		return
+	}
+
+	qrTimeout := wa.pairingQRTimeout
+	if qrTimeout <= 0 {
+		qrTimeout = pairingQRTimeout
+	}
+	timer := time.NewTimer(qrTimeout)
+	defer timer.Stop()
+	timeout := timer.C
+	connectResult := make(chan error, 1)
+	go func() {
+		connectResult <- connect()
+	}()
+	gotQR := false
+	for {
+		select {
+		case err := <-connectResult:
+			connectResult = nil
+			if err != nil {
+				wa.failPairingAttempt(attempt, fmt.Sprintf("Connect failed: %v", err))
+				return
+			}
+		case item, ok := <-ch:
+			if !ok {
+				wa.failPairingAttempt(attempt, "QR channel closed before pairing succeeded")
+				return
+			}
 			switch item.Event {
 			case whatsmeow.QRChannelEventCode:
-				png, _ := qrcode.Encode(item.Code, qrcode.Medium, 256)
+				png, err := qrcode.Encode(item.Code, qrcode.Medium, 256)
+				if err != nil {
+					wa.failPairingAttempt(attempt, fmt.Sprintf("QR encoding failed: %v", err))
+					return
+				}
 				dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
 				wa.mu.Lock()
-				wa.qrCode = dataURL
+				if wa.pairingAttempt == attempt && wa.status == "connecting" {
+					wa.qrCode = dataURL
+				}
 				wa.mu.Unlock()
+				if !gotQR {
+					gotQR = true
+					timer.Stop()
+					timeout = nil
+				}
 			case "success":
-				wa.mu.Lock()
-				wa.status = "connected"
-				wa.mu.Unlock()
-				go wa.SyncContacts(context.Background())
+				if wa.completePairingAttempt(attempt) {
+					go wa.SyncContacts(context.Background())
+				}
+				return
 			case "timeout":
-				wa.mu.Lock()
-				wa.status = "unauthenticated"
-				wa.qrCode = ""
-				wa.mu.Unlock()
+				wa.failPairingAttempt(attempt, "QR code expired before pairing succeeded")
+				return
 			case "err-scanned-without-multidevice":
-				log.Println("[wa] Phone doesn't have multidevice enabled")
-			case whatsmeow.QRChannelEventError:
-				log.Println("[wa] Pairing error:", item.Error)
+				// whatsmeow emits this warning without closing the QR channel;
+				// preserve the existing behavior and continue waiting for pairing.
+				log.Println("[wa] Phone doesn't have multi-device enabled")
+			default:
+				if item.Event == whatsmeow.QRChannelEventError {
+					wa.failPairingAttempt(attempt, fmt.Sprintf("pairing error: %v", item.Error))
+				} else {
+					wa.failPairingAttempt(attempt, fmt.Sprintf("pairing ended with event %q", item.Event))
+				}
+				return
+			}
+		case <-timeout:
+			if !gotQR {
+				wa.failPairingAttempt(attempt, "no QR code received before timeout")
+				return
 			}
 		}
-	}()
+	}
+}
+
+func (wa *WAManager) failPairingAttempt(attempt uint64, reason string) {
+	log.Printf("[wa] Pairing attempt %d failed: %s", attempt, reason)
+	wa.mu.Lock()
+	if wa.pairingAttempt == attempt && wa.status != "connected" {
+		wa.status = "unauthenticated"
+		wa.qrCode = ""
+	}
+	wa.mu.Unlock()
+}
+
+func (wa *WAManager) completePairingAttempt(attempt uint64) bool {
+	wa.mu.Lock()
+	defer wa.mu.Unlock()
+	if wa.pairingAttempt != attempt {
+		return false
+	}
+	wa.status = "connected"
+	wa.qrCode = ""
+	return true
 }
 
 func (wa *WAManager) GetStatus() string {

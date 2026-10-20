@@ -267,6 +267,13 @@ Acceptance criteria:
 - Backend is not reachable from another machine on the LAN.
 - Browser origins outside the app/dev origin cannot freely call the API.
 
+### Pairing Recovery - ✅ Done
+
+- Restore `unauthenticated` and clear the QR after connection failures, QR errors/expiry, or premature QR-channel closure.
+- Fail and allow retry if no initial QR arrives within 30 seconds, even if `Connect()` has not returned.
+- Guard attempt completion so a stale failure cannot overwrite a newer pairing attempt.
+- Regression tests cover connection/setup errors, terminal events, channel closure, timeout, successful completion, and retry.
+
 ## Important Follow-Up Work
 
 ### Message Pagination - ✅ Done

@@ -49,7 +49,9 @@ Returns current authentication state and any available QR code.
 
 **Behavior**:
 - If status is `"connected"`, frontend should immediately transition to chat view.
-- If status is `"connecting"`, `qr` should contain the current QR code.
+- During pairing, status may be `"connecting"` with an empty `qr` while the initial QR is being prepared; this phase times out after 30 seconds.
+- Pairing failures, QR-channel errors/closure, and QR expiry clear the QR and return status to `"unauthenticated"`, allowing the frontend to retry.
+- Once a QR is received, the 30-second initial-QR timeout no longer applies; WhatsApp's QR-channel terminal events determine the outcome.
 - Called on login screen mount and every 2s during polling.
 
 **Status**: Implemented (`GET`; method validation is not enforced on this route)
@@ -73,8 +75,9 @@ Triggers new QR pairing. If already connected/connecting, should be a no-op (not
 **Behavior**:
 - Must check `wa.status` before calling `Connect()`. If status is already `"connected"` or `"connecting"`, return immediately without action.
 - Must wrap `wa.status = "connecting"` in the mutex.
-- `Connect()` is blocking — must run in a goroutine.
-- QR codes arrive via `events.QR` event handler which sets `wa.qrCode` and `wa.status`.
+- Connection is started asynchronously while the QR channel is monitored.
+- If the initial QR is not received within 30 seconds, or pairing fails/ends without success, clear the QR and restore `"unauthenticated"` so a retry can start.
+- A stale pairing attempt cannot overwrite the state of a newer attempt.
 
 **Status**: Implemented (`POST`; pairing is a no-op unless unauthenticated)
 

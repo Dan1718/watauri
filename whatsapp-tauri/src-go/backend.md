@@ -152,6 +152,8 @@ Returns all chats for the authenticated user from local SQLite storage.
 - Includes archived chats; the frontend filters them.
 - Direct-chat names are resolved from stored contacts when available.
 - Group participants are returned when stored; otherwise `participants` is `[]`.
+- Group chats include a nested `groupMetadata` object when group metadata has been received. It includes available description, owner/creation, restrictions, disappearing-message, approval, community relationship, suspension, and deletion fields. The existing top-level `isAnnouncement` and `isSuspended` values remain compatibility aliases.
+- Group metadata is populated from joined-group sync, available history-sync conversation fields, and live group-info events. Partial updates modify only supplied values; absent fields preserve stored values.
 - A `lastMessage`, when present, is loaded from its stored message row and includes its chat JID, sender, text, timestamp, status, media type when non-empty, and `isFromMe` value. If the chat references a missing message row, `lastMessage` is omitted.
 - Metadata-only chat updates preserve the stored `unreadCount`; history-sync conversation counts are authoritative, and only newly inserted live inbound messages increment the count.
 - Real-time updates are not yet available; the frontend currently polls.
@@ -616,7 +618,8 @@ These are common statuses, not an exhaustive mapping. For example, invalid curso
 
 - `chats` includes avatar identifiers/status/update time and pin/mute fields in addition to existing archive/star/activity state.
 - `group_metadata` stores group description, owner/creation details, group settings, and parent/subgroup relationships in a one-to-one row linked to `chats.jid`; deleting a chat cascades to this row.
-- This schema migration does not yet populate the new metadata from WhatsApp events/history sync or expose it through API responses.
+- Group metadata is populated from joined-group sync, available history-sync conversation fields, and live group-info events, and exposed as the nested `groupMetadata` field on group chats.
+- Partial history/live updates preserve metadata fields omitted from the incoming payload.
 
 1. **Phase 3** — SQLite schema, event persistence, and real chat/message queries are implemented in part. History sync is partial; SSE is not implemented.
 

@@ -79,17 +79,17 @@
 | `*events.PushName` | ✅ | Upserted to `contacts` table |
 | `*events.Presence` | ⚠️ | Logged only, no status persisted |
 | `*events.HistorySync` | ⚠️ | Conversations/messages, push names, available contact names, and LID mappings are persisted; history-chunk group participants and avatars remain incomplete |
-| `*events.GroupInfo` | ❌ | Skipped — group name/topic changes not persisted |
-| `*events.JoinedGroup` | ✅ | Joined-group sync persists group participants |
+| `*events.GroupInfo` | ✅ | Persists partial metadata, name/topic changes, and community link/unlink updates |
+| `*events.JoinedGroup` | ✅ | Joined-group snapshot persists group metadata and participants |
 | `*events.LoggedOut` | ✅ | Status + QR reset |
 | `*events.PairSuccess` | ❌ | Skipped |
 | `*events.PairError` | ❌ | Skipped |
 | `*events.Connected` | ✅ | Status set |
 | `*events.Disconnected` | ✅ | Status reset |
-| All others (including GroupInfo, PairSuccess/PairError, KeepAliveTimeout, StreamReplaced, TemporaryBan, ConnectFailure, ChatPresence, Picture, etc.) | ❌ | Fall to `default: unhandled` |
+| All others (including PairSuccess/PairError, KeepAliveTimeout, StreamReplaced, TemporaryBan, ConnectFailure, ChatPresence, Picture, etc.) | ❌ | Fall to `default: unhandled` |
 
 **Phase 3 status notes**:
-- SQLite now has the additional chat avatar/pin/mute columns and one-to-one `group_metadata` table; population from WhatsApp events and API exposure remain separate work
+- SQLite group metadata is populated from joined/history sync and live group-info updates, with partial-update preservation and nested `groupMetadata` output in `GET /api/chats`
 - Pairing failures recover to `unauthenticated`; initial QR generation is bounded by a 30-second timeout so retry remains available
 - `GetChats()` now resolves stored direct contacts and initializes unknown participants as `[]`; group participants are included when persisted
 - `GetChats()` now loads the referenced message row for the full `lastMessage` contract; it omits `lastMessage` when that row is missing

@@ -287,20 +287,112 @@ func (s *UserDataStore) UpsertChat(chat Chat) error {
 			last_message_timestamp_epoch=COALESCE(EXCLUDED.last_message_timestamp_epoch, last_message_timestamp_epoch),
 			last_message_sender=COALESCE(NULLIF(EXCLUDED.last_message_sender, ''), last_message_sender),
 			unread_count=CASE WHEN ? THEN EXCLUDED.unread_count ELSE chats.unread_count END,
-			is_archived=EXCLUDED.is_archived,
-			is_starred=EXCLUDED.is_starred,
-			is_community=EXCLUDED.is_community,
+			is_group=CASE WHEN EXCLUDED.is_group = 1 THEN 1 ELSE chats.is_group END,
+			is_archived=CASE WHEN ? THEN EXCLUDED.is_archived ELSE chats.is_archived END,
+			is_starred=CASE WHEN ? THEN EXCLUDED.is_starred ELSE chats.is_starred END,
+			is_community=CASE WHEN ? THEN EXCLUDED.is_community ELSE chats.is_community END,
 			updated_at=EXCLUDED.updated_at`,
 		chat.ID, chat.Name, chat.Avatar,
 		chat.LastMessageID, chat.LastMessageText, chat.LastMessageTimestamp, lastMessageEpoch, chat.LastMessageSender,
 		chat.UnreadCount, boolToInt(chat.IsGroup),
 		boolToInt(chat.IsArchived), boolToInt(chat.IsStarred), boolToInt(chat.IsCommunity),
-		now, chat.UnreadCountSet,
+		now, chat.UnreadCountSet, chat.IsArchivedSet, chat.IsStarredSet, chat.IsCommunitySet,
 	)
 	if err != nil {
 		log.Printf("[store] UpsertChat(%s) error: %v (%v)", chat.ID, err, time.Since(start))
 	}
 	return err
+}
+
+func (s *UserDataStore) UpsertGroupMetadata(chatJID string, patch GroupMetadataPatch) error {
+	if !hasGroupMetadataPatch(patch) {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(
+		`INSERT INTO chats (jid, is_group, updated_at) VALUES (?, 1, ?) ON CONFLICT(jid) DO UPDATE SET is_group = 1`,
+		chatJID, time.Now().Format(time.RFC3339),
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO group_metadata (chat_jid) VALUES (?) ON CONFLICT(chat_jid) DO NOTHING`, chatJID); err != nil {
+		return err
+	}
+
+	var assignments []string
+	var args []any
+	set := func(column string, value any) {
+		assignments = append(assignments, column+" = ?")
+		args = append(args, value)
+	}
+	if patch.Description != nil {
+		set("description", *patch.Description)
+	}
+	if patch.OwnerJID != nil {
+		if patch.OwnerJIDFallback {
+			assignments = append(assignments, "owner_jid = COALESCE(NULLIF(owner_jid, ''), ?)")
+			args = append(args, *patch.OwnerJID)
+		} else {
+			set("owner_jid", *patch.OwnerJID)
+		}
+	}
+	if patch.CreatedAt != nil {
+		set("created_at", *patch.CreatedAt)
+	}
+	if patch.IsLocked != nil {
+		set("is_locked", boolToInt(*patch.IsLocked))
+	}
+	if patch.IsAnnouncement != nil {
+		set("is_announce", boolToInt(*patch.IsAnnouncement))
+	}
+	if patch.IsEphemeral != nil {
+		set("is_ephemeral", boolToInt(*patch.IsEphemeral))
+	}
+	if patch.DisappearingTimer != nil {
+		set("disappearing_timer", *patch.DisappearingTimer)
+	}
+	if patch.IsJoinApprovalRequired != nil {
+		set("is_join_approval_required", boolToInt(*patch.IsJoinApprovalRequired))
+	}
+	if patch.ParentGroupJID != nil {
+		set("parent_group_jid", *patch.ParentGroupJID)
+	}
+	if patch.LinkedParentJID != nil {
+		set("linked_parent_jid", *patch.LinkedParentJID)
+	}
+	if patch.IsDefaultSubgroup != nil {
+		set("is_default_subgroup", boolToInt(*patch.IsDefaultSubgroup))
+	}
+	if patch.IsSuspended != nil {
+		set("is_suspended", boolToInt(*patch.IsSuspended))
+	}
+	if patch.IsDeleted != nil {
+		set("is_deleted", boolToInt(*patch.IsDeleted))
+	}
+	if len(assignments) > 0 {
+		args = append(args, chatJID)
+		query := `UPDATE group_metadata SET ` + strings.Join(assignments, ", ") + ` WHERE chat_jid = ?`
+		if _, err := tx.Exec(query, args...); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func hasGroupMetadataPatch(patch GroupMetadataPatch) bool {
+	return patch.Description != nil || patch.OwnerJID != nil || patch.CreatedAt != nil ||
+		patch.IsLocked != nil || patch.IsAnnouncement != nil || patch.IsEphemeral != nil ||
+		patch.DisappearingTimer != nil || patch.IsJoinApprovalRequired != nil ||
+		patch.ParentGroupJID != nil || patch.LinkedParentJID != nil ||
+		patch.IsDefaultSubgroup != nil || patch.IsSuspended != nil || patch.IsDeleted != nil
 }
 
 func (s *UserDataStore) UpsertChatParticipant(chatJID, userJID string, rank int) error {
@@ -499,9 +591,14 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 	rows, err := s.db.Query(`SELECT
 		c.jid, c.name, c.avatar,
 		m.id, m.chat_jid, m.sender_jid, m.text, m.timestamp, m.status, m.media_type, m.is_from_me,
-		c.unread_count, c.is_group, c.is_archived, c.is_starred, c.is_community
+		c.unread_count, c.is_group, c.is_archived, c.is_starred, c.is_community,
+		gm.chat_jid, gm.description, gm.owner_jid, gm.created_at,
+		gm.is_locked, gm.is_announce, gm.is_ephemeral, gm.disappearing_timer,
+		gm.is_join_approval_required, gm.parent_group_jid, gm.linked_parent_jid,
+		gm.is_default_subgroup, gm.is_suspended, gm.is_deleted
 		FROM chats c
 		LEFT JOIN messages m ON m.id = c.last_message_id AND m.chat_jid = c.jid
+		LEFT JOIN group_metadata gm ON gm.chat_jid = c.jid
 		ORDER BY c.last_message_timestamp_epoch DESC`)
 	if err != nil {
 		log.Printf("[store] GetChats query error: %v (%v)", err, time.Since(start))
@@ -517,10 +614,19 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 		var lastMsgID, lastMsgChatJID, lastMsgSender, lastMsgText, lastMsgTS, lastMsgStatus, lastMsgMediaType sql.NullString
 		var lastMsgIsFromMe sql.NullInt64
 		var isGroup, isArchived, isStarred, isCommunity int
+		var metadataChatJID, metadataDescription, metadataOwnerJID, metadataCreatedAt sql.NullString
+		var metadataIsLocked, metadataIsAnnouncement, metadataIsEphemeral, metadataDisappearingTimer sql.NullInt64
+		var metadataNeedsJoinApproval sql.NullInt64
+		var metadataParentJID, metadataLinkedParentJID sql.NullString
+		var metadataIsDefaultSubgroup, metadataIsSuspended, metadataIsDeleted sql.NullInt64
 
 		if err := rows.Scan(&c.ID, &name, &avatar,
 			&lastMsgID, &lastMsgChatJID, &lastMsgSender, &lastMsgText, &lastMsgTS, &lastMsgStatus, &lastMsgMediaType, &lastMsgIsFromMe,
-			&c.UnreadCount, &isGroup, &isArchived, &isStarred, &isCommunity); err != nil {
+			&c.UnreadCount, &isGroup, &isArchived, &isStarred, &isCommunity,
+			&metadataChatJID, &metadataDescription, &metadataOwnerJID, &metadataCreatedAt,
+			&metadataIsLocked, &metadataIsAnnouncement, &metadataIsEphemeral, &metadataDisappearingTimer,
+			&metadataNeedsJoinApproval, &metadataParentJID, &metadataLinkedParentJID,
+			&metadataIsDefaultSubgroup, &metadataIsSuspended, &metadataIsDeleted); err != nil {
 			log.Printf("[store] GetChats row scan error: %v (%v)", err, time.Since(start))
 			return nil, err
 		}
@@ -562,8 +668,39 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 		c.IsPinned = false
 		c.IsMuted = false
 		c.IsFavorite = c.IsStarred
-		c.IsAnnouncement = false
-		c.IsSuspended = false
+		if metadataChatJID.Valid {
+			metadata := &GroupMetadata{
+				IsLocked:               metadataIsLocked.Valid && intToBool(int(metadataIsLocked.Int64)),
+				IsAnnouncement:         metadataIsAnnouncement.Valid && intToBool(int(metadataIsAnnouncement.Int64)),
+				IsEphemeral:            metadataIsEphemeral.Valid && intToBool(int(metadataIsEphemeral.Int64)),
+				IsJoinApprovalRequired: metadataNeedsJoinApproval.Valid && intToBool(int(metadataNeedsJoinApproval.Int64)),
+				IsDefaultSubgroup:      metadataIsDefaultSubgroup.Valid && intToBool(int(metadataIsDefaultSubgroup.Int64)),
+				IsSuspended:            metadataIsSuspended.Valid && intToBool(int(metadataIsSuspended.Int64)),
+				IsDeleted:              metadataIsDeleted.Valid && intToBool(int(metadataIsDeleted.Int64)),
+			}
+			if metadataDescription.Valid {
+				metadata.Description = &metadataDescription.String
+			}
+			if metadataOwnerJID.Valid {
+				metadata.OwnerJID = &metadataOwnerJID.String
+			}
+			if metadataCreatedAt.Valid {
+				metadata.CreatedAt = &metadataCreatedAt.String
+			}
+			if metadataDisappearingTimer.Valid {
+				timer := int(metadataDisappearingTimer.Int64)
+				metadata.DisappearingTimer = &timer
+			}
+			if metadataParentJID.Valid {
+				metadata.ParentGroupJID = &metadataParentJID.String
+			}
+			if metadataLinkedParentJID.Valid {
+				metadata.LinkedParentJID = &metadataLinkedParentJID.String
+			}
+			c.GroupMetadata = metadata
+			c.IsAnnouncement = metadata.IsAnnouncement
+			c.IsSuspended = metadata.IsSuspended
+		}
 		chats = append(chats, c)
 	}
 	if err := rows.Err(); err != nil {

@@ -325,13 +325,15 @@ Current status: SQLite FTS storage and search queries exist, but the HTTP endpoi
 
 ### Group Metadata
 
-The `group_metadata` schema exists. Persist the remaining group details from history sync and group events:
+Group metadata persistence and the nested chat API object are implemented. Populate available values through joined-group/history sync and live group-info events; partial updates preserve fields omitted by a payload.
 
 - ✅ Group names from history sync.
 - ✅ Group participants from joined-group sync.
+- ✅ Group description, owner/creation details, restrictions, disappearing-message settings, approval, relationships, suspension, and deletion metadata from available sync/event fields.
+- ✅ Live group-info changes update metadata and community links.
 - ⚠️ Group participants from history-sync conversation chunks.
 - ⚠️ Group avatar when available.
-- ⚠️ Group name/topic update events.
+- ✅ Group name/topic update events.
 
 ### Profile/Current User Endpoint - ✅ Done
 
@@ -352,6 +354,7 @@ Added `GET /api/profile`:
 - ✅ Tests prove metadata-only chat upserts preserve unread counts, authoritative zero can replace a prior count, and imported/outgoing/duplicate messages do not increment unread counts.
 - ✅ Tests prove duplicate message inserts do not duplicate rows.
 - ✅ Oldest-unread anchor tests cover status/count disagreement, outgoing messages interleaved with inbound messages, zero unread count, and counts larger than stored inbound history.
+- ✅ Group metadata tests cover nested API output, partial-update preservation, joined/history sync mapping, live group-info updates, and community link/unlink events.
 - ✅ `GetChats()` returns `participants: []`, not `null`.
 - ✅ `GetChats()` returns the full `lastMessage` contract for stored messages and omits it when the referenced message row is absent.
 - ❌ Add history-sync sample tests proving repeated chunks are idempotent.

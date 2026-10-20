@@ -309,3 +309,85 @@ func TestMigrateBackfillsExistingMessageMetadata(t *testing.T) {
 		t.Fatalf("epoch = %d, err = %v", epoch, err)
 	}
 }
+
+func TestGetChatsReturnsCompleteLastMessage(t *testing.T) {
+	newTestStore(t)
+	messages := []Message{
+		{
+			ID: "incoming", ChatJID: "incoming-chat", SenderID: "alice@s.whatsapp.net",
+			Text: "hello", Timestamp: "2026-07-21T10:00:00Z", Status: "received",
+		},
+		{
+			ID: "outgoing", ChatJID: "outgoing-chat", SenderID: "me@s.whatsapp.net",
+			Text: "voice note", Timestamp: "2026-07-21T10:01:00Z", Status: "sent",
+			MediaType: "audio", IsFromMe: true,
+		},
+	}
+	for _, message := range messages {
+		if err := store.InsertMessage(message); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := store.UpdateMessageStatus([]string{"outgoing"}, "delivered"); err != nil {
+		t.Fatal(err)
+	}
+
+	chats, err := store.GetChats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := make(map[string]Chat, len(chats))
+	for _, chat := range chats {
+		byID[chat.ID] = chat
+	}
+
+	incoming := byID["incoming-chat"].LastMessage
+	if incoming == nil {
+		t.Fatal("incoming chat has no last message")
+	}
+	if incoming.ID != "incoming" || incoming.ChatJID != "incoming-chat" || incoming.SenderID != "alice@s.whatsapp.net" || incoming.Text != "hello" || incoming.Status != "received" || incoming.IsFromMe {
+		t.Errorf("incoming last message = %#v", incoming)
+	}
+
+	outgoing := byID["outgoing-chat"].LastMessage
+	if outgoing == nil {
+		t.Fatal("outgoing chat has no last message")
+	}
+	if outgoing.ID != "outgoing" || outgoing.ChatJID != "outgoing-chat" || outgoing.SenderID != "me@s.whatsapp.net" || outgoing.Text != "voice note" || outgoing.Status != "delivered" || outgoing.MediaType != "audio" || !outgoing.IsFromMe {
+		t.Errorf("outgoing last message = %#v", outgoing)
+	}
+}
+
+func TestGetChatsOmitsLastMessageWithoutStoredMessage(t *testing.T) {
+	newTestStore(t)
+	name := "Orphaned chat"
+	if err := store.UpsertChat(Chat{
+		ID:                   "orphan-chat",
+		Name:                 &name,
+		LastMessageID:        "missing-message",
+		LastMessageText:      "stale text",
+		LastMessageTimestamp: "2026-07-21T10:00:00Z",
+		LastMessageSender:    "someone@s.whatsapp.net",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	chats, err := store.GetChats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chats) != 1 {
+		t.Fatalf("got %d chats, want 1", len(chats))
+	}
+	if chats[0].LastMessage != nil {
+		t.Fatalf("lastMessage = %#v, want nil", chats[0].LastMessage)
+	}
+	payload, err := json.Marshal(chats[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), `"lastMessage"`) {
+		t.Errorf("serialized chat contains lastMessage: %s", payload)
+	}
+}

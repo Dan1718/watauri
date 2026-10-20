@@ -35,7 +35,7 @@ Each chat should return this shape:
 Required details:
 
 - Return `participants: []` instead of `null` when participants are unknown. ✅ Done
-- Include the full last-message fields (`chatJid`, `status`, `mediaType`, and `isFromMe`) so the frontend can render sent/received bubbles correctly. **Not implemented:** `GetChats()` currently returns only ID, text, timestamp, and sender ID.
+- Include the full last-message fields (`chatJid`, `status`, `mediaType`, and `isFromMe`) so the frontend can render sent/received bubbles correctly. ✅ Done by loading the referenced stored message; omit `lastMessage` if that row is absent.
 - Use RFC3339 timestamps consistently.
 - Keep `lastMessage.status` as one of `received`, `sent`, `delivered`, or `read`.
 - Fill `name` for groups and known direct contacts when possible. ✅ Done for stored contacts/groups
@@ -198,7 +198,7 @@ Current issue:
 
 Required implementation:
 
-- ❌ Ensure `GetChats()` includes the full last-message contract, including `is_from_me`, status, media type, and chat JID.
+- ✅ Ensure `GetChats()` includes the full last-message contract, including `is_from_me`, status, media type, and chat JID when the referenced message exists.
 - ✅ Ensure all message responses include `isFromMe`.
 - ✅ Keep `senderId` as the real WhatsApp sender JID.
 
@@ -326,5 +326,5 @@ Added `GET /api/profile`:
 - ❌ Add tests proving `InsertMessage` updates chat metadata transactionally.
 - ❌ Add tests proving duplicate message insertion does not duplicate rows or incorrectly increment unread counts.
 - ✅ `GetChats()` returns `participants: []`, not `null`.
-- ❌ `GetChats()` includes the full `lastMessage` contract, including `isFromMe`.
+- ✅ `GetChats()` returns the full `lastMessage` contract for stored messages and omits it when the referenced message row is absent.
 - ❌ Add history-sync sample tests proving repeated chunks are idempotent.

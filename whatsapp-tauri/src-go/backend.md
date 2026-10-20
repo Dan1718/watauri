@@ -124,7 +124,15 @@ Returns all chats for the authenticated user from local SQLite storage.
     "participants": [
       { "id": "user-1", "name": "Alice", "avatar": "https://...", "status": "online" }
     ],
-    "lastMessage": { "id": "msg-123", "senderId": "user-1", "text": "Hey!", "timestamp": "2026-07-19T12:00:00Z" },
+    "lastMessage": {
+      "id": "msg-123",
+      "chatJid": "chat-1",
+      "senderId": "user-1",
+      "text": "Hey!",
+      "timestamp": "2026-07-19T12:00:00Z",
+      "status": "delivered",
+      "isFromMe": false
+    },
     "unreadCount": 2,
     "isGroup": false,
     "name": null,
@@ -141,10 +149,10 @@ Returns all chats for the authenticated user from local SQLite storage.
 - Includes archived chats; the frontend filters them.
 - Direct-chat names are resolved from stored contacts when available.
 - Group participants are returned when stored; otherwise `participants` is `[]`.
-- A `lastMessage`, when present, currently contains only `id`, `text`, `timestamp`, and `senderId`; `chatJid`, `status`, `mediaType`, and `isFromMe` are omitted.
+- A `lastMessage`, when present, is loaded from its stored message row and includes its chat JID, sender, text, timestamp, status, media type when non-empty, and `isFromMe` value. If the chat references a missing message row, `lastMessage` is omitted.
 - Real-time updates are not yet available; the frontend currently polls.
 
-**Status**: Implemented (`GET`, SQLite-backed; last-message shape is incomplete)
+**Status**: Implemented (`GET`, SQLite-backed)
 
 ---
 

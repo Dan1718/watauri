@@ -88,9 +88,9 @@
 | `*events.Disconnected` | ✅ | Status reset |
 | All others (including GroupInfo, PairSuccess/PairError, KeepAliveTimeout, StreamReplaced, TemporaryBan, ConnectFailure, ChatPresence, Picture, etc.) | ❌ | Fall to `default: unhandled` |
 
-**Known issues in Phase 3**:
+**Phase 3 status notes**:
 - `GetChats()` now resolves stored direct contacts and initializes unknown participants as `[]`; group participants are included when persisted
-- `GetChats()` lastMessage currently exposes only ID, text, timestamp, and sender ID; it omits `chatJid`, `status`, `mediaType`, and `isFromMe`
+- `GetChats()` now loads the referenced message row for the full `lastMessage` contract; it omits `lastMessage` when that row is missing
 - History sync persists conversations/messages and core contact identity data; joined-group sync persists participants, while history-chunk participant extraction, contact/group avatars, and group update events remain incomplete
 - History sync currently performs many per-row SQLite writes; batch inserts/transactions are needed for large initial syncs
 - Contact/group avatars: fetch profile picture URLs with whatsmeow, persist them in existing `contacts.avatar` and `chats.avatar`, and handle `*events.Picture` updates

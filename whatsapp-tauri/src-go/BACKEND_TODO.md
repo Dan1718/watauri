@@ -125,6 +125,12 @@ Required implementation:
 - Do this transactionally so chats and messages cannot diverge.
 - Consider whether a duplicate newer message should repair stale chat metadata; current duplicate handling skips that metadata update.
 
+### 1a. Keep Unread Counts Consistent - ✅ Done
+
+- Chat metadata upserts preserve `unread_count` unless the caller explicitly supplies an authoritative count.
+- History-sync conversation counts are marked authoritative; imported history messages do not increment them again.
+- Only newly inserted live inbound messages increment the count. Outgoing messages and duplicate message events do not.
+
 Files:
 
 - `userdata.go`
@@ -324,7 +330,8 @@ Added `GET /api/profile`:
 - ✅ `POST /api/chats/:id/send` returns structured JSON errors for unavailable WhatsApp and invalid chat IDs.
 - ✅ Migration backfills existing message timestamp metadata and revisions.
 - ❌ Add tests proving `InsertMessage` updates chat metadata transactionally.
-- ❌ Add tests proving duplicate message insertion does not duplicate rows or incorrectly increment unread counts.
+- ✅ Tests prove metadata-only chat upserts preserve unread counts, authoritative zero can replace a prior count, and imported/outgoing/duplicate messages do not increment unread counts.
+- ✅ Tests prove duplicate message inserts do not duplicate rows.
 - ✅ `GetChats()` returns `participants: []`, not `null`.
 - ✅ `GetChats()` returns the full `lastMessage` contract for stored messages and omits it when the referenced message row is absent.
 - ❌ Add history-sync sample tests proving repeated chunks are idempotent.

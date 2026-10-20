@@ -32,7 +32,7 @@ func insertTestMessages(t *testing.T, messages ...Message) {
 	for _, message := range messages {
 		message.ChatJID = "c1"
 		message.SenderID = "sender"
-		if err := store.InsertMessage(message); err != nil {
+		if err := store.InsertMessage(message, true); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -324,7 +324,7 @@ func TestGetChatsReturnsCompleteLastMessage(t *testing.T) {
 		},
 	}
 	for _, message := range messages {
-		if err := store.InsertMessage(message); err != nil {
+		if err := store.InsertMessage(message, true); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -390,4 +390,76 @@ func TestGetChatsOmitsLastMessageWithoutStoredMessage(t *testing.T) {
 	if strings.Contains(string(payload), `"lastMessage"`) {
 		t.Errorf("serialized chat contains lastMessage: %s", payload)
 	}
+}
+
+func TestUpsertChatPreservesUnreadCountUnlessAuthoritative(t *testing.T) {
+	newTestStore(t)
+	if err := store.UpsertChat(Chat{ID: "c1", UnreadCount: 5, UnreadCountSet: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertChat(Chat{ID: "c1"}); err != nil {
+		t.Fatal(err)
+	}
+	assertUnreadCount(t, "c1", 5)
+
+	// An authoritative sync value of zero is meaningful and must overwrite the
+	// existing count, unlike a metadata-only upsert with the default zero value.
+	if err := store.UpsertChat(Chat{ID: "c1", UnreadCountSet: true}); err != nil {
+		t.Fatal(err)
+	}
+	assertUnreadCount(t, "c1", 0)
+}
+
+func TestInsertMessageUnreadCountPolicy(t *testing.T) {
+	newTestStore(t)
+	if err := store.UpsertChat(Chat{ID: "c1", UnreadCount: 3, UnreadCountSet: true}); err != nil {
+		t.Fatal(err)
+	}
+	message := Message{ID: "history-inbound", ChatJID: "c1", SenderID: "sender", Timestamp: "2026-07-21T10:00:00Z"}
+	if err := store.InsertMessage(message, false); err != nil {
+		t.Fatal(err)
+	}
+	assertUnreadCount(t, "c1", 3)
+
+	outgoing := Message{ID: "outgoing", ChatJID: "c1", SenderID: "me", Timestamp: "2026-07-21T10:01:00Z", IsFromMe: true}
+	if err := store.InsertMessage(outgoing, true); err != nil {
+		t.Fatal(err)
+	}
+	assertUnreadCount(t, "c1", 3)
+
+	liveInbound := Message{ID: "live-inbound", ChatJID: "c1", SenderID: "sender", Timestamp: "2026-07-21T10:02:00Z"}
+	if err := store.InsertMessage(liveInbound, true); err != nil {
+		t.Fatal(err)
+	}
+	assertUnreadCount(t, "c1", 4)
+
+	// Replayed events are ignored by INSERT OR IGNORE and cannot increment twice.
+	if err := store.InsertMessage(liveInbound, true); err != nil {
+		t.Fatal(err)
+	}
+	assertUnreadCount(t, "c1", 4)
+	var storedRows int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE id = ?`, liveInbound.ID).Scan(&storedRows); err != nil {
+		t.Fatal(err)
+	}
+	if storedRows != 1 {
+		t.Fatalf("stored duplicate message rows = %d, want 1", storedRows)
+	}
+}
+
+func assertUnreadCount(t *testing.T, chatID string, want int) {
+	t.Helper()
+	chats, err := store.GetChats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, chat := range chats {
+		if chat.ID == chatID {
+			if chat.UnreadCount != want {
+				t.Fatalf("chat %s unread count = %d, want %d", chatID, chat.UnreadCount, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("chat %s not found", chatID)
 }

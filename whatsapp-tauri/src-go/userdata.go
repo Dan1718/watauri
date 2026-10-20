@@ -247,7 +247,7 @@ func (s *UserDataStore) UpsertChat(chat Chat) error {
 			last_message_timestamp=COALESCE(NULLIF(EXCLUDED.last_message_timestamp, ''), last_message_timestamp),
 			last_message_timestamp_epoch=COALESCE(EXCLUDED.last_message_timestamp_epoch, last_message_timestamp_epoch),
 			last_message_sender=COALESCE(NULLIF(EXCLUDED.last_message_sender, ''), last_message_sender),
-			unread_count=EXCLUDED.unread_count,
+			unread_count=CASE WHEN ? THEN EXCLUDED.unread_count ELSE chats.unread_count END,
 			is_archived=EXCLUDED.is_archived,
 			is_starred=EXCLUDED.is_starred,
 			is_community=EXCLUDED.is_community,
@@ -256,7 +256,7 @@ func (s *UserDataStore) UpsertChat(chat Chat) error {
 		chat.LastMessageID, chat.LastMessageText, chat.LastMessageTimestamp, lastMessageEpoch, chat.LastMessageSender,
 		chat.UnreadCount, boolToInt(chat.IsGroup),
 		boolToInt(chat.IsArchived), boolToInt(chat.IsStarred), boolToInt(chat.IsCommunity),
-		now,
+		now, chat.UnreadCountSet,
 	)
 	if err != nil {
 		log.Printf("[store] UpsertChat(%s) error: %v (%v)", chat.ID, err, time.Since(start))
@@ -669,7 +669,7 @@ func phoneNumberFromJID(jid string) string {
 	return ""
 }
 
-func (s *UserDataStore) InsertMessage(msg Message) error {
+func (s *UserDataStore) InsertMessage(msg Message, incrementUnread bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -709,7 +709,7 @@ func (s *UserDataStore) InsertMessage(msg Message) error {
 			return err
 		}
 		unreadIncrement := 0
-		if !msg.IsFromMe {
+		if incrementUnread && !msg.IsFromMe {
 			unreadIncrement = 1
 		}
 		_, err = tx.Exec(`

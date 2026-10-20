@@ -47,6 +47,7 @@ type Chat struct {
 	Participants         []User   `json:"participants"`
 	LastMessage          *Message `json:"lastMessage,omitempty"`
 	UnreadCount          int      `json:"unreadCount"`
+	UnreadCountSet       bool     `json:"-"` // Set when UnreadCount is an authoritative sync value.
 	IsGroup              bool     `json:"isGroup"`
 	Name                 *string  `json:"name,omitempty"`
 	Avatar               *string  `json:"avatar,omitempty"`

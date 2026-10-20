@@ -612,6 +612,12 @@ These are common statuses, not an exhaustive mapping. For example, invalid curso
 
 ### Historical phase notes (current status)
 
+#### Local SQLite metadata schema
+
+- `chats` includes avatar identifiers/status/update time and pin/mute fields in addition to existing archive/star/activity state.
+- `group_metadata` stores group description, owner/creation details, group settings, and parent/subgroup relationships in a one-to-one row linked to `chats.jid`; deleting a chat cascades to this row.
+- This schema migration does not yet populate the new metadata from WhatsApp events/history sync or expose it through API responses.
+
 1. **Phase 3** — SQLite schema, event persistence, and real chat/message queries are implemented in part. History sync is partial; SSE is not implemented.
 
 2. **Phase 4** — Text sending and read receipts are implemented. Typing, archive/star, and media upload/download are not implemented.

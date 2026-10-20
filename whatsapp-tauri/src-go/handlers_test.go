@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -17,6 +18,10 @@ func newTestStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		t.Fatal(err)
+	}
 
 	oldStore := store
 	store = &UserDataStore{db: db}
@@ -24,7 +29,6 @@ func newTestStore(t *testing.T) {
 	if err := store.migrate(); err != nil {
 		t.Fatal(err)
 	}
-	db.SetMaxOpenConns(1)
 }
 
 func insertTestMessages(t *testing.T, messages ...Message) {
@@ -391,6 +395,109 @@ func TestMigrateBackfillsExistingMessageMetadata(t *testing.T) {
 	var epoch int64
 	if err := db.QueryRow(`SELECT timestamp_epoch FROM messages WHERE id = 'm1'`).Scan(&epoch); err != nil || epoch == 0 {
 		t.Fatalf("epoch = %d, err = %v", epoch, err)
+	}
+}
+
+func TestMigrateAddsChatAndGroupMetadataWithoutLosingExistingData(t *testing.T) {
+	dbPath := filepath.ToSlash(filepath.Join(t.TempDir(), "userdata.db"))
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?_journal_mode=WAL&_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	for _, query := range []string{
+		`CREATE TABLE chats (
+			jid TEXT PRIMARY KEY,
+			name TEXT,
+			avatar TEXT,
+			last_message_timestamp TEXT,
+			unread_count INTEGER DEFAULT 0,
+			is_group INTEGER DEFAULT 0,
+			is_archived INTEGER DEFAULT 0,
+			is_starred INTEGER DEFAULT 0,
+			is_community INTEGER DEFAULT 0,
+			updated_at TEXT
+		)`,
+		`INSERT INTO chats (jid, name, unread_count, is_archived, is_starred) VALUES ('group@g.us', 'Existing group', 4, 1, 1)`,
+	} {
+		if _, err := db.Exec(query); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s := &UserDataStore{db: db}
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	assertTableHasColumns(t, db, "chats",
+		"avatar_id", "avatar_picture_id", "avatar_status", "avatar_updated_at",
+		"is_pinned", "is_muted", "mute_until",
+	)
+	assertTableHasColumns(t, db, "group_metadata",
+		"chat_jid", "description", "owner_jid", "created_at", "is_locked", "is_announce",
+		"is_ephemeral", "disappearing_timer", "is_join_approval_required", "parent_group_jid",
+		"linked_parent_jid", "is_default_subgroup", "is_suspended", "is_deleted",
+	)
+	// Re-running the transactional migration must be safe and preserve data.
+	if err := s.migrate(); err != nil {
+		t.Fatalf("second migration run: %v", err)
+	}
+
+	var name string
+	var unreadCount, archived, starred, pinned, muted int
+	var avatarID, muteUntil sql.NullString
+	if err := db.QueryRow(`SELECT name, unread_count, is_archived, is_starred, avatar_id, is_pinned, is_muted, mute_until FROM chats WHERE jid = 'group@g.us'`).Scan(
+		&name, &unreadCount, &archived, &starred, &avatarID, &pinned, &muted, &muteUntil,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Existing group" || unreadCount != 4 || archived != 1 || starred != 1 {
+		t.Fatalf("existing chat data changed: name=%q unread=%d archived=%d starred=%d", name, unreadCount, archived, starred)
+	}
+	if avatarID.Valid || muteUntil.Valid || pinned != 0 || muted != 0 {
+		t.Fatalf("new chat metadata defaults unexpected: avatarID=%v pinned=%d muted=%d muteUntil=%v", avatarID, pinned, muted, muteUntil)
+	}
+
+	if _, err := db.Exec(`INSERT INTO group_metadata (chat_jid, description, owner_jid, disappearing_timer) VALUES (?, ?, ?, ?)`, "group@g.us", "Group description", "owner@s.whatsapp.net", 86400); err != nil {
+		t.Fatal(err)
+	}
+	var metadataRows int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM group_metadata WHERE chat_jid = 'group@g.us'`).Scan(&metadataRows); err != nil || metadataRows != 1 {
+		t.Fatalf("group metadata rows = %d, err = %v", metadataRows, err)
+	}
+	if _, err := db.Exec(`DELETE FROM chats WHERE jid = 'group@g.us'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM group_metadata WHERE chat_jid = 'group@g.us'`).Scan(&metadataRows); err != nil || metadataRows != 0 {
+		t.Fatalf("group metadata rows after deleting chat = %d, err = %v; want 0", metadataRows, err)
+	}
+}
+
+func assertTableHasColumns(t *testing.T, db *sql.DB, table string, expected ...string) {
+	t.Helper()
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	columns := make(map[string]bool)
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, dataType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
+			t.Fatal(err)
+		}
+		columns[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range expected {
+		if !columns[name] {
+			t.Errorf("table %s is missing column %s", table, name)
+		}
 	}
 }
 

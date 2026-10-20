@@ -274,6 +274,12 @@ Acceptance criteria:
 - Guard attempt completion so a stale failure cannot overwrite a newer pairing attempt.
 - Regression tests cover connection/setup errors, terminal events, channel closure, timeout, successful completion, and retry.
 
+### Chat and Group Metadata Schema - ✅ Done (#58)
+
+- Add missing avatar, pin, and mute columns to `chats` without changing existing chat state/activity fields.
+- Create one-to-one `group_metadata` rows linked to `chats.jid` with `ON DELETE CASCADE`.
+- This is schema support only; populating these fields from WhatsApp sync/events and exposing them through APIs remains separate work.
+
 ## Important Follow-Up Work
 
 ### Message Pagination - ✅ Done
@@ -319,7 +325,7 @@ Current status: SQLite FTS storage and search queries exist, but the HTTP endpoi
 
 ### Group Metadata
 
-Persist the remaining group details from history sync and group events:
+The `group_metadata` schema exists. Persist the remaining group details from history sync and group events:
 
 - ✅ Group names from history sync.
 - ✅ Group participants from joined-group sync.

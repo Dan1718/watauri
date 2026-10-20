@@ -14,6 +14,8 @@ import { Contact } from "./contacts-provider";
 import { getDisplayNameFromJid, isPhonePlaceholder, normalizeJid } from "../utils";
 import { BackendMessage, listBackendMessages, markBackendChatRead, sendBackendMessage } from "../backend";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
+import { ReadBatches } from "../read-marking/read-batches";
+import { canReadConversation } from "../read-marking/viewport";
 import { useProfile } from "../hooks/use-profile";
 
 export type CurrentChatContacts = {
@@ -42,6 +44,7 @@ export type CurrentChat = CurrentChatData & {
   loadCurrentChat: (chat: Partial<CurrentChatData>) => void;
   sendMessage: (text: string) => boolean;
   loadOlderMessages: () => Promise<void>;
+  markVisibleMessagesRead: (chatId: string, ids: string[]) => void;
 };
 
 export const CurrentChatContext = createContext<undefined | CurrentChat>(
@@ -134,10 +137,21 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   });
   const {
     chats: { complete },
+    setChatUnreadCount,
   } = useChats();
   const { contacts, getContact } = useContacts();
   const { profile: { readReceiptsEnabled } } = useProfile();
   const pollingActive = useChatPollingActive();
+  const [readBatches] = useState(() => new ReadBatches());
+  const activeChatIdRef = useRef<string | null>(null);
+  const selectionVersionRef = useRef(0);
+  const readSettingsRef = useRef({ pollingActive, readReceiptsEnabled });
+  readSettingsRef.current = { pollingActive, readReceiptsEnabled };
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const cacheRef = useRef(new Map<string, CachedMessages>());
   const requestRef = useRef<ActiveRequest | null>(null);
   const olderRequestRef = useRef<{ chatId: string; promise: Promise<void> } | null>(null);
@@ -173,7 +187,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
 
       const chat = chatsRef.current.find((item: Chat) => item.id === chatId);
       const fallbackContactId = typeof chat?.contactId === "string" ? chat.contactId : chatId;
-      const incoming = page.messages.map((message) => toMessage(message, fallbackContactId));
+      const incoming = readBatches.reconcile(chatId, page.messages.map((message) => toMessage(message, fallbackContactId)));
       const current = cacheRef.current.get(chatId);
       const candidate: CachedMessages = direction === "initial" || !current
         ? {
@@ -228,7 +242,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
       if (requestRef.current?.controller === controller) requestRef.current = null;
       finishRequest();
     }
-  }, []);
+  }, [readBatches]);
 
   useEffect(() => {
     const chatId = currentChat.chatId;
@@ -247,6 +261,9 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     const chat = complete.find((chat: Chat) => chat.id === currentChat.chatId);
     if (chat) {
+      setCurrentChat((prev) => prev.chatId === chat.id && prev.unreadCount !== chat.unreadCount
+        ? { ...prev, unreadCount: chat.unreadCount }
+        : prev);
       if (typeof chat.contactId == "string") {
         const contactId = chat.contactId;
         const contact = contacts.find(
@@ -300,6 +317,10 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   }, [complete, contacts, currentChat.chatId, getContact]);
 
   const loadCurrentChat = useCallback((chat: Partial<CurrentChatData>) => {
+    if (chat.chatId !== undefined && chat.chatId !== activeChatIdRef.current) {
+      activeChatIdRef.current = chat.chatId;
+      selectionVersionRef.current += 1;
+    }
     setCurrentChat((prev) => {
       const isNewChat = chat.chatId !== undefined && chat.chatId !== prev.chatId;
       const cached = isNewChat && chat.chatId ? cacheRef.current.get(chat.chatId) : undefined;
@@ -316,14 +337,32 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
         ...chat,
       };
     });
-    if (chat.chatId && chat.unreadCount) {
-      void markBackendChatRead(chat.chatId, readReceiptsEnabled).catch((error) => {
-        setCurrentChat((current) => current.chatId === chat.chatId
-          ? { ...current, error: error instanceof Error ? error.message : "Failed to mark chat read" }
-          : current);
-      });
-    }
-  }, [readReceiptsEnabled]);
+  }, []);
+
+  const markVisibleMessagesRead = useCallback((chatId: string, ids: string[]) => {
+    const version = selectionVersionRef.current;
+    const isActive = () => mountedRef.current && activeChatIdRef.current === chatId && currentChatRef.current.chatId === chatId &&
+      canReadConversation(readSettingsRef.current.pollingActive, document.visibilityState, document.hasFocus());
+    void readBatches.mark(chatId, currentChatRef.current.messages, ids, isActive,
+      (messageIds) => markBackendChatRead(chatId, readSettingsRef.current.readReceiptsEnabled, messageIds),
+      (_ids, unreadCount) => {
+        if (!mountedRef.current) return;
+        const cached = cacheRef.current.get(chatId);
+        if (cached) cacheRef.current.set(chatId, {
+          ...cached, messages: readBatches.reconcile(chatId, cached.messages),
+        });
+        setChatUnreadCount(chatId, unreadCount);
+        setCurrentChat((prev) => prev.chatId === chatId
+          ? { ...prev, unreadCount, messages: readBatches.reconcile(chatId, prev.messages) }
+          : prev);
+      },
+    ).catch((error) => {
+      if (!mountedRef.current || selectionVersionRef.current !== version) return;
+      setCurrentChat((prev) => prev.chatId === chatId
+        ? { ...prev, error: error instanceof Error ? error.message : "Failed to mark messages read" }
+        : prev);
+    });
+  }, [readBatches, setChatUnreadCount]);
 
   const loadOlderMessages = useCallback(async () => {
     const chatId = currentChatRef.current.chatId;
@@ -405,8 +444,8 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   }, []);
 
   const value = useMemo(
-    () => ({ ...currentChat, loadCurrentChat, sendMessage, loadOlderMessages }),
-    [currentChat, loadCurrentChat, sendMessage, loadOlderMessages]
+    () => ({ ...currentChat, loadCurrentChat, sendMessage, loadOlderMessages, markVisibleMessagesRead }),
+    [currentChat, loadCurrentChat, sendMessage, loadOlderMessages, markVisibleMessagesRead]
   );
 
   return (

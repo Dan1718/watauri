@@ -4,6 +4,7 @@ import dayjs from "dayjs";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Message } from "@/app/context/chats-provider";
 import { CurrentChatContacts } from "@/app/context/current-chat-provider";
+import { useViewportReadMarking } from "@/app/hooks/use-viewport-read-marking";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
 import { useChats } from "@/app/hooks/use-chats";
 import { useProfile } from "@/app/hooks/use-profile";
@@ -132,6 +133,7 @@ const MessageList = memo(function MessageList({
   loadOlderMessages,
   unreadCount,
   scrollToBottomRequest,
+  markVisibleMessagesRead,
 }: {
   chatId: string;
   messages: Message[];
@@ -144,7 +146,9 @@ const MessageList = memo(function MessageList({
   loadOlderMessages: () => Promise<void>;
   unreadCount: number;
   scrollToBottomRequest: number;
+  markVisibleMessagesRead: (chatId: string, ids: string[]) => void;
 }) {
+  const setScroller = useViewportReadMarking(chatId, markVisibleMessagesRead);
   const [activeReactionId, setActiveReactionId] = useState<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isScrolling, setIsScrolling] = useState(false);
@@ -158,8 +162,10 @@ const MessageList = memo(function MessageList({
   const positionedAtUnread = useRef(false);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   let firstItemIndex = committedFirstItemIndex.current;
-  const oldestUnreadIndex = unreadCount <= messages.length || !hasMoreMessages
-    ? Math.max(0, messages.length - unreadCount)
+  // Keep the opening scroll target stable as viewport reads reduce the count.
+  const openingUnreadCount = useRef(unreadCount).current;
+  const oldestUnreadIndex = openingUnreadCount <= messages.length || !hasMoreMessages
+    ? Math.max(0, messages.length - openingUnreadCount)
     : -1;
 
   if (previousMessages.current !== messages && previousMessages.current[0]) {
@@ -181,18 +187,18 @@ const MessageList = memo(function MessageList({
   }, [scrollToBottomRequest]);
 
   useLayoutEffect(() => {
-    if (positionedAtUnread.current || unreadCount === 0 || messages.length === 0 || isLoading) return;
-    if (unreadCount > messages.length && hasMoreMessages) {
+    if (positionedAtUnread.current || openingUnreadCount === 0 || messages.length === 0 || isLoading) return;
+    if (openingUnreadCount > messages.length && hasMoreMessages) {
       void loadOlderMessages();
       return;
     }
 
     positionedAtUnread.current = true;
     virtuosoRef.current?.scrollToIndex({
-      index: firstItemIndex + Math.max(0, messages.length - unreadCount),
+      index: firstItemIndex + Math.max(0, messages.length - openingUnreadCount),
       align: "center",
     });
-  }, [firstItemIndex, hasMoreMessages, isLoading, loadOlderMessages, messages.length, unreadCount]);
+  }, [firstItemIndex, hasMoreMessages, isLoading, loadOlderMessages, messages.length, openingUnreadCount]);
 
   const toggleReactionMenu = useCallback((messageId: string) => {
     setActiveReactionId((current) => current === messageId ? null : messageId);
@@ -219,6 +225,7 @@ const MessageList = memo(function MessageList({
         {visibleTimestamp !== null ? <DatePill timestamp={visibleTimestamp} floating /> : null}
       </div>
       <Virtuoso
+        scrollerRef={setScroller}
         ref={virtuosoRef}
         key={chatId}
         className="h-full w-full"
@@ -249,7 +256,7 @@ const MessageList = memo(function MessageList({
           const compact = next?.isSentFromUser === message.isSentFromUser &&
             next?.contactId === message.contactId && !endsDay;
           const contact = contacts?.[message.contactId];
-          const isOldestUnread = unreadCount > 0 && index === oldestUnreadIndex;
+          const isOldestUnread = openingUnreadCount > 0 && index === oldestUnreadIndex;
 
           return (
             <>
@@ -604,6 +611,7 @@ export default function CurrentChat() {
     unreadCount,
     sendMessage,
     loadOlderMessages,
+    markVisibleMessagesRead,
   } = useCurrentChat();
   const { chats: { complete } } = useChats();
   const { profile: { blueTickEnabled, id: userId } } = useProfile();
@@ -635,6 +643,7 @@ export default function CurrentChat() {
             error={error}
             hasMoreMessages={hasMoreMessages}
             loadOlderMessages={loadOlderMessages}
+            markVisibleMessagesRead={markVisibleMessagesRead}
             unreadCount={unreadCount}
             scrollToBottomRequest={scrollToBottomRequest}
           />

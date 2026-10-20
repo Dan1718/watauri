@@ -67,7 +67,7 @@
 | 3.1  | Add SQLite to the Go sidecar (modernc.org/sqlite for user data; mattn/go-sqlite3 for whatsmeow session storage) | ✅ Done   |
 | 3.2  | Wire whatsmeow event handlers → SQLite writes (messages, chats, contacts; presence is logged only) | ⚠️ Partial |
 | 3.3  | Replace Go mock handlers with real DB queries for `/api/chats` and `/api/chats/{id}` | ✅ Done   |
-| 3.4  | Add real-time push from Go to frontend using Server-Sent Events                      | Planned |
+| 3.4  | Add real-time push from Go to frontend using Server-Sent Events                      | ✅ Done |
 | 3.5  | Support offline startup — load from SQLite first, sync when connected                | ✅ Done   |
 | 3.6  | Batch HistorySync SQLite writes to reduce initial sync time                          | Planned |
 
@@ -95,7 +95,7 @@
 - `GetChats()` now loads the referenced message row for the full `lastMessage` contract; it omits `lastMessage` when that row is missing
 - Unread counts are preserved by metadata-only chat upserts, history-sync counts remain authoritative, and only new live inbound messages increment the count
 - `anchor=oldestUnread` uses the chat unread count to select the Nth newest inbound message, rather than relying on per-message read status
-- History sync persists conversations/messages and core contact identity data; joined-group sync persists participants, while history-chunk participant extraction, contact/group avatars, and group update events remain incomplete
+- History sync persists conversations/messages and core contact identity data; joined-group sync persists participants, while history-chunk participant extraction and contact/group avatars remain incomplete
 - History sync currently performs many per-row SQLite writes; batch inserts/transactions are needed for large initial syncs
 - Contact/group avatars: fetch profile picture URLs with whatsmeow, persist them in existing `contacts.avatar` and `chats.avatar`, and handle `*events.Picture` updates
 - Later safety net: merge existing duplicate direct chats/messages when `jid_mappings` shows an `@lid` chat and an `@s.whatsapp.net` chat belong to the same person. Full resets plus canonicalized writes should avoid most duplicates, so this is lower priority.
@@ -104,15 +104,15 @@
 
 | Task | Detail | Status |
 | ---- | ------ | ------ |
-| SSE endpoint | Add `GET /api/events` with proper event-stream headers | Planned |
-| Event broadcaster | Add backend pub/sub for connected frontend clients | Planned |
-| Message events | Emit events when live or history messages are stored | Planned |
-| Receipt events | Emit events when message statuses change | Planned |
-| Chat events | Emit events when chat metadata changes | Planned |
-| Sync events | Emit history sync progress and completion events | Planned |
-| Frontend reconnect | Add EventSource reconnect and polling fallback behavior | Planned |
+| SSE endpoint | Add `GET /api/events` with proper event-stream headers | ✅ Done |
+| Event broadcaster | Add backend pub/sub for connected frontend clients | ✅ Done |
+| Message events | Emit live-message invalidations and history-chunk resync notifications | ✅ Done |
+| Receipt events | Emit invalidations when message statuses change | ✅ Done |
+| Chat events | Emit invalidations when chat metadata changes | ✅ Done |
+| Sync events | Emit history sync progress and resync invalidations | ✅ Done |
+| Frontend reconnect | Add EventSource reconnect and polling fallback behavior | ✅ Done |
 
-**Deliverable**: Real chats and messages appear in the UI (with fallback JID names). New messages arrive through polling until SSE is implemented.
+**Deliverable**: Real chats and messages appear in the UI (with fallback JID names). SSE invalidations trigger focused message refreshes and chat-list refreshes; polling remains the fallback.
 
 ---
 

@@ -4,6 +4,7 @@ import { act, useContext } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import ChatsProvider, { ChatsContext, type Chats } from "../context/chats-provider";
 import CurrentChatProvider, { type CurrentChat } from "../context/current-chat-provider";
+import RealtimeProvider from "../context/realtime-provider";
 import { ContactsContext } from "../context/contacts-provider";
 import { ProfileContext } from "../context/profile-provider";
 import { TabContext } from "../context/tab-provider";
@@ -43,7 +44,7 @@ function Harness() {
     <TabContext.Provider value={{ selectedTab, selectTab: () => {}, topTabs: ["chats", "status"] }}>
       <ProfileContext.Provider value={{ profile: { id: "me", name: "Me", blueTickEnabled: true, readReceiptsEnabled: receipts, avatarUrl: "" }, isLoading: false, setReadReceiptsEnabled: () => {} }}>
         <ContactsContext.Provider value={{ contacts: [], dictionary: [], filteredContacts: [], search: "", error: null, isLoading: false, getContact: () => undefined, filterContacts: () => {}, setIsContactTyping: () => {} }}>
-          <ChatsProvider><CurrentChatProvider><Probe /></CurrentChatProvider></ChatsProvider>
+          <RealtimeProvider><ChatsProvider><CurrentChatProvider><Probe /></CurrentChatProvider></ChatsProvider></RealtimeProvider>
         </ContactsContext.Provider>
       </ProfileContext.Provider>
     </TabContext.Provider>

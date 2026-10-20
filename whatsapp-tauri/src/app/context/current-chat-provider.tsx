@@ -14,6 +14,7 @@ import { Contact } from "./contacts-provider";
 import { getDisplayNameFromJid, isPhonePlaceholder, normalizeJid } from "../utils";
 import { BackendMessage, listBackendMessages, markBackendChatRead, sendBackendMessage } from "../backend";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
+import { useRealtime } from "./realtime-provider";
 import { ReadBatches } from "../read-marking/read-batches";
 import { canReadConversation } from "../read-marking/viewport";
 import { useProfile } from "../hooks/use-profile";
@@ -142,6 +143,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   const { contacts, getContact } = useContacts();
   const { profile: { readReceiptsEnabled } } = useProfile();
   const pollingActive = useChatPollingActive();
+  const realtime = useRealtime();
   const [readBatches] = useState(() => new ReadBatches());
   const activeChatIdRef = useRef<string | null>(null);
   const selectionVersionRef = useRef(0);
@@ -244,11 +246,24 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     }
   }, [readBatches]);
 
+  const refreshCurrentChat = useCallback(async (chatId: string) => {
+    const activeRequest = requestRef.current;
+    if (activeRequest) await activeRequest.done;
+    if (currentChatRef.current.chatId !== chatId) return;
+    const initialized = cacheRef.current.get(chatId)?.initialized;
+    await requestPage(chatId, initialized ? "newer" : "initial");
+  }, [requestPage]);
+
   useEffect(() => {
     const chatId = currentChat.chatId;
     if (!chatId || !pollingActive) return;
 
-    void requestPage(chatId, cacheRef.current.get(chatId)?.initialized ? "newer" : "initial");
+    void refreshCurrentChat(chatId);
+  }, [currentChat.chatId, pollingActive, refreshCurrentChat]);
+
+  useEffect(() => {
+    const chatId = currentChat.chatId;
+    if (!chatId || !pollingActive || realtime.connected) return;
     const interval = setInterval(() => void requestPage(chatId, "newer"), 3000);
     return () => {
       clearInterval(interval);
@@ -256,7 +271,16 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
         requestRef.current.controller.abort();
       }
     };
-  }, [currentChat.chatId, pollingActive, requestPage]);
+  }, [currentChat.chatId, pollingActive, realtime.connected, requestPage]);
+
+  useEffect(() => realtime.subscribe((event) => {
+    const chatId = currentChatRef.current.chatId;
+    if (!chatId) return;
+    if (event.type === "connected" || event.type === "resync" ||
+      ((event.type === "message" || event.type === "receipt") && event.chatId === chatId)) {
+      void refreshCurrentChat(chatId);
+    }
+  }), [refreshCurrentChat, realtime.subscribe]);
 
   useEffect(() => {
     const chat = complete.find((chat: Chat) => chat.id === currentChat.chatId);

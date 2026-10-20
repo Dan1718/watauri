@@ -10,6 +10,7 @@ import {
 import { BackendChat, BackendMessage, BackendUser, listBackendChats } from "../backend";
 import { getDisplayNameFromJid, normalizeJid } from "../utils";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
+import { useRealtime } from "./realtime-provider";
 
 export enum Filters {
   ALL = "all",
@@ -170,7 +171,10 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
     error: null,
   });
   const pollingActive = useChatPollingActive();
+  const realtime = useRealtime();
   const loadedRef = useRef(false);
+  const fetchInFlightRef = useRef(false);
+  const fetchAgainRef = useRef(false);
   const readRevisionRef = useRef(new Map<string, number>());
   const unreadCountsRef = useRef(new Map<string, number>());
   const archivedOverridesRef = useRef(new Map<string, boolean>());
@@ -202,54 +206,66 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
     }));
   }, []);
 
+  const fetchChats = useCallback(async (signal?: AbortSignal) => {
+    if (fetchInFlightRef.current) {
+      fetchAgainRef.current = true;
+      return;
+    }
+    fetchInFlightRef.current = true;
+    const readRevisions = new Map(readRevisionRef.current);
+    if (!loadedRef.current) {
+      setChatState((prev) => ({ ...prev, isLoading: true }));
+    }
+    try {
+      const data = (await listBackendChats(signal)).map(toChat).map((chat) => {
+        // Ignore counts from a poll started before a successful read batch.
+        if (readRevisions.get(chat.id) !== readRevisionRef.current.get(chat.id)) {
+          chat = { ...chat, unreadCount: unreadCountsRef.current.get(chat.id) ?? chat.unreadCount };
+          chat.read = chat.unreadCount === 0;
+        }
+        const archived = archivedOverridesRef.current.get(chat.id);
+        return archived === undefined ? chat : { ...chat, archived };
+      });
+      loadedRef.current = true;
+      setChatState((prev) => {
+        const complete = mergeChats(prev.complete, data);
+        if (complete === prev.complete && !prev.isLoading && prev.error === null) return prev;
+        return { complete, isLoading: false, error: null };
+      });
+    } catch (error) {
+      if (signal?.aborted) return;
+      setChatState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : "Failed to load chats",
+      }));
+    } finally {
+      fetchInFlightRef.current = false;
+      if (fetchAgainRef.current) {
+        fetchAgainRef.current = false;
+        queueMicrotask(() => void fetchChats());
+      }
+    }
+  }, []);
+
   useEffect(() => {
-    if (!pollingActive) return;
+    if (!pollingActive || realtime.connected) return;
     const controller = new AbortController();
-    let inFlight = false;
-
-    const fetchChats = async () => {
-      if (inFlight) return;
-      inFlight = true;
-      const readRevisions = new Map(readRevisionRef.current);
-      if (!loadedRef.current) {
-        setChatState((prev) => ({ ...prev, isLoading: true }));
-      }
-      try {
-        const data = (await listBackendChats(controller.signal)).map(toChat).map((chat) => {
-          // Ignore counts from a poll started before a successful read batch.
-          if (readRevisions.get(chat.id) !== readRevisionRef.current.get(chat.id)) {
-            chat = { ...chat, unreadCount: unreadCountsRef.current.get(chat.id) ?? chat.unreadCount };
-            chat.read = chat.unreadCount === 0;
-          }
-          const archived = archivedOverridesRef.current.get(chat.id);
-          return archived === undefined ? chat : { ...chat, archived };
-        });
-        loadedRef.current = true;
-        setChatState((prev) => {
-          const complete = mergeChats(prev.complete, data);
-          if (complete === prev.complete && !prev.isLoading && prev.error === null) return prev;
-          return { complete, isLoading: false, error: null };
-        });
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        setChatState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: error instanceof Error ? error.message : "Failed to load chats",
-        }));
-      } finally {
-        inFlight = false;
-      }
-    };
-
-    void fetchChats();
-    const interval = setInterval(() => void fetchChats(), 5000);
+    void fetchChats(controller.signal);
+    const interval = setInterval(() => void fetchChats(controller.signal), 5000);
 
     return () => {
       controller.abort();
       clearInterval(interval);
+      fetchAgainRef.current = false;
     };
-  }, [pollingActive]);
+  }, [fetchChats, pollingActive, realtime.connected]);
+
+  useEffect(() => realtime.subscribe((event) => {
+    if (["connected", "message", "receipt", "chat", "resync"].includes(event.type)) {
+      void fetchChats();
+    }
+  }), [fetchChats, realtime.subscribe]);
 
   const filtered = useMemo(() => chatState.complete.filter((chat) => {
     if (filter === Filters.UNREAD && chat.read) return false;

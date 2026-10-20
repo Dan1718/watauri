@@ -125,6 +125,12 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				}
 				if err := wa.store.UpdateMessageStatus(v.MessageIDs, newStatus); err != nil {
 					log.Printf("[wa] Failed to update receipt status for %v: %v", v.MessageIDs, err)
+				} else {
+					chatJID := v.Chat.String()
+					if canonical, err := wa.store.CanonicalDirectChatJID(chatJID); err == nil {
+						chatJID = canonical
+					}
+					publishRealtime(RealtimeEvent{Type: "receipt", ChatID: chatJID, MessageIDs: v.MessageIDs})
 				}
 			}
 		case *events.Presence:
@@ -278,13 +284,22 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			go wa.SyncContacts(context.Background())
 			log.Printf("[wa] historySync done type=%v chunk=%d progress=%d conversationsSeen=%d conversationsStored=%d conversationsSkipped=%d messagesSeen=%d messagesStored=%d messagesSkipped=%d",
 				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, conversationsStored, conversationsSkipped, messagesSeen, messagesStored, messagesSkipped)
+			progress := int(data.GetProgress())
+			publishRealtime(RealtimeEvent{Type: "sync", Progress: &progress, SyncType: data.GetSyncType().String()})
+			if messagesStored > 0 {
+				publishRealtime(RealtimeEvent{Type: "resync"})
+			} else if conversationsStored > 0 || pushnamesStored > 0 || inlineContactsStored > 0 {
+				publishRealtime(RealtimeEvent{Type: "chat"})
+			}
 		case *events.PushName:
 			log.Printf("[wa] Event: pushName jid=%s old=%q new=%q", v.JID, v.OldPushName, v.NewPushName)
 			if wa.store != nil {
-				wa.store.UpsertContact(User{
+				if err := wa.store.UpsertContact(User{
 					ID:       v.JID.String(),
 					PushName: v.NewPushName,
-				})
+				}); err == nil {
+					publishRealtime(RealtimeEvent{Type: "chat"})
+				}
 			}
 		case *events.LoggedOut:
 			wa.mu.Lock()
@@ -403,6 +418,9 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 	if err := wa.store.InsertMessage(ourMsg, source == "live"); err != nil {
 		log.Printf("[wa] Failed to store message %s: %v", evt.Info.ID, err)
 		return false
+	}
+	if source == "live" {
+		publishRealtime(RealtimeEvent{Type: "message", ChatID: chatJID, MessageIDs: []string{ourMsg.ID}})
 	}
 	return true
 
@@ -603,6 +621,9 @@ func (wa *WAManager) SyncContacts(ctx context.Context) {
 		stored++
 	}
 	log.Printf("[wa] Contact sync complete: stored = %d, skipped = %d, total = %d (%v)", stored, skipped, len(contacts), time.Since(start))
+	if stored > 0 {
+		publishRealtime(RealtimeEvent{Type: "chat"})
+	}
 }
 
 func groupParticipantRank(participant types.GroupParticipant) int {
@@ -717,6 +738,7 @@ func (wa *WAManager) persistGroupInfo(group types.GroupInfo) (int, error) {
 		return 0, err
 	}
 	if err := wa.store.UpsertGroupMetadata(chatJID, groupMetadataUpdateFromGroupInfo(group)); err != nil {
+		publishRealtime(RealtimeEvent{Type: "chat", ChatID: chatJID})
 		return 0, err
 	}
 
@@ -726,6 +748,7 @@ func (wa *WAManager) persistGroupInfo(group types.GroupInfo) (int, error) {
 			participantsStored++
 		}
 	}
+	publishRealtime(RealtimeEvent{Type: "chat", ChatID: chatJID})
 	return participantsStored, nil
 }
 
@@ -753,6 +776,7 @@ func (wa *WAManager) handleGroupInfoEvent(evt *events.GroupInfo) {
 	if err := wa.store.UpsertGroupMetadata(chatJID, patch); err != nil {
 		log.Printf("[wa] failed to persist group metadata event for %s: %v", chatJID, err)
 	}
+	publishRealtime(RealtimeEvent{Type: "chat", ChatID: chatJID})
 
 	if evt.Link != nil && evt.Link.Type == types.GroupLinkChangeTypeSub && evt.Link.Group.JID.User != "" {
 		parentJID := chatJID
@@ -766,6 +790,8 @@ func (wa *WAManager) handleGroupInfoEvent(evt *events.GroupInfo) {
 			LinkedParentJID: &parentJID,
 		}); err != nil {
 			log.Printf("[wa] failed to persist parent relationship for %s: %v", childJID, err)
+		} else {
+			publishRealtime(RealtimeEvent{Type: "chat", ChatID: childJID})
 		}
 	}
 	if evt.Unlink != nil && evt.Unlink.Type == types.GroupLinkChangeTypeSub && evt.Unlink.Group.JID.User != "" {
@@ -776,6 +802,8 @@ func (wa *WAManager) handleGroupInfoEvent(evt *events.GroupInfo) {
 			LinkedParentJID: &cleared,
 		}); err != nil {
 			log.Printf("[wa] failed to clear parent relationship for %s: %v", childJID, err)
+		} else {
+			publishRealtime(RealtimeEvent{Type: "chat", ChatID: childJID})
 		}
 	}
 }
@@ -923,6 +951,7 @@ func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message
 	if err := wa.store.InsertMessage(message, false); err != nil {
 		return Message{}, fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
+	publishRealtime(RealtimeEvent{Type: "message", ChatID: chatID, MessageIDs: []string{message.ID}})
 	if _, err := client.SendMessage(ctx, to, &waE2E.Message{Conversation: proto.String(text)}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
 		return Message{}, fmt.Errorf("failed to send message: %w", err)
 	}
@@ -930,6 +959,7 @@ func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message
 	if err := wa.store.UpdateMessageStatus([]string{message.ID}, message.Status); err != nil {
 		return Message{}, fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
+	publishRealtime(RealtimeEvent{Type: "receipt", ChatID: chatID, MessageIDs: []string{message.ID}})
 	return message, nil
 }
 
@@ -980,6 +1010,10 @@ func (wa *WAManager) MarkRead(ctx context.Context, chatID string, sendReceipt bo
 	unreadCount, err := store.MarkChatRead(chatJID.String(), filteredIDs)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %v", errPersistMessage, err)
+	}
+	if len(filteredIDs) > 0 {
+		publishRealtime(RealtimeEvent{Type: "receipt", ChatID: chatJID.String(), MessageIDs: filteredIDs})
+		publishRealtime(RealtimeEvent{Type: "chat", ChatID: chatJID.String()})
 	}
 	return unreadCount, nil
 }

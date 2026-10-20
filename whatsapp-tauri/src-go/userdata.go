@@ -20,7 +20,7 @@ type UserDataStore struct {
 
 func newUserDataStore() (*UserDataStore, error) {
 	log.Println("[store] Opening userdata.db with WAL journal mode")
-	db, err := sql.Open("sqlite", "file:userdata.db?_journal_mode=WAL")
+	db, err := sql.Open("sqlite", "file:userdata.db?_journal_mode=WAL&_pragma=foreign_keys(1)")
 	if err != nil {
 		log.Printf("[store] Failed to open userdata.db: %v", err)
 		return nil, err
@@ -57,7 +57,31 @@ func (s *UserDataStore) migrate() error {
 			is_archived INTEGER DEFAULT 0,
 			is_starred INTEGER DEFAULT 0,
 			is_community INTEGER DEFAULT 0,
+			avatar_id TEXT,
+			avatar_picture_id TEXT,
+			avatar_status TEXT,
+			avatar_updated_at TEXT,
+			is_pinned INTEGER NOT NULL DEFAULT 0,
+			is_muted INTEGER NOT NULL DEFAULT 0,
+			mute_until TEXT,
 			updated_at TEXT
+		)`,
+		`CREATE TABLE IF NOT EXISTS group_metadata (
+			chat_jid TEXT PRIMARY KEY,
+			description TEXT,
+			owner_jid TEXT,
+			created_at TEXT,
+			is_locked INTEGER NOT NULL DEFAULT 0,
+			is_announce INTEGER NOT NULL DEFAULT 0,
+			is_ephemeral INTEGER NOT NULL DEFAULT 0,
+			disappearing_timer INTEGER,
+			is_join_approval_required INTEGER NOT NULL DEFAULT 0,
+			parent_group_jid TEXT,
+			linked_parent_jid TEXT,
+			is_default_subgroup INTEGER NOT NULL DEFAULT 0,
+			is_suspended INTEGER NOT NULL DEFAULT 0,
+			is_deleted INTEGER NOT NULL DEFAULT 0,
+			FOREIGN KEY (chat_jid) REFERENCES chats(jid) ON DELETE CASCADE
 		)`,
 		`CREATE TABLE IF NOT EXISTS messages (
 			id TEXT PRIMARY KEY,
@@ -112,6 +136,21 @@ func (s *UserDataStore) migrate() error {
 	}
 	if err := addColumnIfMissing(tx, "chats", "last_message_timestamp_epoch", "INTEGER"); err != nil {
 		return err
+	}
+	for _, column := range []struct {
+		name, definition string
+	}{
+		{"avatar_id", "TEXT"},
+		{"avatar_picture_id", "TEXT"},
+		{"avatar_status", "TEXT"},
+		{"avatar_updated_at", "TEXT"},
+		{"is_pinned", "INTEGER NOT NULL DEFAULT 0"},
+		{"is_muted", "INTEGER NOT NULL DEFAULT 0"},
+		{"mute_until", "TEXT"},
+	} {
+		if err := addColumnIfMissing(tx, "chats", column.name, column.definition); err != nil {
+			return err
+		}
 	}
 	if err := addColumnIfMissing(tx, "messages", "timestamp_epoch", "INTEGER"); err != nil {
 		return err
@@ -680,6 +719,16 @@ func (s *UserDataStore) InsertMessage(msg Message, incrementUnread bool) error {
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
+		return err
+	}
+
+	// Satisfy the messages.chat_jid foreign key before inserting the message.
+	// The transaction rolls this placeholder back if the message insert fails.
+	if _, err := tx.Exec(
+		`INSERT INTO chats (jid, is_group, updated_at) VALUES (?, ?, ?) ON CONFLICT(jid) DO NOTHING`,
+		msg.ChatJID, boolToInt(strings.HasSuffix(msg.ChatJID, "@g.us")), time.Now().Format(time.RFC3339),
+	); err != nil {
+		tx.Rollback()
 		return err
 	}
 

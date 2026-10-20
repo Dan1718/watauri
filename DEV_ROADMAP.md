@@ -89,6 +89,7 @@
 | All others (including GroupInfo, PairSuccess/PairError, KeepAliveTimeout, StreamReplaced, TemporaryBan, ConnectFailure, ChatPresence, Picture, etc.) | ❌ | Fall to `default: unhandled` |
 
 **Phase 3 status notes**:
+- SQLite now has the additional chat avatar/pin/mute columns and one-to-one `group_metadata` table; population from WhatsApp events and API exposure remain separate work
 - Pairing failures recover to `unauthenticated`; initial QR generation is bounded by a 30-second timeout so retry remains available
 - `GetChats()` now resolves stored direct contacts and initializes unknown participants as `[]`; group participants are included when persisted
 - `GetChats()` now loads the referenced message row for the full `lastMessage` contract; it omits `lastMessage` when that row is missing

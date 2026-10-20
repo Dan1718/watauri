@@ -150,6 +150,7 @@ Returns all chats for the authenticated user from local SQLite storage.
 - Direct-chat names are resolved from stored contacts when available.
 - Group participants are returned when stored; otherwise `participants` is `[]`.
 - A `lastMessage`, when present, is loaded from its stored message row and includes its chat JID, sender, text, timestamp, status, media type when non-empty, and `isFromMe` value. If the chat references a missing message row, `lastMessage` is omitted.
+- Metadata-only chat updates preserve the stored `unreadCount`; history-sync conversation counts are authoritative, and only newly inserted live inbound messages increment the count.
 - Real-time updates are not yet available; the frontend currently polls.
 
 **Status**: Implemented (`GET`, SQLite-backed)

@@ -222,11 +222,12 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 					name = conv.GetDisplayName()
 				}
 				chat := Chat{
-					ID:          canonicalChatJID,
-					UnreadCount: int(conv.GetUnreadCount()),
-					IsGroup:     chatJID.Server == "g.us",
-					IsArchived:  conv.GetArchived(),
-					IsCommunity: conv.GetIsParentGroup(),
+					ID:             canonicalChatJID,
+					UnreadCount:    int(conv.GetUnreadCount()),
+					UnreadCountSet: true,
+					IsGroup:        chatJID.Server == "g.us",
+					IsArchived:     conv.GetArchived(),
+					IsCommunity:    conv.GetIsParentGroup(),
 				}
 
 				if name != "" {
@@ -384,7 +385,7 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 		MediaType: mediaType,
 		IsFromMe:  evt.Info.IsFromMe,
 	}
-	if err := wa.store.InsertMessage(ourMsg); err != nil {
+	if err := wa.store.InsertMessage(ourMsg, source == "live"); err != nil {
 		log.Printf("[wa] Failed to store message %s: %v", evt.Info.ID, err)
 		return false
 	}
@@ -641,7 +642,7 @@ func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message
 		Status:    "pending",
 		IsFromMe:  true,
 	}
-	if err := wa.store.InsertMessage(message); err != nil {
+	if err := wa.store.InsertMessage(message, false); err != nil {
 		return Message{}, fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
 	if _, err := client.SendMessage(ctx, to, &waE2E.Message{Conversation: proto.String(text)}, whatsmeow.SendRequestExtra{ID: id}); err != nil {

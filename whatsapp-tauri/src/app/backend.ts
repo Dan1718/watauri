@@ -39,6 +39,22 @@ export type MessagePageOptions = {
   signal?: AbortSignal;
 };
 
+export type BackendGroupMetadata = {
+  description?: string;
+  ownerJid?: string;
+  createdAt?: string;
+  isLocked: boolean;
+  isAnnouncement: boolean;
+  isEphemeral: boolean;
+  disappearingTimer?: number;
+  isJoinApprovalRequired: boolean;
+  parentGroupJid?: string;
+  linkedParentJid?: string;
+  isDefaultSubgroup: boolean;
+  isSuspended: boolean;
+  isDeleted: boolean;
+};
+
 export type BackendChat = {
   id: string;
   participants?: BackendUser[] | null;
@@ -53,6 +69,9 @@ export type BackendChat = {
   isMuted: boolean;
   isStarred?: boolean;
   isCommunity?: boolean;
+  groupMetadata?: BackendGroupMetadata;
+  isAnnouncement: boolean;
+  isSuspended: boolean;
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

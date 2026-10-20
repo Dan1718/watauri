@@ -129,6 +129,12 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			}
 		case *events.Presence:
 			log.Printf("[wa] Event: presence from=%s unavailable=%v lastSeen=%v", v.From, v.Unavailable, v.LastSeen)
+		case *events.GroupInfo:
+			wa.handleGroupInfoEvent(v)
+		case *events.JoinedGroup:
+			if _, err := wa.persistGroupInfo(v.GroupInfo); err != nil {
+				log.Printf("[wa] failed to persist joined group %s: %v", v.JID, err)
+			}
 		case *events.HistorySync:
 			if wa.store == nil {
 				log.Println("[wa] Skipping history sync: store is nil")
@@ -227,7 +233,11 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 					UnreadCountSet: true,
 					IsGroup:        chatJID.Server == "g.us",
 					IsArchived:     conv.GetArchived(),
-					IsCommunity:    conv.GetIsParentGroup(),
+					IsArchivedSet:  conv.Archived != nil,
+				}
+				if chat.IsGroup && conv.IsParentGroup != nil {
+					chat.IsCommunity = conv.GetIsParentGroup()
+					chat.IsCommunitySet = true
 				}
 
 				if name != "" {
@@ -237,6 +247,11 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 					log.Printf("[wa] failed to upsert history chat %s: %v", chatJID, err)
 					conversationsSkipped++
 					continue
+				}
+				if chat.IsGroup {
+					if err := wa.store.UpsertGroupMetadata(canonicalChatJID, groupMetadataUpdateFromHistoryConversation(conv)); err != nil {
+						log.Printf("[wa] failed to upsert history group metadata %s: %v", canonicalChatJID, err)
+					}
 				}
 				conversationsStored++
 
@@ -671,31 +686,211 @@ func (wa *WAManager) SyncGroups(ctx context.Context) {
 			groupsSkipped++
 			continue
 		}
-		chatJID := group.JID.ToNonAD().String()
-		chat := Chat{
-			ID:          chatJID,
-			IsGroup:     true,
-			IsCommunity: group.GroupParent.IsParent,
-		}
-		if group.Name != "" {
-			chat.Name = &group.Name
-		}
-		if err := store.UpsertChat(chat); err != nil {
-			log.Printf("[wa] failed to upsert synced group %s: %v", chatJID, err)
+		storedParticipants, err := wa.persistGroupInfo(*group)
+		if err != nil {
+			log.Printf("[wa] failed to upsert synced group %s: %v", group.JID, err)
 			groupsSkipped++
 			continue
 		}
 		groupsStored++
-
-		for _, participant := range group.Participants {
-			if wa.persistGroupParticipant(chatJID, participant) {
-				participantsStored++
-			}
-		}
+		participantsStored += storedParticipants
 	}
 
 	log.Printf("[wa] Group sync complete: groups=%d skipped=%d participants=%d total=%d", groupsStored, groupsSkipped, participantsStored, len(groups))
 }
+
+func (wa *WAManager) persistGroupInfo(group types.GroupInfo) (int, error) {
+	if group.JID.User == "" || group.JID.Server == "" {
+		return 0, fmt.Errorf("invalid group JID %s", group.JID)
+	}
+	chatJID := group.JID.ToNonAD().String()
+	chat := Chat{
+		ID:             chatJID,
+		IsGroup:        true,
+		IsCommunity:    group.GroupParent.IsParent,
+		IsCommunitySet: true,
+	}
+	if group.Name != "" {
+		chat.Name = &group.Name
+	}
+	if err := wa.store.UpsertChat(chat); err != nil {
+		return 0, err
+	}
+	if err := wa.store.UpsertGroupMetadata(chatJID, groupMetadataUpdateFromGroupInfo(group)); err != nil {
+		return 0, err
+	}
+
+	participantsStored := 0
+	for _, participant := range group.Participants {
+		if wa.persistGroupParticipant(chatJID, participant) {
+			participantsStored++
+		}
+	}
+	return participantsStored, nil
+}
+
+func (wa *WAManager) handleGroupInfoEvent(evt *events.GroupInfo) {
+	if evt == nil || wa.store == nil || evt.JID.User == "" || evt.JID.Server == "" {
+		return
+	}
+	chatJID := evt.JID.ToNonAD().String()
+	chat := Chat{ID: chatJID, IsGroup: true}
+	if evt.Name != nil {
+		chat.Name = &evt.Name.Name
+	}
+	patch := groupMetadataUpdateFromGroupInfoEvent(evt)
+	if evt.Link != nil && evt.Link.Type == types.GroupLinkChangeTypeParent {
+		chat.IsCommunity = true
+		chat.IsCommunitySet = true
+	}
+	if evt.Unlink != nil && evt.Unlink.Type == types.GroupLinkChangeTypeParent {
+		chat.IsCommunitySet = true
+	}
+	if err := wa.store.UpsertChat(chat); err != nil {
+		log.Printf("[wa] failed to upsert group chat %s after metadata event: %v", chatJID, err)
+		return
+	}
+	if err := wa.store.UpsertGroupMetadata(chatJID, patch); err != nil {
+		log.Printf("[wa] failed to persist group metadata event for %s: %v", chatJID, err)
+	}
+
+	if evt.Link != nil && evt.Link.Type == types.GroupLinkChangeTypeSub && evt.Link.Group.JID.User != "" {
+		parentJID := chatJID
+		childJID := evt.Link.Group.JID.ToNonAD().String()
+		if err := wa.store.UpsertChat(Chat{ID: childJID, IsGroup: true}); err != nil {
+			log.Printf("[wa] failed to create child group chat %s: %v", childJID, err)
+			return
+		}
+		if err := wa.store.UpsertGroupMetadata(childJID, GroupMetadataPatch{
+			ParentGroupJID:  &parentJID,
+			LinkedParentJID: &parentJID,
+		}); err != nil {
+			log.Printf("[wa] failed to persist parent relationship for %s: %v", childJID, err)
+		}
+	}
+	if evt.Unlink != nil && evt.Unlink.Type == types.GroupLinkChangeTypeSub && evt.Unlink.Group.JID.User != "" {
+		childJID := evt.Unlink.Group.JID.ToNonAD().String()
+		cleared := ""
+		if err := wa.store.UpsertGroupMetadata(childJID, GroupMetadataPatch{
+			ParentGroupJID:  &cleared,
+			LinkedParentJID: &cleared,
+		}); err != nil {
+			log.Printf("[wa] failed to clear parent relationship for %s: %v", childJID, err)
+		}
+	}
+}
+
+func groupMetadataUpdateFromGroupInfo(group types.GroupInfo) GroupMetadataPatch {
+	patch := GroupMetadataPatch{
+		IsLocked:               boolPointer(group.GroupLocked.IsLocked),
+		IsAnnouncement:         boolPointer(group.GroupAnnounce.IsAnnounce),
+		IsEphemeral:            boolPointer(group.GroupEphemeral.IsEphemeral),
+		DisappearingTimer:      intPointer(int(group.GroupEphemeral.DisappearingTimer)),
+		IsJoinApprovalRequired: boolPointer(group.GroupMembershipApprovalMode.IsJoinApprovalRequired),
+		IsDefaultSubgroup:      boolPointer(group.GroupIsDefaultSub.IsDefaultSubGroup),
+		IsSuspended:            boolPointer(group.Suspended),
+	}
+	if group.OwnerJID.User != "" && group.OwnerJID.Server != "" {
+		owner := group.OwnerJID.ToNonAD().String()
+		patch.OwnerJID = &owner
+	}
+	if !group.GroupCreated.IsZero() {
+		createdAt := group.GroupCreated.UTC().Format(time.RFC3339Nano)
+		patch.CreatedAt = &createdAt
+	}
+	if group.GroupTopic.Topic != "" || group.GroupTopic.TopicDeleted {
+		description := group.GroupTopic.Topic
+		if group.GroupTopic.TopicDeleted {
+			description = ""
+		}
+		patch.Description = &description
+	}
+	if group.GroupLinkedParent.LinkedParentJID.User != "" {
+		linkedParent := group.GroupLinkedParent.LinkedParentJID.ToNonAD().String()
+		patch.LinkedParentJID = &linkedParent
+	}
+	return patch
+}
+
+func groupMetadataUpdateFromHistoryConversation(conv *waHistorySync.Conversation) GroupMetadataPatch {
+	var patch GroupMetadataPatch
+	if conv == nil {
+		return patch
+	}
+	if conv.Description != nil {
+		patch.Description = conv.Description
+	}
+	if conv.CreatedBy != nil {
+		patch.OwnerJID = conv.CreatedBy
+		patch.OwnerJIDFallback = true
+	}
+	if conv.CreatedAt != nil && conv.GetCreatedAt() > 0 {
+		createdAt := time.Unix(int64(conv.GetCreatedAt()), 0).UTC().Format(time.RFC3339)
+		patch.CreatedAt = &createdAt
+	}
+	if conv.Locked != nil {
+		patch.IsLocked = boolPointer(conv.GetLocked())
+	}
+	if conv.EphemeralExpiration != nil {
+		timer := int(conv.GetEphemeralExpiration())
+		patch.DisappearingTimer = &timer
+		patch.IsEphemeral = boolPointer(timer > 0)
+	}
+	if conv.Suspended != nil {
+		patch.IsSuspended = boolPointer(conv.GetSuspended())
+	}
+	if conv.Terminated != nil {
+		patch.IsDeleted = boolPointer(conv.GetTerminated())
+	}
+	if conv.ParentGroupID != nil {
+		patch.ParentGroupJID = conv.ParentGroupID
+	}
+	if conv.IsDefaultSubgroup != nil {
+		patch.IsDefaultSubgroup = boolPointer(conv.GetIsDefaultSubgroup())
+	}
+	return patch
+}
+
+func groupMetadataUpdateFromGroupInfoEvent(evt *events.GroupInfo) GroupMetadataPatch {
+	var patch GroupMetadataPatch
+	if evt == nil {
+		return patch
+	}
+	if evt.Topic != nil {
+		description := evt.Topic.Topic
+		if evt.Topic.TopicDeleted {
+			description = ""
+		}
+		patch.Description = &description
+	}
+	if evt.Locked != nil {
+		patch.IsLocked = boolPointer(evt.Locked.IsLocked)
+	}
+	if evt.Announce != nil {
+		patch.IsAnnouncement = boolPointer(evt.Announce.IsAnnounce)
+	}
+	if evt.Ephemeral != nil {
+		patch.IsEphemeral = boolPointer(evt.Ephemeral.IsEphemeral)
+		timer := int(evt.Ephemeral.DisappearingTimer)
+		patch.DisappearingTimer = &timer
+	}
+	if evt.MembershipApprovalMode != nil {
+		patch.IsJoinApprovalRequired = boolPointer(evt.MembershipApprovalMode.IsJoinApprovalRequired)
+	}
+	if evt.Delete != nil {
+		patch.IsDeleted = boolPointer(evt.Delete.Deleted)
+	}
+	if evt.Suspended {
+		patch.IsSuspended = boolPointer(true)
+	} else if evt.Unsuspended {
+		patch.IsSuspended = boolPointer(false)
+	}
+	return patch
+}
+
+func boolPointer(value bool) *bool { return &value }
+
+func intPointer(value int) *int { return &value }
 
 func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message, error) {
 	to, err := types.ParseJID(chatID)

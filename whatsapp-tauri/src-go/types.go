@@ -42,26 +42,65 @@ type MessagePage struct {
 	HasNewer     bool      `json:"hasNewer"`
 }
 
+type GroupMetadata struct {
+	Description            *string `json:"description,omitempty"`
+	OwnerJID               *string `json:"ownerJid,omitempty"`
+	CreatedAt              *string `json:"createdAt,omitempty"`
+	IsLocked               bool    `json:"isLocked"`
+	IsAnnouncement         bool    `json:"isAnnouncement"`
+	IsEphemeral            bool    `json:"isEphemeral"`
+	DisappearingTimer      *int    `json:"disappearingTimer,omitempty"`
+	IsJoinApprovalRequired bool    `json:"isJoinApprovalRequired"`
+	ParentGroupJID         *string `json:"parentGroupJid,omitempty"`
+	LinkedParentJID        *string `json:"linkedParentJid,omitempty"`
+	IsDefaultSubgroup      bool    `json:"isDefaultSubgroup"`
+	IsSuspended            bool    `json:"isSuspended"`
+	IsDeleted              bool    `json:"isDeleted"`
+}
+
+// GroupMetadataPatch only updates fields explicitly present in an incoming
+// history-sync, snapshot, or live group-info event.
+type GroupMetadataPatch struct {
+	Description            *string
+	OwnerJID               *string
+	OwnerJIDFallback       bool
+	CreatedAt              *string
+	IsLocked               *bool
+	IsAnnouncement         *bool
+	IsEphemeral            *bool
+	DisappearingTimer      *int
+	IsJoinApprovalRequired *bool
+	ParentGroupJID         *string
+	LinkedParentJID        *string
+	IsDefaultSubgroup      *bool
+	IsSuspended            *bool
+	IsDeleted              *bool
+}
+
 type Chat struct {
-	ID                   string   `json:"id"`
-	Participants         []User   `json:"participants"`
-	LastMessage          *Message `json:"lastMessage,omitempty"`
-	UnreadCount          int      `json:"unreadCount"`
-	UnreadCountSet       bool     `json:"-"` // Set when UnreadCount is an authoritative sync value.
-	IsGroup              bool     `json:"isGroup"`
-	Name                 *string  `json:"name,omitempty"`
-	Avatar               *string  `json:"avatar,omitempty"`
-	IsArchived           bool     `json:"isArchived"`
-	IsStarred            bool     `json:"isStarred,omitempty"`
-	IsCommunity          bool     `json:"isCommunity,omitempty"`
-	LastMessageID        string   `json:"-"`
-	LastMessageText      string   `json:"-"`
-	LastMessageTimestamp string   `json:"-"`
-	LastMessageSender    string   `json:"-"`
-	CanSend              bool     `json:"canSend"`
-	IsPinned             bool     `json:"isPinned"`
-	IsMuted              bool     `json:"isMuted"`
-	IsFavorite           bool     `json:"isFavorite"`
-	IsAnnouncement       bool     `json:"isAnnouncement"`
-	IsSuspended          bool     `json:"isSuspended"`
+	ID                   string         `json:"id"`
+	Participants         []User         `json:"participants"`
+	LastMessage          *Message       `json:"lastMessage,omitempty"`
+	UnreadCount          int            `json:"unreadCount"`
+	UnreadCountSet       bool           `json:"-"` // Set when UnreadCount is an authoritative sync value.
+	IsGroup              bool           `json:"isGroup"`
+	IsArchivedSet        bool           `json:"-"`
+	IsStarredSet         bool           `json:"-"`
+	Name                 *string        `json:"name,omitempty"`
+	Avatar               *string        `json:"avatar,omitempty"`
+	IsArchived           bool           `json:"isArchived"`
+	IsStarred            bool           `json:"isStarred,omitempty"`
+	IsCommunity          bool           `json:"isCommunity,omitempty"`
+	IsCommunitySet       bool           `json:"-"`
+	GroupMetadata        *GroupMetadata `json:"groupMetadata,omitempty"`
+	LastMessageID        string         `json:"-"`
+	LastMessageText      string         `json:"-"`
+	LastMessageTimestamp string         `json:"-"`
+	LastMessageSender    string         `json:"-"`
+	CanSend              bool           `json:"canSend"`
+	IsPinned             bool           `json:"isPinned"`
+	IsMuted              bool           `json:"isMuted"`
+	IsFavorite           bool           `json:"isFavorite"`
+	IsAnnouncement       bool           `json:"isAnnouncement"`
+	IsSuspended          bool           `json:"isSuspended"`
 }

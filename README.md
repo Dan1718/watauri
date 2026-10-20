@@ -18,20 +18,20 @@ Obviously, this should do everything that WhatsApp Web currently does (yet to be
 
 This project is early-stage and experimental. 
 
-Core chat/message syncing is being built out, but the app is not ready yet. 
+The Go backend supports WhatsApp pairing, local chat/message storage, history sync, text sending, paginated message reads, read receipts, contact listing, and profile lookup. It remains experimental and is not ready for general use. See [the backend API reference](./whatsapp-tauri/src-go/backend.md) for implemented endpoints and known limitations.
 ## Features 
 Look at [FEATURES.md](./FEATURES.md) for everything. 
 - [x] WhatsApp QR pairing
 - [x] Local SQLite message storage
 - [x] Chat list from local data
 - [x] Message history view
-- [x] History sync persistence
+- [x] History sync persistence (partial: conversations and parseable messages; batching and some group data remain incomplete)
 - [x] Contact storage basics
 - [x] Sending messages
 - [x] Message pagination
 - [x] Read receipts
 - [ ] Real-time updates with Server-Sent Events
-- [x] Contact name sync
+- [ ] Contact name sync (names come from available sync data; coverage is incomplete)
 - [ ] Group metadata (in progress; names are persisted, live updates are pending)
 - [ ] Group participants (in progress; joined-group sync is implemented)
 - [ ] Contact and group avatars (storage exists; fetching and update events are pending)
@@ -40,7 +40,7 @@ Look at [FEATURES.md](./FEATURES.md) for everything.
 - [ ] Pinned messages
 - [ ] Favourite chats and contacts
 - [ ] Archive workflows
-- [ ] Safer local API routing
+- [ ] Safer local API exposure (currently listens on all interfaces and allows wildcard CORS)
 - [ ] Custom chat groups and filters
 - [ ] Fast full-text search
 - [ ] Bulk message/media actions
@@ -140,7 +140,7 @@ whatsapp-tauri/
 - [x] Historical chat sync
 - [x] Sending messages
 - [x] Contacts
-- [ ] Group metadata (in progress; names are persisted, live updates are pending)
+- [ ] Group metadata (history-sync names and joined-group sync exist; live updates and some metadata remain incomplete)
 - [ ] Group participants (in progress; joined-group sync is implemented)
 - [ ] Local avatars (storage exists; fetching is pending)
 - [x] Message pagination

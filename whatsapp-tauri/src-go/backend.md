@@ -156,7 +156,7 @@ Returns all chats for the authenticated user from local SQLite storage.
 - Group metadata is populated from joined-group sync, available history-sync conversation fields, and live group-info events. Partial updates modify only supplied values; absent fields preserve stored values.
 - A `lastMessage`, when present, is loaded from its stored message row and includes its chat JID, sender, text, timestamp, status, media type when non-empty, and `isFromMe` value. If the chat references a missing message row, `lastMessage` is omitted.
 - Metadata-only chat updates preserve the stored `unreadCount`; history-sync conversation counts are authoritative, and only newly inserted live inbound messages increment the count.
-- Real-time updates are not yet available; the frontend currently polls.
+- Real-time invalidations are streamed over `GET /api/events`; polling remains the fallback when SSE is disconnected.
 
 **Status**: Implemented (`GET`, SQLite-backed)
 
@@ -438,31 +438,37 @@ Downloads a media blob (received or sent).
 
 ### `GET /api/events`
 
-Server-Sent Events stream. Pushes real-time updates to the frontend.
+Server-Sent Events stream. Notifications identify changed data; clients refetch through the existing SQLite-backed endpoints.
 
 **Response**: `text/event-stream`
 
-**Event types**:
+**Named event types and JSON data**:
 ```
 event: message
-data: {"chatId":"chat-1","type":"new","message":{...}}
+data: {"type":"message","chatId":"chat-1","messageIds":["msg-123"]}
 
-event: presence
-data: {"userId":"user-1","status":"typing...","chatId":"chat-1"}
+event: receipt
+data: {"type":"receipt","chatId":"chat-1","messageIds":["msg-123"]}
 
-event: status
-data: {"status":"connected"}
+event: chat
+data: {"type":"chat","chatId":"chat-1"}
 
-event: read
-data: {"chatId":"chat-1","userId":"user-1","upToMessageId":"msg-123"}
+event: sync
+data: {"type":"sync","progress":75,"syncType":"INITIAL_BOOTSTRAP"}
+
+event: resync
+data: {"type":"resync"}
 ```
 
 **Behavior**:
-- Keep-alive every 30s.
-- Frontend connects on chat view mount, disconnects on unmount.
-- Go sidecar maintains a map of connected SSE clients and broadcasts to all.
+- Sends a keep-alive comment every 20 seconds; disconnected clients are removed.
+- EventSource reconnects automatically. On each connection/reconnection, the frontend refreshes current state through existing APIs.
+- Message and receipt events identify the affected chat and message IDs; the active conversation refetches changes using its revision cursor. The sidebar refreshes from `GET /api/chats`.
+- Chat invalidations may include a chat ID; history sync can emit a global `resync` invalidation.
+- A slow client's bounded queue is replaced with a `resync` event rather than blocking WhatsApp event processing.
+- Event delivery is best-effort, not replayable. Polling remains active while SSE is unavailable as a fallback.
 
-**Status**: Not implemented; proposed contract only.
+**Status**: Implemented.
 
 ---
 
@@ -621,7 +627,7 @@ These are common statuses, not an exhaustive mapping. For example, invalid curso
 - Group metadata is populated from joined-group sync, available history-sync conversation fields, and live group-info events, and exposed as the nested `groupMetadata` field on group chats.
 - Partial history/live updates preserve metadata fields omitted from the incoming payload.
 
-1. **Phase 3** — SQLite schema, event persistence, and real chat/message queries are implemented in part. History sync is partial; SSE is not implemented.
+1. **Phase 3** — SQLite schema, event persistence, real chat/message queries, and SSE invalidations are implemented in part. History sync is partial.
 
 2. **Phase 4** — Text sending and read receipts are implemented. Typing, archive/star, and media upload/download are not implemented.
 

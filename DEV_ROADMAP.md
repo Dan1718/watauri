@@ -89,6 +89,7 @@
 | All others (including GroupInfo, PairSuccess/PairError, KeepAliveTimeout, StreamReplaced, TemporaryBan, ConnectFailure, ChatPresence, Picture, etc.) | ❌ | Fall to `default: unhandled` |
 
 **Phase 3 status notes**:
+- Pairing failures recover to `unauthenticated`; initial QR generation is bounded by a 30-second timeout so retry remains available
 - `GetChats()` now resolves stored direct contacts and initializes unknown participants as `[]`; group participants are included when persisted
 - `GetChats()` now loads the referenced message row for the full `lastMessage` contract; it omits `lastMessage` when that row is missing
 - Unread counts are preserved by metadata-only chat upserts, history-sync counts remain authoritative, and only new live inbound messages increment the count

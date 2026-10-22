@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"go.mau.fi/whatsmeow/types"
 	_ "modernc.org/sqlite"
 )
 
@@ -674,7 +675,8 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 		FROM chats c
 		LEFT JOIN messages m ON m.id = c.last_message_id AND m.chat_jid = c.jid
 		LEFT JOIN group_metadata gm ON gm.chat_jid = c.jid
-		ORDER BY c.last_message_timestamp_epoch DESC`)
+		WHERE c.jid <> ?
+		ORDER BY c.last_message_timestamp_epoch DESC`, types.StatusBroadcastJID.String())
 	if err != nil {
 		log.Printf("[store] GetChats query error: %v (%v)", err, time.Since(start))
 		return nil, err

@@ -212,6 +212,8 @@ Unknown chat IDs currently return an empty message page (`200`), not `404`.
 **Behavior**:
 - Returns `[]` in `messages` for unknown or empty chats.
 - Message responses include `chatJid`, `senderId`, `text`, `timestamp`, `status`, and `isFromMe`; `mediaType` is omitted when empty because it uses `omitempty`.
+- Message responses include `mentionedJids`, an ordered array of the JIDs listed in the message payload's `ContextInfo`. Messages without mention metadata return an empty array. Live messages and parsed history-sync messages use the same extraction and persistence path.
+- Mention JIDs are retained as supplied by WhatsApp, including LIDs. Existing LID/phone-JID mappings remain available in group-participant identity data so callers can match aliases to saved contacts or use the full phone JID as a fallback identifier.
 - For a zero unread count, returns the latest page. If the unread count exceeds the number of stored inbound messages, anchors at the oldest available inbound message.
 
 **Status**: Implemented (`GET`; SQLite, pagination, oldest-unread anchor)

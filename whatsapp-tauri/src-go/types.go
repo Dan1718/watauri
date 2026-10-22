@@ -16,15 +16,16 @@ type User struct {
 }
 
 type Message struct {
-	ID        string `json:"id"`
-	ChatJID   string `json:"chatJid"`
-	SenderID  string `json:"senderId"`
-	Text      string `json:"text"`
-	Timestamp string `json:"timestamp"`
-	Status    string `json:"status"`
-	MediaType string `json:"mediaType,omitempty"`
-	IsFromMe  bool   `json:"isFromMe"`
-	Revision  int64  `json:"-"`
+	ID            string   `json:"id"`
+	ChatJID       string   `json:"chatJid"`
+	SenderID      string   `json:"senderId"`
+	Text          string   `json:"text"`
+	Timestamp     string   `json:"timestamp"`
+	Status        string   `json:"status"`
+	MediaType     string   `json:"mediaType,omitempty"`
+	IsFromMe      bool     `json:"isFromMe"`
+	MentionedJIDs []string `json:"mentionedJids"`
+	Revision      int64    `json:"-"`
 }
 
 type Profile struct {

@@ -8,7 +8,27 @@ import (
 	"time"
 
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waE2E"
+	"google.golang.org/protobuf/proto"
 )
+
+func TestExtractMentionedJIDsPreservesOrderAndSkipsQuotedMessage(t *testing.T) {
+	message := &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+		Text: proto.String("hello"),
+		ContextInfo: &waE2E.ContextInfo{
+			MentionedJID: []string{"first@lid", "second@s.whatsapp.net"},
+			QuotedMessage: &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+				Text:        proto.String("quoted"),
+				ContextInfo: &waE2E.ContextInfo{MentionedJID: []string{"quoted@lid"}},
+			}},
+		},
+	}}
+
+	got := extractMentionedJIDs(message)
+	if len(got) != 2 || got[0] != "first@lid" || got[1] != "second@s.whatsapp.net" {
+		t.Fatalf("extractMentionedJIDs() = %#v", got)
+	}
+}
 
 func TestStartPairingFailuresRestoreUnauthenticatedState(t *testing.T) {
 	tests := []struct {

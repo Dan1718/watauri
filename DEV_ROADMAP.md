@@ -78,7 +78,7 @@
 | `*events.Receipt` | ✅ | Incoming delivery/read receipts update local message status; `/api/chats/{id}/read` marks inbound messages read and can send WhatsApp read receipts |
 | `*events.PushName` | ✅ | Upserted to `contacts` table |
 | `*events.Presence` | ⚠️ | Logged only, no status persisted |
-| `*events.HistorySync` | ⚠️ | Conversations/messages, push names, available contact names, LID mappings, and explicit group participant records are persisted; complete roster reconciliation and avatars remain incomplete |
+| `*events.HistorySync` | ⚠️ | Conversations/messages, push names, available contact names, LID mappings, and explicit group participant records are persisted; complete roster reconciliation remains incomplete |
 | `*events.GroupInfo` | ✅ | Persists partial metadata, name/topic and community link/unlink updates, plus live joins/leaves/promotions/demotions with chat invalidation |
 | `*events.JoinedGroup` | ✅ | Joined-group snapshot persists group metadata and participants |
 | `*events.LoggedOut` | ✅ | Status + QR reset |
@@ -86,7 +86,8 @@
 | `*events.PairError` | ❌ | Skipped |
 | `*events.Connected` | ✅ | Status set |
 | `*events.Disconnected` | ✅ | Status reset |
-| All others (including PairSuccess/PairError, KeepAliveTimeout, StreamReplaced, TemporaryBan, ConnectFailure, ChatPresence, Picture, etc.) | ❌ | Fall to `default: unhandled` |
+| `*events.Picture` | ✅ | Contact and group avatar changes/removals refresh local avatar storage |
+| All others (including PairSuccess/PairError, KeepAliveTimeout, StreamReplaced, TemporaryBan, ConnectFailure, ChatPresence, etc.) | ❌ | Fall to `default: unhandled` |
 
 **Phase 3 status notes**:
 - SQLite group metadata is populated from joined/history sync and live group-info updates, with partial-update preservation and nested `groupMetadata` output in `GET /api/chats`
@@ -98,9 +99,9 @@
 - Message records preserve ordered `ContextInfo` mentioned JIDs from live and history-sync messages; paginated message responses return `mentionedJids: []` when there are no mentions, while retaining the original LID/phone JID values for existing alias resolution.
 - Group participant backend (#34): joined-group snapshots and explicit history participant records persist normalized phone/LID identities and ranks; live membership/role changes update SQLite and invalidate chats. History is insert-only and does not erase members or overwrite ranks. Existing chat responses include group-only numeric `rank` and safe name/identifier fallbacks. Frontend rendering is tracked in [#72](https://github.com/Dan1718/watauri/issues/72).
 - Durable departure markers prevent stale history from resurrecting observed departures, survive restarts, and follow mapped aliases. Live rejoins clear markers; requested snapshots can restore explicitly listed members only when no newer departure was processed after request start. Unsolicited snapshots cannot clear markers.
-- Complete roster reconciliation remains future work: snapshots do not prune absent members or guard all rank changes against live events; unknown mappings/missed events and pre-upgrade departures cannot be fully reconciled. Contact/group avatars remain incomplete.
+- Complete roster reconciliation remains future work: snapshots do not prune absent members or guard all rank changes against live events; unknown mappings/missed events and pre-upgrade departures cannot be fully reconciled.
 - History sync currently performs many per-row SQLite writes; batch inserts/transactions are needed for large initial syncs
-- Contact/group avatars: fetch profile picture URLs with whatsmeow, persist them in existing `contacts.avatar` and `chats.avatar`, and handle `*events.Picture` updates
+- Contact/group avatars (#35): persist opaque asset IDs and WhatsApp picture IDs, atomically store bounded raster downloads with runtime data, serve only validated local assets, and refresh/remove them on picture events.
 - Later safety net: merge existing duplicate direct chats/messages when `jid_mappings` shows an `@lid` chat and an `@s.whatsapp.net` chat belong to the same person. Full resets plus canonicalized writes should avoid most duplicates, so this is lower priority.
 
 **SSE scope**:

@@ -5,7 +5,7 @@ import { createContext, PropsWithChildren, useCallback, useContext, useEffect, u
 const API_BASE = "http://localhost:8090";
 
 export type RealtimeNotification = {
-  type: "message" | "receipt" | "chat" | "sync" | "resync" | "connected";
+  type: "message" | "receipt" | "chat" | "contact" | "sync" | "resync" | "connected";
   chatId?: string;
   messageIds?: string[];
   progress?: number;
@@ -49,7 +49,7 @@ export default function RealtimeProvider({ children }: PropsWithChildren) {
     };
     source.onerror = () => setConnected(false);
 
-    const eventTypes: RealtimeNotification["type"][] = ["message", "receipt", "chat", "sync", "resync"];
+    const eventTypes: RealtimeNotification["type"][] = ["message", "receipt", "chat", "contact", "sync", "resync"];
     const handlers = eventTypes.map((type) => {
       const handler = (message: Event) => {
         try {

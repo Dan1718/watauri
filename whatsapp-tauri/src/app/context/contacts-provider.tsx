@@ -8,6 +8,7 @@ import {
 } from "react";
 import { BackendUser, listBackendContacts } from "../backend";
 import { getDisplayNameFromJid, isPhonePlaceholder } from "../utils";
+import { useRealtime } from "./realtime-provider";
 
 export type Contact = {
   id: string;
@@ -67,6 +68,7 @@ function generateDictionary(data: Contact[]): [string, Contact[]][] {
 }
 
 export default function ContactsProvider({ children }: PropsWithChildren) {
+  const { subscribe } = useRealtime();
   const [contacts, setContacts] = useState<
     Omit<Contacts, "dictionary" | "filteredContacts">
   >({
@@ -77,11 +79,13 @@ export default function ContactsProvider({ children }: PropsWithChildren) {
   });
 
   useEffect(() => {
+    let active = true;
     const fetchContacts = async () => {
       setContacts((prev) => ({ ...prev, isLoading: true }));
       try {
         const data = (await listBackendContacts()).map(toContact);
 
+        if (!active) return;
         setContacts((prev) => ({
           ...prev,
           contacts: data,
@@ -89,6 +93,7 @@ export default function ContactsProvider({ children }: PropsWithChildren) {
           error: null,
         }));
       } catch (error) {
+        if (!active) return;
         setContacts((prev) => ({
           ...prev,
           isLoading: false,
@@ -98,7 +103,14 @@ export default function ContactsProvider({ children }: PropsWithChildren) {
     };
 
     void fetchContacts();
-  }, []);
+    const unsubscribe = subscribe((event) => {
+      if (event.type === "contact") void fetchContacts();
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [subscribe]);
 
   const contactMap = useMemo(
     () => new Map(contacts.contacts.flatMap((contact) => [

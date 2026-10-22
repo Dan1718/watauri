@@ -60,8 +60,8 @@ export default function AuthenticatedShell() {
   return (
     <ProfileProvider>
       <TabProvider>
-        <ContactsProvider>
-          <RealtimeProvider>
+        <RealtimeProvider>
+          <ContactsProvider>
             <ChatsProvider>
               <CurrentChatProvider>
                 <NewChatProvider>
@@ -133,8 +133,8 @@ export default function AuthenticatedShell() {
                 </NewChatProvider>
               </CurrentChatProvider>
             </ChatsProvider>
-          </RealtimeProvider>
-        </ContactsProvider>
+          </ContactsProvider>
+        </RealtimeProvider>
       </TabProvider>
     </ProfileProvider>
   );

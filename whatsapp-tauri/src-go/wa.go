@@ -48,6 +48,25 @@ type WAManager struct {
 	pairingQRTimeout  time.Duration // zero uses pairingQRTimeout
 	getQRChannel      func(context.Context) (<-chan whatsmeow.QRChannelItem, error)
 	connectForPairing func() error
+	historySyncMu     sync.Mutex
+	historySyncs      map[string]*historySyncStats
+}
+
+type historySyncStats struct {
+	startedAt            time.Time
+	chunks               int
+	progress             uint32
+	conversationsSeen    int
+	conversationsStored  int
+	conversationsSkipped int
+	messagesSeen         int
+	messagesStored       int
+	messagesSkipped      int
+	pushnamesStored      int
+	pushnamesSeen        int
+	jidMappingsStored    int
+	jidMappingsSeen      int
+	jidMappingsSkipped   int
 }
 
 const pairingQRTimeout = 30 * time.Second
@@ -194,6 +213,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				break
 			}
 			dumpHistorySync(data)
+			wa.beginHistorySync(data)
 
 			pushnamesStored := 0
 			inlineContactsStored := 0
@@ -251,9 +271,6 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 
 				jidMappingsStored++
 			}
-			log.Printf("[wa] Event: historySync type=%v chunk=%d progress=%d conversations=%d statusMessages=%d pushnames=%d/%d inlineContacts=%d/%d jidMappings=%d/%d skipped=%d",
-				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, len(data.GetStatusV3Messages()), pushnamesStored, len(data.GetPushnames()), inlineContactsStored, len(data.GetInlineContacts()), jidMappingsStored, len(data.GetPhoneNumberToLidMappings()), jidMappingsSkipped)
-
 			for _, conv := range data.GetConversations() {
 				chatJID, err := types.ParseJID(conv.GetID())
 				if err != nil {
@@ -338,8 +355,19 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				}
 			}
 			go wa.SyncContacts(context.Background())
-			log.Printf("[wa] historySync done type=%v chunk=%d progress=%d conversationsSeen=%d conversationsStored=%d conversationsSkipped=%d messagesSeen=%d messagesStored=%d messagesSkipped=%d",
-				data.GetSyncType(), data.GetChunkOrder(), data.GetProgress(), conversationsSeen, conversationsStored, conversationsSkipped, messagesSeen, messagesStored, messagesSkipped)
+			wa.finishHistorySyncChunk(data, historySyncStats{
+				conversationsSeen:    conversationsSeen,
+				conversationsStored:  conversationsStored,
+				conversationsSkipped: conversationsSkipped,
+				messagesSeen:         messagesSeen,
+				messagesStored:       messagesStored,
+				messagesSkipped:      messagesSkipped,
+				pushnamesStored:      pushnamesStored,
+				pushnamesSeen:        len(data.GetPushnames()),
+				jidMappingsStored:    jidMappingsStored,
+				jidMappingsSeen:      len(data.GetPhoneNumberToLidMappings()),
+				jidMappingsSkipped:   jidMappingsSkipped,
+			})
 			progress := int(data.GetProgress())
 			publishRealtime(RealtimeEvent{Type: "sync", Progress: &progress, SyncType: data.GetSyncType().String()})
 			if messagesStored > 0 {
@@ -371,6 +399,60 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 	})
 
 	return wa, nil
+}
+
+func (wa *WAManager) beginHistorySync(data *waHistorySync.HistorySync) {
+	syncType := data.GetSyncType().String()
+	wa.historySyncMu.Lock()
+	if wa.historySyncs == nil {
+		wa.historySyncs = make(map[string]*historySyncStats)
+	}
+	if wa.historySyncs[syncType] == nil {
+		wa.historySyncs[syncType] = &historySyncStats{startedAt: time.Now()}
+		log.Printf("[wa] history sync started type=%s", syncType)
+	}
+	wa.historySyncMu.Unlock()
+}
+
+func (wa *WAManager) finishHistorySyncChunk(data *waHistorySync.HistorySync, chunk historySyncStats) {
+	syncType := data.GetSyncType().String()
+	wa.historySyncMu.Lock()
+	stats := wa.historySyncs[syncType]
+	if stats == nil {
+		stats = &historySyncStats{startedAt: time.Now()}
+		wa.historySyncs[syncType] = stats
+	}
+	stats.chunks++
+	if progress := data.GetProgress(); progress > stats.progress {
+		stats.progress = progress
+	}
+	stats.conversationsSeen += chunk.conversationsSeen
+	stats.conversationsStored += chunk.conversationsStored
+	stats.conversationsSkipped += chunk.conversationsSkipped
+	stats.messagesSeen += chunk.messagesSeen
+	stats.messagesStored += chunk.messagesStored
+	stats.messagesSkipped += chunk.messagesSkipped
+	stats.pushnamesStored += chunk.pushnamesStored
+	stats.pushnamesSeen += chunk.pushnamesSeen
+	stats.jidMappingsStored += chunk.jidMappingsStored
+	stats.jidMappingsSeen += chunk.jidMappingsSeen
+	stats.jidMappingsSkipped += chunk.jidMappingsSkipped
+
+	if data.GetProgress() < 100 {
+		wa.historySyncMu.Unlock()
+		return
+	}
+	done := *stats
+	delete(wa.historySyncs, syncType)
+	wa.historySyncMu.Unlock()
+
+	log.Printf("[wa] history sync completed type=%s chunks=%d progress=%d conversations=%d stored=%d skipped=%d messages=%d stored=%d skipped=%d pushnames=%d/%d jidMappings=%d/%d skipped=%d duration=%s",
+		syncType, done.chunks, done.progress,
+		done.conversationsSeen, done.conversationsStored, done.conversationsSkipped,
+		done.messagesSeen, done.messagesStored, done.messagesSkipped,
+		done.pushnamesStored, done.pushnamesSeen,
+		done.jidMappingsStored, done.jidMappingsSeen, done.jidMappingsSkipped,
+		time.Since(done.startedAt).Round(time.Millisecond))
 }
 
 func dumpHistorySync(data *waHistorySync.HistorySync) {

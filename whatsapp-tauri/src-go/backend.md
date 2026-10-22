@@ -2,6 +2,14 @@
 
 Base URL: `http://127.0.0.1:8090` for local clients. **Current implementation caveat:** the server actually binds to `:8090` (all interfaces). Middleware sets `Access-Control-Allow-Origin: *`, allows `Content-Type`, and advertises `GET, POST, OPTIONS`; this permissive configuration is a known security issue. This document distinguishes implemented routes from proposed API contracts.
 
+## Logging
+
+The Go backend writes timestamped logs to stderr; the Tauri host forwards sidecar output to its console. The backend currently uses Go's standard `log` package without configurable levels or separate development/production filtering.
+
+History sync emits one start log per sync type and one completion summary when progress reaches 100%. The summary aggregates chunk count, conversations and messages seen/stored/skipped, push names, JID mappings, and elapsed time. Per-chunk success summaries are omitted. History-sync processing errors continue to be logged as they occur.
+
+History-sync JSON dumps are separate from normal logging and are disabled by default. Setting `WATAURI_DUMP_HISTORY_SYNC=1` writes full parsed sync payloads to `WATAURI_HISTORY_SYNC_DUMP_DIR` (or `history-sync-dumps` by default); those files can contain private message and contact data.
+
 ---
 
 ## Health

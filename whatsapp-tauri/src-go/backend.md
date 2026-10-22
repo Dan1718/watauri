@@ -153,6 +153,7 @@ Returns all chats for the authenticated user from local SQLite storage.
 
 **Behavior**:
 - Reads chat metadata from local SQLite.
+- Excludes WhatsApp's special `status@broadcast` chat by its JID. This only affects `GET /api/chats`; the stored row is retained, and ordinary chats are not filtered based on their display name.
 - Includes archived chats; the frontend filters them.
 - Direct-chat names are resolved from stored contacts when available.
 - Null contact fields in placeholder rows are treated as empty when resolving direct-chat names.

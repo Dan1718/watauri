@@ -388,7 +388,6 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   }, []);
 
   const markVisibleMessagesRead = useCallback((chatId: string, ids: string[]) => {
-    const version = selectionVersionRef.current;
     const isActive = () => mountedRef.current && activeChatIdRef.current === chatId && currentChatRef.current.chatId === chatId &&
       canReadConversation(readSettingsRef.current.pollingActive, document.visibilityState, document.hasFocus());
     void readBatches.mark(chatId, currentChatRef.current.messages, ids, isActive,
@@ -401,14 +400,27 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
         });
         setChatUnreadCount(chatId, unreadCount);
         setCurrentChat((prev) => prev.chatId === chatId
-          ? { ...prev, unreadCount, messages: readBatches.reconcile(chatId, prev.messages) }
+          ? { ...prev, unreadCount, error: null, messages: readBatches.reconcile(chatId, prev.messages) }
           : prev);
       },
-    ).catch((error) => {
-      if (!mountedRef.current || selectionVersionRef.current !== version) return;
-      setCurrentChat((prev) => prev.chatId === chatId
-        ? { ...prev, error: error instanceof Error ? error.message : "Failed to mark messages read" }
-        : prev);
+      (messageIds) => {
+        if (!mountedRef.current) return;
+        const newlyReadCount = currentChatRef.current.messages.filter((message) =>
+          messageIds.includes(message.id) && !message.isSentFromUser && !message.read
+        ).length;
+        const optimisticUnreadCount = Math.max(0, currentChatRef.current.unreadCount - newlyReadCount);
+        readBatches.beginOptimistic(chatId, messageIds);
+        const cached = cacheRef.current.get(chatId);
+        if (cached) cacheRef.current.set(chatId, {
+          ...cached, messages: readBatches.reconcile(chatId, cached.messages),
+        });
+        setChatUnreadCount(chatId, optimisticUnreadCount);
+        setCurrentChat((prev) => prev.chatId === chatId
+          ? { ...prev, unreadCount: optimisticUnreadCount, messages: readBatches.reconcile(chatId, prev.messages) }
+          : prev);
+      },
+    ).catch(() => {
+      // Keep the optimistic read state; the viewport hook will retry this batch.
     });
   }, [readBatches, setChatUnreadCount]);
 

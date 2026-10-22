@@ -38,19 +38,23 @@ Returns current authentication state and any available QR code.
 ```json
 {
   "status": "unauthenticated",
-  "qr": ""
+  "qr": "",
+  "error": ""
 }
 ```
 
 | Field | Values |
 |-------|--------|
-| `status` | `"unauthenticated"`, `"connecting"`, `"connected"` |
+| `status` | `"unauthenticated"`, `"connecting"`, `"connected"`, `"client_outdated"` |
 | `qr` | base64 PNG data URL (`data:image/png;base64,...`) or empty string |
+| `error` | explanatory message when authentication failed due to an outdated client; otherwise empty string |
 
 **Behavior**:
 - If status is `"connected"`, frontend should immediately transition to chat view.
 - During pairing, status may be `"connecting"` with an empty `qr` while the initial QR is being prepared; this phase times out after 30 seconds.
 - Pairing failures, QR-channel errors/closure, and QR expiry clear the QR and return status to `"unauthenticated"`, allowing the frontend to retry.
+- At startup, the backend fetches the current WhatsApp Web client version before creating the whatsmeow client. If the fetch fails, whatsmeow's built-in version is used.
+- `ClientOutdated` (`err-client-outdated`) sets status to `"client_outdated"`, clears the QR, and returns an explanatory `error`. Restart the backend to retry fetching the current version; resetting the saved session does not resolve this error.
 - Once a QR is received, the 30-second initial-QR timeout no longer applies; WhatsApp's QR-channel terminal events determine the outcome.
 - Called on login screen mount and every 2s during polling.
 

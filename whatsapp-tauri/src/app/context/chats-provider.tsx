@@ -252,17 +252,8 @@ export default function ChatsProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    if (!pollingActive || realtime.connected) return;
-    const controller = new AbortController();
-    void fetchChats(controller.signal);
-    const interval = setInterval(() => void fetchChats(controller.signal), 5000);
-
-    return () => {
-      controller.abort();
-      clearInterval(interval);
-      fetchAgainRef.current = false;
-    };
-  }, [fetchChats, pollingActive, realtime.connected]);
+    if (pollingActive) void fetchChats();
+  }, [fetchChats, pollingActive]);
 
   useEffect(() => realtime.subscribe((event) => {
     if (["connected", "message", "receipt", "chat", "resync"].includes(event.type)) {

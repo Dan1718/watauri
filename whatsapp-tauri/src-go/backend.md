@@ -180,7 +180,7 @@ Returns all chats for the authenticated user from local SQLite storage.
 - Group metadata is populated from joined-group sync, available history-sync conversation fields, and live group-info events. Partial updates modify only supplied values; absent fields preserve stored values.
 - A `lastMessage`, when present, is loaded from its stored message row and includes its chat JID, sender, text, timestamp, status, media type when non-empty, and `isFromMe` value. If the chat references a missing message row, `lastMessage` is omitted.
 - Metadata-only chat updates preserve the stored `unreadCount`; history-sync conversation counts are authoritative, and only newly inserted live inbound messages increment the count.
-- Real-time invalidations are streamed over `GET /api/events`; polling remains the fallback when SSE is disconnected.
+- Real-time invalidations are streamed over `GET /api/events`; the frontend refreshes the chat list on connection and relevant events, without a polling fallback when SSE is disconnected.
 
 **Status**: Implemented (`GET`, SQLite-backed)
 
@@ -512,7 +512,7 @@ data: {"type":"resync"}
 - Chat invalidations may include a chat ID; history sync can emit a global `resync` invalidation.
 - Contact avatar updates/removals emit `contact`, prompting the contact list to refetch `/api/contacts`.
 - A slow client's bounded queue is replaced with a `resync` event rather than blocking WhatsApp event processing.
-- Event delivery is best-effort, not replayable. Polling remains active while SSE is unavailable as a fallback.
+- Event delivery is best-effort, not replayable. The frontend refreshes the chat list when SSE connects and on relevant invalidations; it does not poll the full chat list while SSE is unavailable.
 
 **Status**: Implemented.
 

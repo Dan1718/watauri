@@ -26,6 +26,7 @@ export type ReactionType = {
 
 export type Message = {
   id: string;
+  clientSendId?: string;
   contactId: string;
   message: string;
   timestamp: number | string;

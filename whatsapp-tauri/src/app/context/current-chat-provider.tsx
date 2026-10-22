@@ -56,6 +56,7 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
   const isFromMe = Boolean(message.isFromMe);
   return {
     id: message.id,
+    clientSendId: message.clientSendId,
     contactId: isFromMe ? fallbackContactId : normalizeJid(message.senderId),
     message: message.text,
     timestamp: message.timestamp,
@@ -66,6 +67,14 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
     pending: message.status === "pending",
     mediaType: message.mediaType,
   };
+}
+
+function reconcileOptimisticMessage(messages: Message[], clientSendId: string, serverMessageId: string) {
+  const optimistic = messages.find((message) => message.clientSendId === clientSendId);
+  if (!optimistic) return messages;
+  const withoutDuplicate = messages.filter((message) =>
+    message.clientSendId !== clientSendId && message.id !== serverMessageId);
+  return mergeMessages(withoutDuplicate, [{ ...optimistic, id: serverMessageId }]);
 }
 
 function sameMessage(a: Message, b: Message) {
@@ -277,6 +286,17 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   useEffect(() => realtime.subscribe((event) => {
     const chatId = currentChatRef.current.chatId;
     if (!chatId) return;
+    if (event.type === "message" && event.chatId === chatId && event.clientSendId && event.messageIds?.[0]) {
+      const serverMessageId = event.messageIds[0];
+      const cached = cacheRef.current.get(chatId);
+      if (cached) cacheRef.current.set(chatId, {
+        ...cached,
+        messages: reconcileOptimisticMessage(cached.messages, event.clientSendId, serverMessageId),
+      });
+      setCurrentChat((prev) => prev.chatId === chatId
+        ? { ...prev, messages: reconcileOptimisticMessage(prev.messages, event.clientSendId!, serverMessageId) }
+        : prev);
+    }
     if (event.type === "connected" || event.type === "resync" ||
       ((event.type === "message" || event.type === "receipt") && event.chatId === chatId)) {
       void refreshCurrentChat(chatId);
@@ -410,9 +430,11 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
 
     const chat = chatsRef.current.find((item: Chat) => item.id === chatId);
     const fallbackContactId = typeof chat?.contactId === "string" ? chat.contactId : chatId;
-    const optimisticId = `pending-${crypto.randomUUID()}`;
+    const clientSendId = crypto.randomUUID();
+    const optimisticId = `pending-${clientSendId}`;
     const optimisticMessage: Message = {
       id: optimisticId,
+      clientSendId,
       contactId: fallbackContactId,
       message: trimmedText,
       timestamp: new Date().toISOString(),
@@ -432,13 +454,12 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
       ? { ...prev, messages: mergeMessages(prev.messages, [optimisticMessage]), error: null }
       : prev);
 
-    void sendBackendMessage(chatId, trimmedText).then((sentMessage) => {
+    void sendBackendMessage(chatId, trimmedText, clientSendId).then((sentMessage) => {
       const message = toMessage(sentMessage, fallbackContactId);
       const replaceOptimistic = (messages: Message[]) => {
-        const withoutOptimistic = messages.filter(({ id }) => id !== optimisticId);
-        return withoutOptimistic.some(({ id }) => id === message.id)
-          ? withoutOptimistic
-          : mergeMessages(withoutOptimistic, [message]);
+        const withoutOptimistic = messages.filter(({ id, clientSendId: pendingSendId }) =>
+          id !== optimisticId && pendingSendId !== clientSendId && id !== message.id);
+        return mergeMessages(withoutOptimistic, [message]);
       };
       const latestCache = cacheRef.current.get(chatId);
       if (latestCache) cacheRef.current.set(chatId, {
@@ -456,7 +477,8 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
       );
     }).catch((error) => {
       const markFailed = (messages: Message[]) => messages.map((message) =>
-        message.id === optimisticId ? { ...message, pending: false } : message);
+        message.id === optimisticId || message.clientSendId === clientSendId
+          ? { ...message, pending: false } : message);
       const latestCache = cacheRef.current.get(chatId);
       if (latestCache) cacheRef.current.set(chatId, {
         ...latestCache,

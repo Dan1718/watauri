@@ -17,6 +17,7 @@ export type BackendProfile = {
 
 export type BackendMessage = {
   id: string;
+  clientSendId?: string;
   senderId: string;
   text: string;
   timestamp: string;
@@ -101,11 +102,11 @@ export const listBackendMessages = (
 
 export const listBackendContacts = () => request<BackendUser[]>("/api/contacts");
 
-export const sendBackendMessage = (chatId: string, text: string) =>
+export const sendBackendMessage = (chatId: string, text: string, clientSendId: string) =>
   request<BackendMessage>(`/api/chats/${chatId}/send`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, clientSendId }),
   });
 
 export const markBackendChatRead = (chatId: string, sendReceipt: boolean, messageIds: string[]) => {

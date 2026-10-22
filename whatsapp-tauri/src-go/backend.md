@@ -230,14 +230,18 @@ Sends and persists a text message to a chat. Attachment sending is not implement
 **Request**
 ```json
 {
-  "text": "Hello! How are you?"
+  "text": "Hello! How are you?",
+  "clientSendId": "client-generated-uuid"
 }
 ```
+
+`clientSendId` is an optional client-generated correlation ID. When supplied, the send response and the initial `message` invalidation include it so the frontend can reconcile its optimistic message with the persisted message before refreshing the conversation.
 
 **Response `200`**
 ```json
 {
   "id": "msg-789",
+  "clientSendId": "client-generated-uuid",
   "status": "sent",
   "chatJid": "123@s.whatsapp.net",
   "senderId": "me-or-own-jid",
@@ -471,7 +475,7 @@ Server-Sent Events stream. Notifications identify changed data; clients refetch 
 **Named event types and JSON data**:
 ```
 event: message
-data: {"type":"message","chatId":"chat-1","messageIds":["msg-123"]}
+data: {"type":"message","chatId":"chat-1","messageIds":["msg-123"],"clientSendId":"client-generated-uuid"}
 
 event: receipt
 data: {"type":"receipt","chatId":"chat-1","messageIds":["msg-123"]}
@@ -491,6 +495,7 @@ data: {"type":"resync"}
 
 **Behavior**:
 - Sends a keep-alive comment every 20 seconds; disconnected clients are removed.
+- The initial message invalidation emitted for a text send includes `clientSendId` when the request supplied one, allowing the sender to reconcile its optimistic row with the persisted message ID.
 - EventSource reconnects automatically. On each connection/reconnection, the frontend refreshes current state through existing APIs.
 - Message and receipt events identify the affected chat and message IDs; the active conversation refetches changes using its revision cursor. The sidebar refreshes from `GET /api/chats`.
 - Chat invalidations may include a chat ID; history sync can emit a global `resync` invalidation.

@@ -17,6 +17,7 @@ type User struct {
 
 type Message struct {
 	ID            string   `json:"id"`
+	ClientSendID  string   `json:"clientSendId,omitempty"`
 	ChatJID       string   `json:"chatJid"`
 	SenderID      string   `json:"senderId"`
 	Text          string   `json:"text"`

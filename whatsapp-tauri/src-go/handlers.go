@@ -309,7 +309,8 @@ func afterTimeMessageCursor(message Message) *string {
 
 func handleSendMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 	var body struct {
-		Text string `json:"text"`
+		Text         string `json:"text"`
+		ClientSendID string `json:"clientSendId"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxMessageTextBytes+1024)
 	decoder := json.NewDecoder(r.Body)
@@ -326,11 +327,15 @@ func handleSendMessage(w http.ResponseWriter, r *http.Request, chatID string) {
 		writeJSONError(w, "text must be between 1 and 4096 bytes", http.StatusBadRequest)
 		return
 	}
+	if len(body.ClientSendID) > 128 {
+		writeJSONError(w, "clientSendId must be at most 128 bytes", http.StatusBadRequest)
+		return
+	}
 	if wa == nil {
 		writeJSONError(w, "WhatsApp is unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	message, err := wa.SendText(r.Context(), chatID, body.Text)
+	message, err := wa.SendText(r.Context(), chatID, body.Text, body.ClientSendID)
 	if err != nil {
 		log.Printf("[http] POST /api/chats/%s/send error: %v", chatID, err)
 		switch {

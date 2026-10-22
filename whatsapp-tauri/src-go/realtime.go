@@ -15,11 +15,12 @@ const (
 )
 
 type RealtimeEvent struct {
-	Type       string   `json:"type"`
-	ChatID     string   `json:"chatId,omitempty"`
-	MessageIDs []string `json:"messageIds,omitempty"`
-	Progress   *int     `json:"progress,omitempty"`
-	SyncType   string   `json:"syncType,omitempty"`
+	Type         string   `json:"type"`
+	ChatID       string   `json:"chatId,omitempty"`
+	MessageIDs   []string `json:"messageIds,omitempty"`
+	ClientSendID string   `json:"clientSendId,omitempty"`
+	Progress     *int     `json:"progress,omitempty"`
+	SyncType     string   `json:"syncType,omitempty"`
 }
 
 type EventHub struct {

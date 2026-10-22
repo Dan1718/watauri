@@ -1018,7 +1018,7 @@ func boolPointer(value bool) *bool { return &value }
 
 func intPointer(value int) *int { return &value }
 
-func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message, error) {
+func (wa *WAManager) SendText(ctx context.Context, chatID, text, clientSendID string) (Message, error) {
 	to, err := types.ParseJID(chatID)
 	if err != nil {
 		return Message{}, fmt.Errorf("%w: %v", errInvalidChatID, err)
@@ -1039,6 +1039,7 @@ func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message
 	}
 	message := Message{
 		ID:            string(id),
+		ClientSendID:  clientSendID,
 		ChatJID:       chatID,
 		SenderID:      senderID,
 		Text:          text,
@@ -1050,7 +1051,7 @@ func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message
 	if err := wa.store.InsertMessage(message, false); err != nil {
 		return Message{}, fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
-	publishRealtime(RealtimeEvent{Type: "message", ChatID: chatID, MessageIDs: []string{message.ID}})
+	publishRealtime(RealtimeEvent{Type: "message", ChatID: chatID, MessageIDs: []string{message.ID}, ClientSendID: clientSendID})
 	if _, err := client.SendMessage(ctx, to, &waE2E.Message{Conversation: proto.String(text)}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
 		return Message{}, fmt.Errorf("failed to send message: %w", err)
 	}

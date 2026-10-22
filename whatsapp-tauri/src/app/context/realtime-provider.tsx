@@ -8,6 +8,7 @@ export type RealtimeNotification = {
   type: "message" | "receipt" | "chat" | "contact" | "sync" | "resync" | "connected";
   chatId?: string;
   messageIds?: string[];
+  clientSendId?: string;
   progress?: number;
   syncType?: string;
 };

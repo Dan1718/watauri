@@ -86,10 +86,10 @@ Install the dependencies:
 bun install
 ```
 
-Run the app in development: 
+Run the app in development (frontend hot reload stays enabled; restart the app manually after Rust changes):
 
 ```bash
-bun run tauri dev
+bun run dev:app
 ``` 
 
 Other useful scripts: `bun run build` (typecheck + build frontend), `bun run preview` (preview the production build).
@@ -104,7 +104,7 @@ This has been changed to now run automatically when tauri is called, however it 
 
 ## Usage 
 
-1. Start the app with `bun run tauri dev`. 
+1. Start the app with `bun run dev:app`.
 2. Open the desktop window. 
 3. Pair your whatsapp account using the QR Code. 
 4. Voila, (it'll take some time to load all the messages)

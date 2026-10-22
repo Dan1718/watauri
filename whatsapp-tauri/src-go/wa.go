@@ -303,6 +303,8 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				}
 				conversationsStored++
 
+				historyMessages := make([]Message, 0, len(conv.GetMessages()))
+				historyPushNames := make(map[string]string)
 				for _, historymsg := range conv.GetMessages() {
 					messagesSeen++
 					evt, err := client.ParseWebMessage(chatJID, historymsg.GetMessage())
@@ -316,11 +318,23 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 						messagesSkipped++
 						continue
 					}
-					if wa.storeMessageEvent(evt, "history") {
-						messagesStored++
-					} else {
+					message, ok := messageFromEvent(evt)
+					if !ok {
 						messagesSkipped++
+						continue
 					}
+					message.ChatJID = canonicalChatJID
+					historyMessages = append(historyMessages, message)
+					if evt.Info.PushName != "" && evt.Info.Sender.User != "" && evt.Info.Sender.Server != "" {
+						historyPushNames[evt.Info.Sender.String()] = evt.Info.PushName
+					}
+				}
+				if inserted, err := wa.store.InsertHistoryMessages(historyMessages, historyPushNames); err != nil {
+					log.Printf("[wa] failed to persist history messages for %s: %v", chatJID, err)
+					messagesSkipped += len(historyMessages)
+				} else {
+					messagesStored += inserted
+					messagesSkipped += len(historyMessages) - inserted
 				}
 			}
 			go wa.SyncContacts(context.Background())
@@ -401,7 +415,41 @@ func dumpHistorySync(data *waHistorySync.HistorySync) {
 
 // / Stores a parsed Message event and stores it. The caller is responsible for upserting the chat before calling.
 func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool {
+	ourMsg, ok := messageFromEvent(evt)
+	if !ok {
+		log.Printf("[wa] Skipping message %s: empty text, no media (reaction/receipt)", evt.Info.ID)
+		return false
+	}
+	log.Printf("[wa] Event: message id = %s chat = %s sender = %s sender_push = %s text = %q media = %s isFromMe = %v ",
+		evt.Info.ID, evt.Info.Chat, evt.Info.Sender, evt.Info.PushName, ourMsg.Text, ourMsg.MediaType, evt.Info.IsFromMe)
 
+	if evt.Info.Chat.Server != types.GroupServer {
+		canonicalChatJID, err := wa.store.CanonicalDirectChatJID(ourMsg.ChatJID)
+		if err != nil {
+			log.Printf("[wa] Failed to canonicalize message chat %s: %v", ourMsg.ChatJID, err)
+			return false
+		}
+		ourMsg.ChatJID = canonicalChatJID
+	}
+	if source == "history" && evt.Info.PushName != "" && evt.Info.Sender.User != "" && evt.Info.Sender.Server != "" {
+		if err := wa.store.UpsertContact(User{ID: evt.Info.Sender.String(), PushName: evt.Info.PushName}); err != nil {
+			log.Printf("[wa] failed to upsert history message pushname %s: %v", evt.Info.Sender, err)
+		}
+	}
+	if err := wa.store.InsertMessage(ourMsg, source == "live"); err != nil {
+		log.Printf("[wa] Failed to store message %s: %v", evt.Info.ID, err)
+		return false
+	}
+	if source == "live" {
+		publishRealtime(RealtimeEvent{Type: "message", ChatID: ourMsg.ChatJID, MessageIDs: []string{ourMsg.ID}})
+	}
+	return true
+}
+
+func messageFromEvent(evt *events.Message) (Message, bool) {
+	if evt == nil || evt.Message == nil {
+		return Message{}, false
+	}
 	text := evt.Message.GetConversation()
 
 	if text == "" {
@@ -420,8 +468,7 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 		mediaType = "document"
 	}
 	if text == "" && mediaType == "" {
-		log.Printf("[wa] Skipping message %s: empty text, no media (reaction/receipt)", evt.Info.ID)
-		return false
+		return Message{}, false
 	}
 
 	status := "received"
@@ -429,26 +476,7 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 	if evt.Info.IsFromMe {
 		status = "sent"
 	}
-	log.Printf("[wa] Event: message id = %s chat = %s sender = %s sender_push = %s text = %q media = %s isFromMe = %v ",
-		evt.Info.ID, evt.Info.Chat, evt.Info.Sender, evt.Info.PushName, text, mediaType, evt.Info.IsFromMe)
-
 	chatJID := evt.Info.Chat.String()
-	if evt.Info.Chat.Server != types.GroupServer {
-		canonicalChatJID, err := wa.store.CanonicalDirectChatJID(chatJID)
-		if err != nil {
-			log.Printf("[wa] Failed to canonicalize message chat %s: %v", chatJID, err)
-			return false
-		}
-		chatJID = canonicalChatJID
-	}
-	if source == "history" && evt.Info.PushName != "" && evt.Info.Sender.User != "" && evt.Info.Sender.Server != "" {
-		if err := wa.store.UpsertContact(User{
-			ID:       evt.Info.Sender.String(),
-			PushName: evt.Info.PushName,
-		}); err != nil {
-			log.Printf("[wa] failed to upsert history message pushname %s: %v", evt.Info.Sender, err)
-		}
-	}
 	ourMsg := Message{
 		ID:            evt.Info.ID,
 		ChatJID:       chatJID,
@@ -460,15 +488,7 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 		IsFromMe:      evt.Info.IsFromMe,
 		MentionedJIDs: extractMentionedJIDs(evt.Message),
 	}
-	if err := wa.store.InsertMessage(ourMsg, source == "live"); err != nil {
-		log.Printf("[wa] Failed to store message %s: %v", evt.Info.ID, err)
-		return false
-	}
-	if source == "live" {
-		publishRealtime(RealtimeEvent{Type: "message", ChatID: chatJID, MessageIDs: []string{ourMsg.ID}})
-	}
-	return true
-
+	return ourMsg, true
 }
 
 // extractMentionedJIDs reads the ContextInfo directly attached to a message

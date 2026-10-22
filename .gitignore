@@ -5,6 +5,7 @@ whatsapp-tauri/src-go/backend
 # WhatsApp session database
 whatsapp-tauri/src-go/wa-session.db
 whatsapp-tauri/src-tauri/wa-session.db
+whatsapp-tauri/src-tauri/avatars/
 *.db
 *.db-*
 

@@ -40,6 +40,10 @@ type WAManager struct {
 	store             *UserDataStore
 	mu                sync.RWMutex
 	avatarLocks       sync.Map // JID string -> *sync.Mutex; serializes fetches and removal per avatar.
+	avatarRefreshes   sync.Map // JID string -> *avatarRefreshFlight; coalesces concurrent refreshes.
+	avatarSlots       chan struct{}
+	avatarBackfillMu  sync.Mutex
+	avatarBackfillRun bool
 	pairingAttempt    uint64
 	pairingQRTimeout  time.Duration // zero uses pairingQRTimeout
 	getQRChannel      func(context.Context) (<-chan whatsmeow.QRChannelItem, error)
@@ -87,7 +91,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 	}
 
 	client := whatsmeow.NewClient(device, nil)
-	wa := &WAManager{client: client, status: "unauthenticated", store: store}
+	wa := &WAManager{client: client, status: "unauthenticated", store: store, avatarSlots: make(chan struct{}, 4)}
 	if device.ID != nil {
 		wa.status = "connected"
 		log.Println("[wa] Auto-connecting with stored session...")
@@ -106,8 +110,10 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			wa.qrCode = ""
 			wa.mu.Unlock()
 			log.Println("[wa] Connected to Whatsapp")
-			go wa.SyncGroups(context.Background())
-			go wa.SyncContacts(context.Background())
+			go func() {
+				wa.SyncGroups(context.Background())
+				wa.SyncContacts(context.Background())
+			}()
 		case *events.Disconnected:
 			wa.mu.Lock()
 			if wa.status != "client_outdated" {
@@ -334,6 +340,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 					ID:       v.JID.String(),
 					PushName: v.NewPushName,
 				}); err == nil {
+					go wa.fetchMissingAvatar(context.Background(), v.JID)
 					publishRealtime(RealtimeEvent{Type: "chat"})
 				}
 			}
@@ -698,10 +705,10 @@ func (wa *WAManager) SyncContacts(ctx context.Context) {
 			continue
 
 		}
-		wa.fetchMissingAvatar(ctx, jid.ToNonAD())
 		stored++
 	}
 	log.Printf("[wa] Contact sync complete: stored = %d, skipped = %d, total = %d (%v)", stored, skipped, len(contacts), time.Since(start))
+	wa.backfillMissingAvatars(ctx)
 	if stored > 0 {
 		publishRealtime(RealtimeEvent{Type: "chat"})
 	}
@@ -745,6 +752,8 @@ func (wa *WAManager) persistGroupParticipant(chatJID string, participant types.G
 		PushName: participant.DisplayName,
 	}); err != nil {
 		log.Printf("[wa] failed to upsert group participant contact %s: %v", userID, err)
+	} else {
+		go wa.fetchMissingAvatar(context.Background(), participantJID)
 	}
 	// Some snapshots carry the LID only in JID, not in the dedicated LID field.
 	lid := participant.LID

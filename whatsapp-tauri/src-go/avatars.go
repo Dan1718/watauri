@@ -27,6 +27,17 @@ const avatarRefreshTimeout = 30 * time.Second
 
 var avatarIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
+const avatarRefreshAttempts = 3
+
+type avatarRefreshFlight struct {
+	done chan struct{}
+	err  error
+}
+
+type avatarCandidate struct {
+	jid string
+}
+
 func (s *UserDataStore) avatarPath(id string) (string, error) {
 	if !avatarIDPattern.MatchString(id) {
 		return "", os.ErrNotExist
@@ -64,25 +75,87 @@ func (wa *WAManager) fetchMissingAvatar(ctx context.Context, jid types.JID) {
 		log.Printf("[avatar] metadata lookup for %s failed: %v", jid, err)
 		return
 	}
-	if assetID == "" {
-		wa.refreshAvatar(ctx, jid)
+	if assetID != "" {
+		return
+	}
+	if err := wa.refreshAvatarWithRetries(ctx, jid, true); err != nil {
+		log.Printf("[avatar] giving up after %d attempts for %s: %v", avatarRefreshAttempts, jid, err)
 	}
 }
 
 func (wa *WAManager) refreshAvatar(ctx context.Context, jid types.JID) {
+	if err := wa.refreshAvatarWithRetries(ctx, jid, false); err != nil {
+		log.Printf("[avatar] refresh for %s failed: %v", jid, err)
+	}
+}
+
+func (wa *WAManager) refreshAvatarWithRetries(ctx context.Context, jid types.JID, onlyIfMissing bool) error {
 	if wa.store == nil || wa.client == nil || jid.IsEmpty() {
-		return
+		return nil
+	}
+	jid = jid.ToNonAD()
+	flightValue, loaded := wa.avatarRefreshes.LoadOrStore(jid.String(), &avatarRefreshFlight{done: make(chan struct{})})
+	flight := flightValue.(*avatarRefreshFlight)
+	if loaded {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-flight.done:
+			return flight.err
+		}
+	}
+	jidKey := jid.String()
+	defer func() {
+		wa.avatarRefreshes.Delete(jidKey)
+		close(flight.done)
+	}()
+
+	for attempt := 1; attempt <= avatarRefreshAttempts; attempt++ {
+		if err := wa.refreshAvatarAttempt(ctx, jid, onlyIfMissing); err == nil {
+			return nil
+		} else if attempt == avatarRefreshAttempts {
+			flight.err = err
+			return err
+		} else {
+			flight.err = err
+		}
+		timer := time.NewTimer(time.Duration(attempt) * 500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil
+}
+
+func (wa *WAManager) refreshAvatarAttempt(ctx context.Context, jid types.JID, onlyIfMissing bool) error {
+	if wa.store == nil || wa.client == nil || jid.IsEmpty() {
+		return nil
 	}
 	jid = jid.ToNonAD()
 	ctx, cancel := context.WithTimeout(ctx, avatarRefreshTimeout)
 	defer cancel()
+
+	if wa.avatarSlots != nil {
+		select {
+		case wa.avatarSlots <- struct{}{}:
+			defer func() { <-wa.avatarSlots }()
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	unlock := wa.lockAvatar(jid)
 	defer unlock()
 	group := jid.Server == types.GroupServer
 	oldAssetID, previousPictureID, err := wa.store.AvatarMetadata(jid.String(), group)
 	if err != nil {
 		log.Printf("[avatar] metadata lookup for %s failed: %v", jid, err)
-		return
+		return err
+	}
+	if onlyIfMissing && oldAssetID != "" {
+		return nil
 	}
 	if oldAssetID == "" {
 		previousPictureID = "" // Without a local file, force a full lookup even if legacy metadata has an ID.
@@ -90,42 +163,40 @@ func (wa *WAManager) refreshAvatar(ctx context.Context, jid types.JID) {
 	info, err := wa.client.GetProfilePictureInfo(ctx, jid, &whatsmeow.GetProfilePictureParams{ExistingID: previousPictureID})
 	if errors.Is(err, whatsmeow.ErrProfilePictureNotSet) {
 		wa.removeAvatarLocked(jid, group)
-		return
+		return nil
 	}
 	if err != nil {
-		log.Printf("[avatar] picture lookup for %s failed; preserving cached avatar: %v", jid, err)
-		return
+		return err
 	}
 	if info == nil {
-		return
+		if oldAssetID == "" {
+			err := fmt.Errorf("picture lookup returned no data for missing avatar")
+			return err
+		}
+		return nil
 	} // The stored picture ID is still current.
 	if info.ID == "" || info.URL == "" {
-		log.Printf("[avatar] picture lookup for %s returned incomplete data", jid)
-		return
+		err := fmt.Errorf("picture lookup returned incomplete data")
+		return err
 	}
 	data, err := downloadAvatar(ctx, info.URL)
 	if err != nil {
-		log.Printf("[avatar] download for %s failed; preserving cached avatar: %v", jid, err)
-		return
+		return err
 	}
 	assetID, err := newAvatarID()
 	if err != nil {
-		log.Printf("[avatar] ID generation for %s failed: %v", jid, err)
-		return
+		return err
 	}
 	path, err := wa.store.avatarPath(assetID)
 	if err != nil {
-		log.Printf("[avatar] invalid stored asset ID for %s: %v", jid, err)
-		return
+		return err
 	}
 	if err := writeAvatarAtomically(path, data); err != nil {
-		log.Printf("[avatar] storage for %s failed: %v", jid, err)
-		return
+		return err
 	}
 	if err := wa.store.SaveAvatar(jid.String(), assetID, info.ID, group); err != nil {
-		log.Printf("[avatar] metadata update for %s failed: %v", jid, err)
 		_ = os.Remove(path)
-		return
+		return err
 	}
 	if oldAssetID != "" {
 		if oldPath, err := wa.store.avatarPath(oldAssetID); err == nil {
@@ -137,6 +208,56 @@ func (wa *WAManager) refreshAvatar(ctx context.Context, jid types.JID) {
 		eventType = "chat"
 	}
 	publishRealtime(RealtimeEvent{Type: eventType, ChatID: jid.String()})
+	return nil
+}
+
+func (wa *WAManager) backfillMissingAvatars(ctx context.Context) {
+	wa.avatarBackfillMu.Lock()
+	if wa.avatarBackfillRun {
+		wa.avatarBackfillMu.Unlock()
+		return
+	}
+	wa.avatarBackfillRun = true
+	wa.avatarBackfillMu.Unlock()
+	defer func() {
+		wa.avatarBackfillMu.Lock()
+		wa.avatarBackfillRun = false
+		wa.avatarBackfillMu.Unlock()
+	}()
+
+	candidates, err := wa.store.MissingAvatarCandidates()
+	if err != nil {
+		log.Printf("[avatar] failed to list backfill candidates: %v", err)
+		return
+	}
+	var workers sync.WaitGroup
+	jobs := make(chan avatarCandidate)
+	workerCount := 4
+	for range workerCount {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for candidate := range jobs {
+				jid, err := types.ParseJID(candidate.jid)
+				if err != nil {
+					continue
+				}
+				wa.fetchMissingAvatar(ctx, jid)
+			}
+		}()
+	}
+	for _, candidate := range candidates {
+		select {
+		case <-ctx.Done():
+			close(jobs)
+			workers.Wait()
+			return
+		case jobs <- candidate:
+		}
+	}
+	close(jobs)
+	workers.Wait()
+	log.Printf("[avatar] backfill completed: candidates=%d", len(candidates))
 }
 
 func (wa *WAManager) removeAvatar(jid types.JID, group bool) {

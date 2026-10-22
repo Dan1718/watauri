@@ -57,7 +57,7 @@ export default function RealtimeProvider({ children }: PropsWithChildren) {
           const payload = JSON.parse((message as MessageEvent<string>).data) as RealtimeNotification;
           notify({ ...payload, type });
         } catch {
-          // A malformed event should not take down the stream or prevent fallback polling.
+          // Ignore malformed events without taking down the stream.
         }
       };
       source.addEventListener(type, handler);

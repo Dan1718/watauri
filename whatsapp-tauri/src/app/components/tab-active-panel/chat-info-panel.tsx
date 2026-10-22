@@ -86,14 +86,15 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
       contact,
       id,
       isSelf: id === userId || contact?.id === userId,
+      role: contact?.rank === 2 ? "Superadmin" : contact?.rank === 1 ? "Admin" : undefined,
       name: contact?.displayName || (contact?.phone ? `+${contact.phone}` : getDisplayNameFromJid(id)),
     }))
     .sort((a, b) => Number(Boolean(b.contact?.isSaved)) - Number(Boolean(a.contact?.isSaved)) ||
       Number(b.isSelf) - Number(a.isSelf) ||
       a.name.localeCompare(b.name));
   const search = memberSearch.trim().toLowerCase();
-  const matchingMembers = members.filter(({ contact, id, isSelf, name }) =>
-    [name, id, contact?.phone, contact?.statusMessage, isSelf ? "You" : ""].some((value) => value?.toLowerCase().includes(search))
+  const matchingMembers = members.filter(({ contact, id, isSelf, name, role }) =>
+    [name, id, contact?.phone, contact?.statusMessage, role, isSelf ? "You" : ""].some((value) => value?.toLowerCase().includes(search))
   );
   const visibleMembers = showAllMembers ? matchingMembers : matchingMembers.slice(0, 5);
   const media = messages.filter((message) =>
@@ -167,13 +168,14 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
                   <button className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm font-medium text-emerald-400 transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-emerald-400" type="button"><span className="grid size-8 place-items-center rounded-full bg-emerald-400/15"><Icon>group_add</Icon></span>Add members</button>
                 </div>
                 <div className="px-2 pb-2">
-                  {visibleMembers.map(({ contact: member, id, isSelf, name }) => (
+                  {visibleMembers.map(({ contact: member, id, isSelf, name, role }) => (
                     <div className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-white/10" key={id}>
                       <Profile size="8" url={member?.contactAvatar} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm text-white/90">{name}</span>
                           {isSelf ? <span className="rounded-full bg-emerald-400/12 px-2 py-0.5 text-[10px] font-medium text-emerald-400">You</span> : null}
+                          {role ? <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white/65">{role}</span> : null}
                         </div>
                         {member?.statusMessage ? <p className="mt-0.5 truncate text-xs text-white/45">{member.statusMessage}</p> : null}
                       </div>

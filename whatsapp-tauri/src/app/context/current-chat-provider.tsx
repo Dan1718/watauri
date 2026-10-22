@@ -20,7 +20,7 @@ import { canReadConversation } from "../read-marking/viewport";
 import { useProfile } from "../hooks/use-profile";
 
 export type CurrentChatContacts = {
-  [contactId: string]: Contact | undefined;
+  [contactId: string]: (Contact & { rank?: number }) | undefined;
 };
 
 export type CurrentChatContactsGroup = {
@@ -121,7 +121,8 @@ type ActiveRequest = {
 function sameContact(a: Contact | undefined | null, b: Contact | undefined | null) {
   return a === b || Boolean(a && b && a.id === b.id && a.displayName === b.displayName &&
     a.contactAvatar === b.contactAvatar && a.statusMessage === b.statusMessage &&
-    a.phone === b.phone && a.isSaved === b.isSaved && a.typing === b.typing);
+    a.phone === b.phone && a.phoneJid === b.phoneJid && a.lidJid === b.lidJid &&
+    a.isSaved === b.isSaved && a.typing === b.typing);
 }
 
 export default function CurrentChatProvider({ children }: PropsWithChildren) {
@@ -319,7 +320,10 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
             contactAvatar: contact?.contactAvatar || participant.avatar || "",
             statusMessage: contact?.statusMessage || participant.status || "",
             phone: participant.phoneNumber || contact?.phone,
+            phoneJid: participant.phoneJid || contact?.phoneJid,
+            lidJid: participant.lidJid || contact?.lidJid,
             isSaved: participant.isSaved,
+            rank: participant.rank,
           } : contact;
         });
         const group = {

@@ -16,6 +16,8 @@ export type Contact = {
   contactAvatar: string;
   statusMessage: string;
   phone?: string;
+  phoneJid?: string;
+  lidJid?: string;
   isSaved?: boolean;
   typing?: boolean;
 };
@@ -47,6 +49,8 @@ function toContact(user: BackendUser): Contact {
     contactAvatar: user.avatar ?? "",
     statusMessage: user.status ?? "",
     phone,
+    phoneJid: user.phoneJid,
+    lidJid: user.lidJid,
     isSaved: user.isSaved ?? Boolean(user.name),
   };
 }

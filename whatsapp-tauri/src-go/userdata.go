@@ -117,6 +117,19 @@ func (s *UserDataStore) migrate() error {
 			phone_jid TEXT NOT NULL,
 			updated_at TEXT
 		)`,
+		`CREATE TABLE IF NOT EXISTS participant_revision (
+			singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+			revision INTEGER NOT NULL
+		)`,
+		`INSERT INTO participant_revision (singleton, revision) VALUES (1, 0) ON CONFLICT(singleton) DO NOTHING`,
+		`CREATE TABLE IF NOT EXISTS participant_departures (
+			chat_jid TEXT NOT NULL,
+			user_jid TEXT NOT NULL,
+			revision INTEGER NOT NULL,
+			PRIMARY KEY (chat_jid, user_jid),
+			FOREIGN KEY (chat_jid) REFERENCES chats(jid) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS participant_departures_user_idx ON participant_departures(user_jid)`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
 			text,
 			content=messages,
@@ -185,6 +198,9 @@ func (s *UserDataStore) migrate() error {
 		if _, err := tx.Exec(q); err != nil {
 			return err
 		}
+	}
+	if err := migrateParticipantAliases(tx); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -396,40 +412,11 @@ func hasGroupMetadataPatch(patch GroupMetadataPatch) bool {
 }
 
 func (s *UserDataStore) UpsertChatParticipant(chatJID, userJID string, rank int) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	start := time.Now()
-	_, err := s.db.Exec(
-		`INSERT INTO chat_participants (chat_jid, user_jid, rank, updated_at)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(chat_jid, user_jid) DO UPDATE SET
-			rank = excluded.rank,
-			updated_at = excluded.updated_at`,
-		chatJID, userJID, rank, start.Format(time.RFC3339),
-	)
-	if err != nil {
-		log.Printf("[store] UpsertChatParticipant(%s -> %s) error: %v (%v)", userJID, chatJID, err, time.Since(start))
-		return err
-	}
-
-	return nil
+	return s.writeParticipant(chatJID, userJID, rank, participantWrite{source: participantLive})
 }
 
 func (s *UserDataStore) DeleteChatParticipant(chatJID, userJID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	start := time.Now()
-	_, err := s.db.Exec(
-		`DELETE FROM chat_participants WHERE chat_jid = ? AND user_jid = ?`,
-		chatJID, userJID,
-	)
-	if err != nil {
-		log.Printf("[store] DeleteChatParticipant(%s -> %s) error: %v (%v)", userJID, chatJID, err, time.Since(start))
-		return err
-	}
-	log.Printf("[store] DeleteChatParticipant(%s -> %s) OK (%v)", userJID, chatJID, time.Since(start))
-	return nil
+	return s.writeParticipant(chatJID, userJID, 0, participantWrite{remove: true})
 }
 
 func (s *UserDataStore) ResolveContact(jid string) (User, bool, error) {
@@ -573,6 +560,9 @@ func (s *UserDataStore) UpsertJIDMapping(lidJID, phoneJID string) error {
 		lidJID, phoneJID, start.Format(time.RFC3339),
 	); err != nil {
 		log.Printf("[store] UpsertJIDMapping(%s -> %s) error: %v (%v)", lidJID, phoneJID, err, time.Since(start))
+		return err
+	}
+	if err := mergeParticipantAlias(tx, lidJID, phoneJID, ""); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -759,7 +749,8 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 			COALESCE(NULLIF(c.name, ''), NULLIF(pc.name, ''), NULLIF(lc.name, '')) AS name,
 			COALESCE(NULLIF(c.avatar, ''), NULLIF(pc.avatar, ''), NULLIF(lc.avatar, '')) AS avatar,
 			COALESCE(NULLIF(c.push_name, ''), NULLIF(pc.push_name, ''), NULLIF(lc.push_name, '')) AS push_name,
-			COALESCE(NULLIF(c.status, ''), NULLIF(pc.status, ''), NULLIF(lc.status, '')) AS status
+			COALESCE(NULLIF(c.status, ''), NULLIF(pc.status, ''), NULLIF(lc.status, '')) AS status,
+			p.rank
 		FROM chat_participants p
 		LEFT JOIN contacts c ON c.jid = p.user_jid
 		LEFT JOIN jid_mappings lid_map ON lid_map.lid_jid = p.user_jid
@@ -788,6 +779,7 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 
 	for rows.Next() {
 		var participant User
+		var rank int
 		var name, avatar, pushName, status, phoneJID, lidJID sql.NullString
 		if err := rows.Scan(
 			&participant.ID,
@@ -797,9 +789,11 @@ func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error
 			&avatar,
 			&pushName,
 			&status,
+			&rank,
 		); err != nil {
 			return nil, err
 		}
+		participant.Rank = &rank
 		if name.Valid {
 			participant.Name = name.String
 		}

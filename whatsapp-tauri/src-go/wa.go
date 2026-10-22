@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -280,6 +281,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 					continue
 				}
 				if chat.IsGroup {
+					wa.persistHistoryParticipants(conv)
 					if err := wa.store.UpsertGroupMetadata(canonicalChatJID, groupMetadataUpdateFromHistoryConversation(conv)); err != nil {
 						log.Printf("[wa] failed to upsert history group metadata %s: %v", canonicalChatJID, err)
 					}
@@ -313,7 +315,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			publishRealtime(RealtimeEvent{Type: "sync", Progress: &progress, SyncType: data.GetSyncType().String()})
 			if messagesStored > 0 {
 				publishRealtime(RealtimeEvent{Type: "resync"})
-			} else if conversationsStored > 0 || pushnamesStored > 0 || inlineContactsStored > 0 {
+			} else if conversationsStored > 0 || pushnamesStored > 0 || inlineContactsStored > 0 || jidMappingsStored > 0 {
 				publishRealtime(RealtimeEvent{Type: "chat"})
 			}
 		case *events.PushName:
@@ -671,19 +673,16 @@ func groupParticipantRank(participant types.GroupParticipant) int {
 }
 
 func groupParticipantJID(participant types.GroupParticipant) types.JID {
-	if participant.JID.User != "" && participant.JID.Server != "" {
-		return participant.JID.ToNonAD()
-	}
-	if participant.PhoneNumber.User != "" && participant.PhoneNumber.Server != "" {
-		return participant.PhoneNumber.ToNonAD()
-	}
-	if participant.LID.User != "" && participant.LID.Server != "" {
-		return participant.LID.ToNonAD()
+	for _, candidate := range []types.JID{participant.PhoneNumber, participant.JID, participant.LID} {
+		if normalized, err := normalizeParticipantJID(candidate.String()); err == nil {
+			jid, _ := types.ParseJID(normalized)
+			return jid
+		}
 	}
 	return types.JID{}
 }
 
-func (wa *WAManager) persistGroupParticipant(chatJID string, participant types.GroupParticipant) bool {
+func (wa *WAManager) persistGroupParticipant(chatJID string, participant types.GroupParticipant, snapshotRevision *int64) bool {
 	wa.mu.RLock()
 	store := wa.store
 	wa.mu.RUnlock()
@@ -701,17 +700,22 @@ func (wa *WAManager) persistGroupParticipant(chatJID string, participant types.G
 		PushName: participant.DisplayName,
 	}); err != nil {
 		log.Printf("[wa] failed to upsert group participant contact %s: %v", userID, err)
-		return false
 	}
-	if participant.LID.User != "" &&
-		participant.LID.Server == types.HiddenUserServer &&
-		participant.PhoneNumber.User != "" &&
-		participant.PhoneNumber.Server == types.DefaultUserServer {
-		if err := store.UpsertJIDMapping(participant.LID.ToNonAD().String(), participant.PhoneNumber.ToNonAD().String()); err != nil {
-			log.Printf("[wa] failed to upsert group participant jid mapping %s -> %s: %v", participant.LID, participant.PhoneNumber, err)
+	// Some snapshots carry the LID only in JID, not in the dedicated LID field.
+	lid := participant.LID
+	if lid.User == "" || lid.Server != types.HiddenUserServer {
+		lid = participant.JID
+	}
+	phone, phoneErr := normalizeParticipantJID(participant.PhoneNumber.String())
+	if lid.User != "" && lid.Server == types.HiddenUserServer && phoneErr == nil &&
+		strings.HasSuffix(phone, "@"+types.DefaultUserServer) {
+		if err := store.UpsertJIDMapping(lid.ToNonAD().String(), phone); err != nil {
+			log.Printf("[wa] failed to upsert group participant jid mapping %s -> %s: %v", lid, phone, err)
 		}
 	}
-	if err := store.UpsertChatParticipant(chatJID, userID, groupParticipantRank(participant)); err != nil {
+	if err := store.writeParticipant(chatJID, userID, groupParticipantRank(participant), participantWrite{
+		source: participantSnapshot, snapshotRevision: snapshotRevision,
+	}); err != nil {
 		log.Printf("[wa] failed to upsert group participant %s in %s: %v", userID, chatJID, err)
 		return false
 	}
@@ -725,6 +729,13 @@ func (wa *WAManager) SyncGroups(ctx context.Context) {
 	wa.mu.RUnlock()
 	if client == nil || store == nil {
 		log.Println("[wa] Skipping group sync: client or store is nil")
+		return
+	}
+	// A response already in flight must not undo a departure processed while
+	// waiting for the network. Use a durable logical revision, not wall time.
+	snapshotRevision, err := store.participantRevision()
+	if err != nil {
+		log.Printf("[wa] Failed to read participant revision: %v", err)
 		return
 	}
 	groups, err := client.GetJoinedGroups(ctx)
@@ -741,7 +752,7 @@ func (wa *WAManager) SyncGroups(ctx context.Context) {
 			groupsSkipped++
 			continue
 		}
-		storedParticipants, err := wa.persistGroupInfo(*group)
+		storedParticipants, err := wa.persistGroupInfoAtRevision(*group, &snapshotRevision)
 		if err != nil {
 			log.Printf("[wa] failed to upsert synced group %s: %v", group.JID, err)
 			groupsSkipped++
@@ -755,6 +766,12 @@ func (wa *WAManager) SyncGroups(ctx context.Context) {
 }
 
 func (wa *WAManager) persistGroupInfo(group types.GroupInfo) (int, error) {
+	// Unsolicited snapshots (JoinedGroup) have no request-start boundary and
+	// cannot safely clear a departure. Explicit live joins can still restore it.
+	return wa.persistGroupInfoAtRevision(group, nil)
+}
+
+func (wa *WAManager) persistGroupInfoAtRevision(group types.GroupInfo, snapshotRevision *int64) (int, error) {
 	if group.JID.User == "" || group.JID.Server == "" {
 		return 0, fmt.Errorf("invalid group JID %s", group.JID)
 	}
@@ -778,7 +795,7 @@ func (wa *WAManager) persistGroupInfo(group types.GroupInfo) (int, error) {
 
 	participantsStored := 0
 	for _, participant := range group.Participants {
-		if wa.persistGroupParticipant(chatJID, participant) {
+		if wa.persistGroupParticipant(chatJID, participant, snapshotRevision) {
 			participantsStored++
 		}
 	}
@@ -787,7 +804,7 @@ func (wa *WAManager) persistGroupInfo(group types.GroupInfo) (int, error) {
 }
 
 func (wa *WAManager) handleGroupInfoEvent(evt *events.GroupInfo) {
-	if evt == nil || wa.store == nil || evt.JID.User == "" || evt.JID.Server == "" {
+	if evt == nil || wa.store == nil || evt.JID.User == "" || evt.JID.Server != types.GroupServer {
 		return
 	}
 	chatJID := evt.JID.ToNonAD().String()
@@ -810,6 +827,7 @@ func (wa *WAManager) handleGroupInfoEvent(evt *events.GroupInfo) {
 	if err := wa.store.UpsertGroupMetadata(chatJID, patch); err != nil {
 		log.Printf("[wa] failed to persist group metadata event for %s: %v", chatJID, err)
 	}
+	wa.persistLiveParticipants(evt)
 	publishRealtime(RealtimeEvent{Type: "chat", ChatID: chatJID})
 
 	if evt.Link != nil && evt.Link.Type == types.GroupLinkChangeTypeSub && evt.Link.Group.JID.User != "" {

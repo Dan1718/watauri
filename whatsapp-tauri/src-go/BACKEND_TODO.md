@@ -148,7 +148,7 @@ Current issue:
 
 - `events.HistorySync` now persists conversations and parseable messages.
 - Initial pairing can backfill old chats/messages.
-- Group participants from joined-group sync, avatars, and richer group metadata are still incomplete.
+- Available group participants and group metadata are persisted; avatars and reconciliation of incomplete/out-of-order rosters remain incomplete.
 
 Required implementation:
 
@@ -156,7 +156,7 @@ Required implementation:
 - ✅ For each conversation, upsert a chat using conversation ID, name/display name, unread count, archive status, and group status.
 - ✅ For each `HistorySyncMsg`, use `wa.client.ParseWebMessage(chatJID, historyMsg.GetMessage())` to convert it into the same shape used for live messages.
 - ✅ Reuse the same message persistence path used by `events.Message`.
-- ⚠️ Store participants for groups from joined-group sync; history-sync conversation participant extraction remains incomplete.
+- ✅ Store participants from joined-group sync and explicit history conversation participant records; history adds missing rows without overwriting existing ranks or deleting absent members.
 - ✅ Store push names/contact names where available.
 - ✅ Log sync type, chunk order, progress, conversations inserted, messages inserted, and skipped messages.
 
@@ -331,7 +331,11 @@ Group metadata persistence and the nested chat API object are implemented. Popul
 - ✅ Group participants from joined-group sync.
 - ✅ Group description, owner/creation details, restrictions, disappearing-message settings, approval, relationships, suspension, and deletion metadata from available sync/event fields.
 - ✅ Live group-info changes update metadata and community links.
-- ⚠️ Group participants from history-sync conversation chunks.
+- ✅ Group participants from explicit history-sync conversation records, with insert-only partial-history handling.
+- ✅ Live joins/leaves/promotions/demotions, participant-scoped JID normalization and mapped alias merging, optional contact enrichment, numeric participant ranks in the chat API, and existing SSE chat invalidations.
+- ✅ Durable, mapped departure markers block stale history/role-only resurrection, survive restarts, and clear atomically on explicit rejoins or eligible requested snapshots. Snapshot request-start revisions protect departures observed while a request is in flight; unsolicited snapshots cannot clear markers.
+- ⚠️ Snapshots do not prune missing members or order every rank update against live events. Unknown mappings/missed events and departures from before this upgrade cannot be fully reconciled. Complete roster reconciliation remains future work.
+- Frontend participant list/admin role rendering is tracked separately in [#72](https://github.com/Dan1718/watauri/issues/72).
 - ⚠️ Group avatar when available.
 - ✅ Group name/topic update events.
 

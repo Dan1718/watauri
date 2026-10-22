@@ -157,6 +157,10 @@ const MessageList = memo(function MessageList({
     () => new Map(messages.map((message, index) => [message.id, index])),
     [messages]
   );
+  const incomingMessageIndexes = useMemo(
+    () => messages.flatMap((message, index) => message.isSentFromUser ? [] : [index]),
+    [messages]
+  );
   const previousMessages = useRef(messages);
   const committedFirstItemIndex = useRef(INITIAL_ITEM_INDEX);
   const positionedAtUnread = useRef(false);
@@ -164,8 +168,8 @@ const MessageList = memo(function MessageList({
   let firstItemIndex = committedFirstItemIndex.current;
   // Keep the opening scroll target stable as viewport reads reduce the count.
   const openingUnreadCount = useRef(unreadCount).current;
-  const oldestUnreadIndex = openingUnreadCount <= messages.length || !hasMoreMessages
-    ? Math.max(0, messages.length - openingUnreadCount)
+  const oldestUnreadIndex = openingUnreadCount > 0 && incomingMessageIndexes.length > 0
+    ? incomingMessageIndexes[Math.max(0, incomingMessageIndexes.length - openingUnreadCount)]
     : -1;
 
   if (previousMessages.current !== messages && previousMessages.current[0]) {
@@ -188,17 +192,17 @@ const MessageList = memo(function MessageList({
 
   useLayoutEffect(() => {
     if (positionedAtUnread.current || openingUnreadCount === 0 || messages.length === 0 || isLoading) return;
-    if (openingUnreadCount > messages.length && hasMoreMessages) {
+    if (openingUnreadCount > incomingMessageIndexes.length && hasMoreMessages) {
       void loadOlderMessages();
       return;
     }
 
     positionedAtUnread.current = true;
     virtuosoRef.current?.scrollToIndex({
-      index: firstItemIndex + Math.max(0, messages.length - openingUnreadCount),
+      index: firstItemIndex + Math.max(0, oldestUnreadIndex),
       align: "center",
     });
-  }, [firstItemIndex, hasMoreMessages, isLoading, loadOlderMessages, messages.length, openingUnreadCount]);
+  }, [firstItemIndex, hasMoreMessages, incomingMessageIndexes.length, isLoading, loadOlderMessages, messages.length, oldestUnreadIndex, openingUnreadCount]);
 
   const toggleReactionMenu = useCallback((messageId: string) => {
     setActiveReactionId((current) => current === messageId ? null : messageId);

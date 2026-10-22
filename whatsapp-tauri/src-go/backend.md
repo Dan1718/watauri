@@ -129,7 +129,7 @@ Returns all chats for the authenticated user from local SQLite storage.
   {
     "id": "chat-1",
     "participants": [
-      { "id": "user-1", "name": "Alice", "avatar": "https://...", "status": "online" }
+      { "id": "user-1", "name": "Alice", "avatar": "/api/avatars/0123456789abcdef0123456789abcdef", "status": "online" }
     ],
     "lastMessage": {
       "id": "msg-123",
@@ -165,7 +165,7 @@ Returns all chats for the authenticated user from local SQLite storage.
 - Live leaves atomically delete active membership and persist a group/participant departure marker in `participant_departures`. History and role-only events cannot restore departed members, including after restarts. An explicit live join clears the marker atomically with its participant upsert.
 - Requested joined-group snapshots capture the durable `participant_revision` before the network request. A snapshot can restore an explicitly listed member only if their departure was already recorded when that request began. Departures processed while the snapshot was in flight remain protected. Unsolicited `JoinedGroup` snapshots lack this boundary and cannot clear departure markers. Snapshots never infer removals from omitted members.
 - Departure markers follow reliable LID/phone mappings, including mappings learned later. Startup migration also reconciles participant aliases already stored by older versions. When previously unmapped aliases have contradictory membership evidence, a departure wins conservatively until a known rejoin or eligible snapshot. Markers are not time-expired; they are removed on confirmed restoration or deletion of the group.
-- Limitations: history is partial; existing ranks are intentionally not refreshed from history. In-flight snapshot protection covers departures, not all rank updates or out-of-order live events. Unknown identity mappings, missed events, and incomplete snapshots still prevent a guaranteed complete current roster. Departure markers protect observed leaves only; older versions did not retain departures, so those cannot be reconstructed on upgrade. No avatar downloading or frontend rendering is included; UI follow-up: [#72](https://github.com/Dan1718/watauri/issues/72).
+- Limitations: history is partial; existing ranks are intentionally not refreshed from history. In-flight snapshot protection covers departures, not all rank updates or out-of-order live events. Unknown identity mappings, missed events, and incomplete snapshots still prevent a guaranteed complete current roster. Departure markers protect observed leaves only; older versions did not retain departures, so those cannot be reconstructed on upgrade.
 - Group chats include a nested `groupMetadata` object when group metadata has been received. It includes available description, owner/creation, restrictions, disappearing-message, approval, community relationship, suspension, and deletion fields. The existing top-level `isAnnouncement` and `isSuspended` values remain compatibility aliases.
 - Group metadata is populated from joined-group sync, available history-sync conversation fields, and live group-info events. Partial updates modify only supplied values; absent fields preserve stored values.
 - A `lastMessage`, when present, is loaded from its stored message row and includes its chat JID, sender, text, timestamp, status, media type when non-empty, and `isFromMe` value. If the chat references a missing message row, `lastMessage` is omitted.
@@ -173,6 +173,8 @@ Returns all chats for the authenticated user from local SQLite storage.
 - Real-time invalidations are streamed over `GET /api/events`; polling remains the fallback when SSE is disconnected.
 
 **Status**: Implemented (`GET`, SQLite-backed)
+
+Chat `avatar` values are empty when no local picture is available; otherwise they contain a local API path such as `/api/avatars/{opaque-id}`. WhatsApp CDN URLs are never returned. Direct-chat participants use the same local URL contract.
 
 ---
 
@@ -372,7 +374,7 @@ Returns all known contacts.
 **Response `200`**
 ```json
 [
-  { "id": "user-1", "name": "Alice", "avatar": "https://...", "status": "online" }
+  { "id": "user-1", "name": "Alice", "avatar": "/api/avatars/0123456789abcdef0123456789abcdef", "status": "online" }
 ]
 ```
 
@@ -381,6 +383,14 @@ Returns all known contacts.
 **Status**: Implemented (`GET`)
 
 ---
+
+Contact `avatar` values use the same local URL contract as chat avatars and are empty when no local picture is available.
+
+### `GET /api/avatars/{opaque-id}`
+
+Returns a locally stored contact or group avatar. The random opaque 128-bit identifier is validated and resolved beneath the runtime `avatars` directory; the endpoint does not accept JIDs or filesystem paths. Responses include a detected raster image content type and `X-Content-Type-Options: nosniff`.
+
+**Status**: Implemented (`GET`; local files only)
 
 ### `GET /api/contacts/:id`
 
@@ -469,6 +479,9 @@ data: {"type":"receipt","chatId":"chat-1","messageIds":["msg-123"]}
 event: chat
 data: {"type":"chat","chatId":"chat-1"}
 
+event: contact
+data: {"type":"contact","chatId":"user-1"}
+
 event: sync
 data: {"type":"sync","progress":75,"syncType":"INITIAL_BOOTSTRAP"}
 
@@ -481,6 +494,7 @@ data: {"type":"resync"}
 - EventSource reconnects automatically. On each connection/reconnection, the frontend refreshes current state through existing APIs.
 - Message and receipt events identify the affected chat and message IDs; the active conversation refetches changes using its revision cursor. The sidebar refreshes from `GET /api/chats`.
 - Chat invalidations may include a chat ID; history sync can emit a global `resync` invalidation.
+- Contact avatar updates/removals emit `contact`, prompting the contact list to refetch `/api/contacts`.
 - A slow client's bounded queue is replaced with a `resync` event rather than blocking WhatsApp event processing.
 - Event delivery is best-effort, not replayable. Polling remains active while SSE is unavailable as a fallback.
 
@@ -638,7 +652,8 @@ These are common statuses, not an exhaustive mapping. For example, invalid curso
 
 #### Local SQLite metadata schema
 
-- `chats` includes avatar identifiers/status/update time and pin/mute fields in addition to existing archive/star/activity state.
+- `chats` includes avatar identifiers/status/update time and pin/mute fields in addition to existing archive/star/activity state. Contacts also persist avatar identifiers, picture IDs, status, and update time.
+- Contact/group sync fetches avatars that have no local asset. Once stored, avatars refresh only on picture-change events; existing picture IDs are sent to whatsmeow to avoid unchanged downloads. Removal clears metadata and the local file; transient lookup/download failures preserve the last stored image. Updated files are staged and atomically renamed before the database switches to the new opaque ID.
 - `group_metadata` stores group description, owner/creation details, group settings, and parent/subgroup relationships in a one-to-one row linked to `chats.jid`; deleting a chat cascades to this row.
 - Group metadata is populated from joined-group sync, available history-sync conversation fields, and live group-info events, and exposed as the nested `groupMetadata` field on group chats.
 - Partial history/live updates preserve metadata fields omitted from the incoming payload.

@@ -34,7 +34,7 @@ Look at [FEATURES.md](./FEATURES.md) for everything.
 - [ ] Contact name sync (names come from available sync data; coverage is incomplete)
 - [ ] Group metadata (in progress; names are persisted, live updates are pending)
 - [ ] Group participants (in progress; joined-group sync is implemented)
-- [ ] Contact and group avatars (storage exists; fetching and update events are pending)
+- [x] Contact and group avatars (stored locally and served through opaque local API URLs)
 - [ ] Communities and related group metadata
 - [ ] Pinned chats
 - [ ] Pinned messages
@@ -142,7 +142,7 @@ whatsapp-tauri/
 - [x] Contacts
 - [ ] Group metadata (history-sync names and joined-group sync exist; live updates and some metadata remain incomplete)
 - [ ] Group participants (in progress; joined-group sync is implemented)
-- [ ] Local avatars (storage exists; fetching is pending)
+- [x] Local avatars (contact and group pictures are refreshed from WhatsApp picture events)
 - [x] Message pagination
 - [ ] Real-time updates with Server-Sent Events
 - [x] Read receipts

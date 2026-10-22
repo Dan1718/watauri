@@ -13,6 +13,9 @@ const sizes = {
 } as const;
 
 function thumbnailUrl(url: string, width: number) {
+  if (url.startsWith("/api/avatars/")) {
+    return `http://localhost:8090${url}`;
+  }
   try {
     const parsed = new URL(url);
     if (parsed.hostname === "images.unsplash.com") {

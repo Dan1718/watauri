@@ -148,7 +148,7 @@ Current issue:
 
 - `events.HistorySync` now persists conversations and parseable messages.
 - Initial pairing can backfill old chats/messages.
-- Available group participants and group metadata are persisted; avatars and reconciliation of incomplete/out-of-order rosters remain incomplete.
+- Available group participants, group metadata, and local avatars are persisted; reconciliation of incomplete/out-of-order rosters remains incomplete.
 
 Required implementation:
 
@@ -337,7 +337,7 @@ Group metadata persistence and the nested chat API object are implemented. Popul
 - ✅ Durable, mapped departure markers block stale history/role-only resurrection, survive restarts, and clear atomically on explicit rejoins or eligible requested snapshots. Snapshot request-start revisions protect departures observed while a request is in flight; unsolicited snapshots cannot clear markers.
 - ⚠️ Snapshots do not prune missing members or order every rank update against live events. Unknown mappings/missed events and departures from before this upgrade cannot be fully reconciled. Complete roster reconciliation remains future work.
 - Frontend participant list/admin role rendering is tracked separately in [#72](https://github.com/Dan1718/watauri/issues/72).
-- ⚠️ Group avatar when available.
+- ✅ Group avatar stored locally and refreshed from picture-change events.
 - ✅ Group name/topic update events.
 
 ### Profile/Current User Endpoint - ✅ Done

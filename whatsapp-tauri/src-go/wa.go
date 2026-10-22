@@ -39,6 +39,7 @@ type WAManager struct {
 	qrCode            string // base64 PNG data URL of the current QR
 	store             *UserDataStore
 	mu                sync.RWMutex
+	avatarLocks       sync.Map // JID string -> *sync.Mutex; serializes fetches and removal per avatar.
 	pairingAttempt    uint64
 	pairingQRTimeout  time.Duration // zero uses pairingQRTimeout
 	getQRChannel      func(context.Context) (<-chan whatsmeow.QRChannelItem, error)
@@ -162,6 +163,13 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			}
 		case *events.Presence:
 			log.Printf("[wa] Event: presence from=%s unavailable=%v lastSeen=%v", v.From, v.Unavailable, v.LastSeen)
+		case *events.Picture:
+			jid := v.JID.ToNonAD()
+			if v.Remove {
+				go wa.removeAvatar(jid, jid.Server == types.GroupServer)
+			} else {
+				go wa.refreshAvatar(context.Background(), jid)
+			}
 		case *events.GroupInfo:
 			wa.handleGroupInfoEvent(v)
 		case *events.JoinedGroup:
@@ -690,6 +698,7 @@ func (wa *WAManager) SyncContacts(ctx context.Context) {
 			continue
 
 		}
+		wa.fetchMissingAvatar(ctx, jid.ToNonAD())
 		stored++
 	}
 	log.Printf("[wa] Contact sync complete: stored = %d, skipped = %d, total = %d (%v)", stored, skipped, len(contacts), time.Since(start))
@@ -824,6 +833,7 @@ func (wa *WAManager) persistGroupInfoAtRevision(group types.GroupInfo, snapshotR
 	if err := wa.store.UpsertChat(chat); err != nil {
 		return 0, err
 	}
+	go wa.fetchMissingAvatar(context.Background(), group.JID.ToNonAD())
 	if err := wa.store.UpsertGroupMetadata(chatJID, groupMetadataUpdateFromGroupInfo(group)); err != nil {
 		publishRealtime(RealtimeEvent{Type: "chat", ChatID: chatJID})
 		return 0, err

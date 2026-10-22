@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -15,8 +16,9 @@ import (
 )
 
 type UserDataStore struct {
-	db *sql.DB
-	mu sync.RWMutex
+	db        *sql.DB
+	avatarDir string
+	mu        sync.RWMutex
 }
 
 func newUserDataStore() (*UserDataStore, error) {
@@ -26,14 +28,59 @@ func newUserDataStore() (*UserDataStore, error) {
 		log.Printf("[store] Failed to open userdata.db: %v", err)
 		return nil, err
 	}
-	s := &UserDataStore{db: db}
+	s := &UserDataStore{db: db, avatarDir: "avatars"}
 	log.Println("[store] Running schema migration...")
 	if err := s.migrate(); err != nil {
 		log.Printf("[store] Migration failed: %v", err)
 		return nil, err
 	}
+	if err := s.reconcileAvatarAssets(); err != nil {
+		log.Printf("[store] Avatar reconciliation failed: %v", err)
+		return nil, err
+	}
 	log.Println("[store] Schema migration complete")
 	return s, nil
+}
+
+func (s *UserDataStore) reconcileAvatarAssets() error {
+	type orphan struct{ table, jid string }
+	var missing []orphan
+	for _, table := range []string{"chats", "contacts"} {
+		rows, err := s.db.Query(`SELECT jid, avatar_id FROM ` + table + ` WHERE avatar_id IS NOT NULL AND avatar_id <> ''`)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var jid, id string
+			if err := rows.Scan(&jid, &id); err != nil {
+				rows.Close()
+				return err
+			}
+			path, pathErr := s.avatarPath(id)
+			if pathErr != nil {
+				missing = append(missing, orphan{table, jid})
+				continue
+			}
+			info, err := os.Lstat(path)
+			if os.IsNotExist(err) || (err == nil && !info.Mode().IsRegular()) {
+				missing = append(missing, orphan{table, jid})
+			} else if err != nil {
+				rows.Close()
+				return err
+			}
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+	}
+	for _, item := range missing {
+		if _, err := s.db.Exec(`UPDATE `+item.table+` SET avatar=NULL, avatar_id=NULL, avatar_picture_id=NULL, avatar_status='missing' WHERE jid=?`, item.jid); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *UserDataStore) migrate() error {
@@ -102,6 +149,10 @@ func (s *UserDataStore) migrate() error {
 			jid TEXT PRIMARY KEY,
 			name TEXT,
 			avatar TEXT,
+			avatar_id TEXT,
+			avatar_picture_id TEXT,
+			avatar_status TEXT,
+			avatar_updated_at TEXT,
 			push_name TEXT,
 			status TEXT
 		)`,
@@ -155,6 +206,7 @@ func (s *UserDataStore) migrate() error {
 	for _, column := range []struct {
 		name, definition string
 	}{
+		{"avatar", "TEXT"},
 		{"avatar_id", "TEXT"},
 		{"avatar_picture_id", "TEXT"},
 		{"avatar_status", "TEXT"},
@@ -166,6 +218,22 @@ func (s *UserDataStore) migrate() error {
 		if err := addColumnIfMissing(tx, "chats", column.name, column.definition); err != nil {
 			return err
 		}
+	}
+	for _, column := range []struct{ name, definition string }{
+		{"avatar", "TEXT"},
+		{"avatar_id", "TEXT"}, {"avatar_picture_id", "TEXT"},
+		{"avatar_status", "TEXT"}, {"avatar_updated_at", "TEXT"},
+	} {
+		if err := addColumnIfMissing(tx, "contacts", column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	// Rebuild API paths only from opaque local asset IDs; discard persisted remote URLs.
+	if _, err := tx.Exec(`UPDATE chats SET avatar = CASE WHEN avatar_id IS NOT NULL AND length(avatar_id)=32 AND avatar_id NOT GLOB '*[^0-9a-f]*' THEN '/api/avatars/' || avatar_id ELSE NULL END`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE contacts SET avatar = CASE WHEN avatar_id IS NOT NULL AND length(avatar_id)=32 AND avatar_id NOT GLOB '*[^0-9a-f]*' THEN '/api/avatars/' || avatar_id ELSE NULL END`); err != nil {
+		return err
 	}
 	if err := addColumnIfMissing(tx, "messages", "timestamp_epoch", "INTEGER"); err != nil {
 		return err
@@ -297,11 +365,10 @@ func (s *UserDataStore) UpsertChat(chat Chat) error {
 		lastMessageEpoch = &epoch
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO chats (jid, name, avatar, last_message_id, last_message_text, last_message_timestamp, last_message_timestamp_epoch, last_message_sender, unread_count, is_group, is_archived, is_starred, is_community, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO chats (jid, name, last_message_id, last_message_text, last_message_timestamp, last_message_timestamp_epoch, last_message_sender, unread_count, is_group, is_archived, is_starred, is_community, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(jid) DO UPDATE SET
 			name=COALESCE(NULLIF(EXCLUDED.name, ''), name),
-			avatar=COALESCE(NULLIF(EXCLUDED.avatar, ''), avatar),
 			last_message_id=COALESCE(NULLIF(EXCLUDED.last_message_id, ''), last_message_id),
 			last_message_text=COALESCE(NULLIF(EXCLUDED.last_message_text, ''), last_message_text),
 			last_message_timestamp=COALESCE(NULLIF(EXCLUDED.last_message_timestamp, ''), last_message_timestamp),
@@ -313,7 +380,7 @@ func (s *UserDataStore) UpsertChat(chat Chat) error {
 			is_starred=CASE WHEN ? THEN EXCLUDED.is_starred ELSE chats.is_starred END,
 			is_community=CASE WHEN ? THEN EXCLUDED.is_community ELSE chats.is_community END,
 			updated_at=EXCLUDED.updated_at`,
-		chat.ID, chat.Name, chat.Avatar,
+		chat.ID, chat.Name,
 		chat.LastMessageID, chat.LastMessageText, chat.LastMessageTimestamp, lastMessageEpoch, chat.LastMessageSender,
 		chat.UnreadCount, boolToInt(chat.IsGroup),
 		boolToInt(chat.IsArchived), boolToInt(chat.IsStarred), boolToInt(chat.IsCommunity),
@@ -1228,8 +1295,8 @@ func (s *UserDataStore) UpsertContact(contact User) error {
 
 	start := time.Now()
 	_, err := s.db.Exec(
-		`INSERT INTO contacts (jid, name, avatar, push_name, status) VALUES (?, ?, ?, ?, ?) ON CONFLICT(jid) DO UPDATE SET name=COALESCE(NULLIF(EXCLUDED.name, ''), name), avatar=COALESCE(NULLIF(EXCLUDED.avatar, ''), avatar), push_name=COALESCE(NULLIF(EXCLUDED.push_name, ''), push_name), status=COALESCE(NULLIF(EXCLUDED.status, ''), status)`,
-		contact.ID, contact.Name, contact.Avatar, contact.PushName, contact.Status,
+		`INSERT INTO contacts (jid, name, push_name, status) VALUES (?, ?, ?, ?) ON CONFLICT(jid) DO UPDATE SET name=COALESCE(NULLIF(EXCLUDED.name, ''), name), push_name=COALESCE(NULLIF(EXCLUDED.push_name, ''), push_name), status=COALESCE(NULLIF(EXCLUDED.status, ''), status)`,
+		contact.ID, contact.Name, contact.PushName, contact.Status,
 	)
 	if err != nil {
 		log.Printf("[store] UpsertContact(%s) error: %v (%v)", contact.ID, err, time.Since(start))
@@ -1278,43 +1345,48 @@ func (s *UserDataStore) GetContacts() ([]User, error) {
 	return contacts, nil
 }
 
-func (s *UserDataStore) SetChatAvatar(jid, avatar string) error {
+func (s *UserDataStore) AvatarMetadata(jid string, group bool) (assetID, pictureID string, err error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	table := "contacts"
+	if group {
+		table = "chats"
+	}
+	err = s.db.QueryRow(`SELECT COALESCE(avatar_id,''), COALESCE(avatar_picture_id,'') FROM `+table+` WHERE jid = ?`, jid).Scan(&assetID, &pictureID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", nil
+	}
+	return
+}
+
+func (s *UserDataStore) SaveAvatar(jid, assetID, pictureID string, group bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	start := time.Now()
-	_, err := s.db.Exec(
-		`UPDATE chats
-		SET avatar = ?,
-		    updated_at = ?
-		WHERE jid = ?`,
-		avatar,
-		time.Now().Format(time.RFC3339),
-		jid,
-	)
-	if err != nil {
-		log.Printf("[store] SetChatAvatar(%s) error: %v (%v)", jid, err, time.Since(start))
+	table := "contacts"
+	if group {
+		table = "chats"
 	}
+	_, err := s.db.Exec(`INSERT INTO `+table+` (jid, avatar, avatar_id, avatar_picture_id, avatar_status, avatar_updated_at)
+		VALUES (?, ?, ?, ?, 'ready', ?) ON CONFLICT(jid) DO UPDATE SET avatar=excluded.avatar, avatar_id=excluded.avatar_id,
+		avatar_picture_id=excluded.avatar_picture_id, avatar_status='ready', avatar_updated_at=excluded.avatar_updated_at`,
+		jid, "/api/avatars/"+assetID, assetID, pictureID, time.Now().UTC().Format(time.RFC3339))
 	return err
 }
 
-func (s *UserDataStore) SetContactAvatar(jid, avatar string) error {
+func (s *UserDataStore) ClearAvatar(jid string, group bool) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	start := time.Now()
-	_, err := s.db.Exec(
-		`INSERT INTO contacts (jid, avatar)
-		VALUES (?, ?)
-		ON CONFLICT(jid) DO UPDATE SET
-			avatar = excluded.avatar`,
-		jid,
-		avatar,
-	)
-	if err != nil {
-		log.Printf("[store] SetContactAvatar(%s) error: %v (%v)", jid, err, time.Since(start))
+	table := "contacts"
+	if group {
+		table = "chats"
 	}
-	return err
+	var oldID string
+	queryErr := s.db.QueryRow(`SELECT COALESCE(avatar_id,'') FROM `+table+` WHERE jid = ?`, jid).Scan(&oldID)
+	if queryErr != nil && !errors.Is(queryErr, sql.ErrNoRows) {
+		return "", queryErr
+	}
+	_, err := s.db.Exec(`UPDATE `+table+` SET avatar=NULL, avatar_id=NULL, avatar_picture_id=NULL, avatar_status='removed', avatar_updated_at=? WHERE jid=?`, time.Now().UTC().Format(time.RFC3339), jid)
+	return oldID, err
 }
 
 // SearchMessages performs full-text search across messages with optional filters.

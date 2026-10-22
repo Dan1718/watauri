@@ -290,6 +290,7 @@ Implemented query params and cursor response fields for `GET /api/chats/:id`:
 - `before` cursor for older messages.
 - `after` cursor for polling message/status deltas.
 - Responses include `messages`, `nextCursor`, `latestCursor`, and `hasMore`.
+- Message items include ordered `mentionedJids` extracted from WhatsApp ContextInfo; no mentions are represented by an empty array. Values preserve their original JID form for LID/phone alias lookup.
 
 ### Read Receipts - ✅ Done
 

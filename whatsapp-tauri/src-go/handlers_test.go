@@ -80,6 +80,25 @@ func TestHandleMessagesPaginatesAtPageBoundaries(t *testing.T) {
 	}
 }
 
+func TestMessageMentionsPersistAndReturnInOrder(t *testing.T) {
+	newTestStore(t)
+	insertTestMessages(t,
+		Message{ID: "with-mentions", Timestamp: "2026-07-21T10:01:00Z", MentionedJIDs: []string{"first@lid", "second@s.whatsapp.net"}},
+		Message{ID: "without-mentions", Timestamp: "2026-07-21T10:02:00Z"},
+	)
+
+	status, page := getMessagePage(t, "/api/chats/c1?limit=10")
+	if status != http.StatusOK || len(page.Messages) != 2 {
+		t.Fatalf("message page status=%d messages=%#v", status, page.Messages)
+	}
+	if got := page.Messages[0].MentionedJIDs; len(got) != 2 || got[0] != "first@lid" || got[1] != "second@s.whatsapp.net" {
+		t.Fatalf("persisted mentions = %#v", got)
+	}
+	if got := page.Messages[1].MentionedJIDs; got == nil || len(got) != 0 {
+		t.Fatalf("empty mentions = %#v, want []", got)
+	}
+}
+
 func TestOldestUnreadAnchorUsesChatUnreadCount(t *testing.T) {
 	newTestStore(t)
 	messages := []Message{

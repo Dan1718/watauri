@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -93,6 +94,7 @@ func (s *UserDataStore) migrate() error {
 			status TEXT DEFAULT 'sent',
 			media_type TEXT,
 			is_from_me INTEGER DEFAULT 0,
+			mentioned_jids TEXT NOT NULL DEFAULT '[]',
 			revision INTEGER NOT NULL,
 			FOREIGN KEY (chat_jid) REFERENCES chats(jid)
 		)`,
@@ -169,6 +171,9 @@ func (s *UserDataStore) migrate() error {
 		return err
 	}
 	if err := addColumnIfMissing(tx, "messages", "revision", "INTEGER"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(tx, "messages", "mentioned_jids", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
 	if err := backfillEpochs(tx); err != nil {
@@ -580,7 +585,7 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 	start := time.Now()
 	rows, err := s.db.Query(`SELECT
 		c.jid, c.name, c.avatar,
-		m.id, m.chat_jid, m.sender_jid, m.text, m.timestamp, m.status, m.media_type, m.is_from_me,
+		m.id, m.chat_jid, m.sender_jid, m.text, m.timestamp, m.status, m.media_type, m.is_from_me, m.mentioned_jids,
 		c.unread_count, c.is_group, c.is_archived, c.is_starred, c.is_community,
 		gm.chat_jid, gm.description, gm.owner_jid, gm.created_at,
 		gm.is_locked, gm.is_announce, gm.is_ephemeral, gm.disappearing_timer,
@@ -601,7 +606,7 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 		var c Chat
 		c.Participants = []User{}
 		var name, avatar sql.NullString
-		var lastMsgID, lastMsgChatJID, lastMsgSender, lastMsgText, lastMsgTS, lastMsgStatus, lastMsgMediaType sql.NullString
+		var lastMsgID, lastMsgChatJID, lastMsgSender, lastMsgText, lastMsgTS, lastMsgStatus, lastMsgMediaType, lastMsgMentionedJIDs sql.NullString
 		var lastMsgIsFromMe sql.NullInt64
 		var isGroup, isArchived, isStarred, isCommunity int
 		var metadataChatJID, metadataDescription, metadataOwnerJID, metadataCreatedAt sql.NullString
@@ -611,7 +616,7 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 		var metadataIsDefaultSubgroup, metadataIsSuspended, metadataIsDeleted sql.NullInt64
 
 		if err := rows.Scan(&c.ID, &name, &avatar,
-			&lastMsgID, &lastMsgChatJID, &lastMsgSender, &lastMsgText, &lastMsgTS, &lastMsgStatus, &lastMsgMediaType, &lastMsgIsFromMe,
+			&lastMsgID, &lastMsgChatJID, &lastMsgSender, &lastMsgText, &lastMsgTS, &lastMsgStatus, &lastMsgMediaType, &lastMsgIsFromMe, &lastMsgMentionedJIDs,
 			&c.UnreadCount, &isGroup, &isArchived, &isStarred, &isCommunity,
 			&metadataChatJID, &metadataDescription, &metadataOwnerJID, &metadataCreatedAt,
 			&metadataIsLocked, &metadataIsAnnouncement, &metadataIsEphemeral, &metadataDisappearingTimer,
@@ -648,6 +653,7 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 				lastMessage.MediaType = lastMsgMediaType.String
 			}
 			lastMessage.IsFromMe = lastMsgIsFromMe.Valid && intToBool(int(lastMsgIsFromMe.Int64))
+			lastMessage.MentionedJIDs = decodeMentionedJIDs(lastMsgMentionedJIDs.String)
 			c.LastMessage = lastMessage
 		}
 		c.IsGroup = intToBool(isGroup)
@@ -863,9 +869,14 @@ func (s *UserDataStore) InsertMessage(msg Message, incrementUnread bool) error {
 		return err
 	}
 
+	mentionedJIDs, err := json.Marshal(msg.MentionedJIDs)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
 	result, err := tx.Exec(
-		`INSERT OR IGNORE INTO messages (id, chat_jid, sender_jid, text, timestamp, timestamp_epoch, status, media_type, is_from_me, revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-		msg.ID, msg.ChatJID, msg.SenderID, msg.Text, msg.Timestamp, epoch, msg.Status, msg.MediaType, boolToInt(msg.IsFromMe),
+		`INSERT OR IGNORE INTO messages (id, chat_jid, sender_jid, text, timestamp, timestamp_epoch, status, media_type, is_from_me, mentioned_jids, revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+		msg.ID, msg.ChatJID, msg.SenderID, msg.Text, msg.Timestamp, epoch, msg.Status, msg.MediaType, boolToInt(msg.IsFromMe), string(mentionedJIDs),
 	)
 	if err != nil {
 		tx.Rollback()
@@ -1091,7 +1102,7 @@ func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *me
 	if err := s.db.QueryRow(`SELECT COALESCE(MAX(revision), 0) FROM messages WHERE chat_jid = ?`, chatJID).Scan(&latestRevision); err != nil {
 		return nil, false, 0, err
 	}
-	query := `SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, revision FROM messages WHERE chat_jid = ?`
+	query := `SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, mentioned_jids, revision FROM messages WHERE chat_jid = ?`
 	args := []any{chatJID}
 	orderBy := ` ORDER BY timestamp_epoch DESC, id DESC`
 	reverse := true
@@ -1125,10 +1136,10 @@ func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *me
 	var messages []Message
 	for rows.Next() {
 		var m Message
-		var mediaType sql.NullString
+		var mediaType, mentionedJIDs sql.NullString
 		var isFromMe int
 
-		if err := rows.Scan(&m.ID, &m.SenderID, &m.Text, &m.Timestamp, &m.Status, &mediaType, &isFromMe, &m.Revision); err != nil {
+		if err := rows.Scan(&m.ID, &m.SenderID, &m.Text, &m.Timestamp, &m.Status, &mediaType, &isFromMe, &mentionedJIDs, &m.Revision); err != nil {
 			log.Printf("[store] GetMessages(%s) row scan error: %v (%v)", chatJID, err, time.Since(start))
 			return nil, false, 0, err
 		}
@@ -1136,6 +1147,7 @@ func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *me
 			m.MediaType = mediaType.String
 		}
 		m.IsFromMe = intToBool(isFromMe)
+		m.MentionedJIDs = decodeMentionedJIDs(mentionedJIDs.String)
 		m.ChatJID = chatJID
 		messages = append(messages, m)
 	}
@@ -1422,7 +1434,7 @@ func (s *UserDataStore) getMessagesBeforeAnchor(chatJID string, anchorEpoch int6
 		return []Message{}, false, nil
 	}
 	rows, err := s.db.Query(`
-		SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, revision
+		SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, mentioned_jids, revision
 		FROM messages
 		WHERE chat_jid = ?
 		  AND (timestamp_epoch < ? OR (timestamp_epoch = ? AND id < ?))
@@ -1451,7 +1463,7 @@ func (s *UserDataStore) getMessagesFromAnchor(chatJID string, anchorEpoch int64,
 	}
 
 	rows, err := s.db.Query(`
-		SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, revision
+		SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, mentioned_jids, revision
 		FROM messages
 		WHERE chat_jid = ?
 		  AND (timestamp_epoch > ? OR (timestamp_epoch = ? AND id >= ?))
@@ -1479,7 +1491,7 @@ func scanMessageRows(rows *sql.Rows, chatJID string) ([]Message, error) {
 	var messages []Message
 	for rows.Next() {
 		var message Message
-		var mediaType sql.NullString
+		var mediaType, mentionedJIDs sql.NullString
 		var isFromMe int
 		if err := rows.Scan(
 			&message.ID,
@@ -1489,12 +1501,14 @@ func scanMessageRows(rows *sql.Rows, chatJID string) ([]Message, error) {
 			&message.Status,
 			&mediaType,
 			&isFromMe,
+			&mentionedJIDs,
 			&message.Revision,
 		); err != nil {
 			return nil, err
 		}
 		message.ChatJID = chatJID
 		message.IsFromMe = intToBool(isFromMe)
+		message.MentionedJIDs = decodeMentionedJIDs(mentionedJIDs.String)
 		if mediaType.Valid {
 			message.MediaType = mediaType.String
 		}
@@ -1505,4 +1519,15 @@ func scanMessageRows(rows *sql.Rows, chatJID string) ([]Message, error) {
 	}
 	return messages, nil
 
+}
+
+func decodeMentionedJIDs(encoded string) []string {
+	mentionedJIDs := []string{}
+	if encoded == "" {
+		return mentionedJIDs
+	}
+	if err := json.Unmarshal([]byte(encoded), &mentionedJIDs); err != nil || mentionedJIDs == nil {
+		return []string{}
+	}
+	return mentionedJIDs
 }

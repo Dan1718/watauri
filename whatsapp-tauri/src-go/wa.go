@@ -23,6 +23,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 var (
@@ -434,14 +435,15 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 		}
 	}
 	ourMsg := Message{
-		ID:        evt.Info.ID,
-		ChatJID:   chatJID,
-		SenderID:  evt.Info.Sender.String(),
-		Text:      text,
-		Timestamp: evt.Info.Timestamp.Format(time.RFC3339),
-		Status:    status,
-		MediaType: mediaType,
-		IsFromMe:  evt.Info.IsFromMe,
+		ID:            evt.Info.ID,
+		ChatJID:       chatJID,
+		SenderID:      evt.Info.Sender.String(),
+		Text:          text,
+		Timestamp:     evt.Info.Timestamp.Format(time.RFC3339),
+		Status:        status,
+		MediaType:     mediaType,
+		IsFromMe:      evt.Info.IsFromMe,
+		MentionedJIDs: extractMentionedJIDs(evt.Message),
 	}
 	if err := wa.store.InsertMessage(ourMsg, source == "live"); err != nil {
 		log.Printf("[wa] Failed to store message %s: %v", evt.Info.ID, err)
@@ -452,6 +454,40 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 	}
 	return true
 
+}
+
+// extractMentionedJIDs reads the ContextInfo directly attached to a message
+// payload. It deliberately does not walk into quoted messages, whose mentions
+// belong to the quoted message rather than the current one.
+func extractMentionedJIDs(message *waE2E.Message) []string {
+	mentionedJIDs := []string{}
+	if message == nil {
+		return mentionedJIDs
+	}
+
+	messageReflect := message.ProtoReflect()
+	fields := messageReflect.Descriptor().Fields()
+	for i := 0; i < fields.Len(); i++ {
+		field := fields.Get(i)
+		if field.Kind() != protoreflect.MessageKind || field.IsList() || !messageReflect.Has(field) {
+			continue
+		}
+		payload := messageReflect.Get(field).Message()
+		contextField := payload.Descriptor().Fields().ByName("contextInfo")
+		if contextField == nil || !payload.Has(contextField) {
+			continue
+		}
+		contextInfo := payload.Get(contextField).Message()
+		mentionField := contextInfo.Descriptor().Fields().ByName("mentionedJID")
+		if mentionField == nil || !contextInfo.Has(mentionField) {
+			continue
+		}
+		mentions := contextInfo.Get(mentionField).List()
+		for j := 0; j < mentions.Len(); j++ {
+			mentionedJIDs = append(mentionedJIDs, mentions.Get(j).String())
+		}
+	}
+	return mentionedJIDs
 }
 
 func (wa *WAManager) StartPairing() {
@@ -992,13 +1028,14 @@ func (wa *WAManager) SendText(ctx context.Context, chatID, text string) (Message
 		senderID = client.Store.ID.String()
 	}
 	message := Message{
-		ID:        string(id),
-		ChatJID:   chatID,
-		SenderID:  senderID,
-		Text:      text,
-		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
-		Status:    "pending",
-		IsFromMe:  true,
+		ID:            string(id),
+		ChatJID:       chatID,
+		SenderID:      senderID,
+		Text:          text,
+		Timestamp:     time.Now().UTC().Format(time.RFC3339Nano),
+		Status:        "pending",
+		IsFromMe:      true,
+		MentionedJIDs: []string{},
 	}
 	if err := wa.store.InsertMessage(message, false); err != nil {
 		return Message{}, fmt.Errorf("%w: %v", errPersistMessage, err)

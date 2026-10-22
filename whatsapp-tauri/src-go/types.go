@@ -12,6 +12,7 @@ type User struct {
 	PhoneJID    string `json:"phoneJid,omitempty"`
 	LIDJID      string `json:"lidJid,omitempty"`
 	IsSaved     bool   `json:"isSaved,omitempty"`
+	Rank        *int   `json:"rank,omitempty"` // Only populated for group participants.
 }
 
 type Message struct {

@@ -78,8 +78,8 @@
 | `*events.Receipt` | ✅ | Incoming delivery/read receipts update local message status; `/api/chats/{id}/read` marks inbound messages read and can send WhatsApp read receipts |
 | `*events.PushName` | ✅ | Upserted to `contacts` table |
 | `*events.Presence` | ⚠️ | Logged only, no status persisted |
-| `*events.HistorySync` | ⚠️ | Conversations/messages, push names, available contact names, and LID mappings are persisted; history-chunk group participants and avatars remain incomplete |
-| `*events.GroupInfo` | ✅ | Persists partial metadata, name/topic changes, and community link/unlink updates |
+| `*events.HistorySync` | ⚠️ | Conversations/messages, push names, available contact names, LID mappings, and explicit group participant records are persisted; complete roster reconciliation and avatars remain incomplete |
+| `*events.GroupInfo` | ✅ | Persists partial metadata, name/topic and community link/unlink updates, plus live joins/leaves/promotions/demotions with chat invalidation |
 | `*events.JoinedGroup` | ✅ | Joined-group snapshot persists group metadata and participants |
 | `*events.LoggedOut` | ✅ | Status + QR reset |
 | `*events.PairSuccess` | ❌ | Skipped |
@@ -95,7 +95,9 @@
 - `GetChats()` now loads the referenced message row for the full `lastMessage` contract; it omits `lastMessage` when that row is missing
 - Unread counts are preserved by metadata-only chat upserts, history-sync counts remain authoritative, and only new live inbound messages increment the count
 - `anchor=oldestUnread` uses the chat unread count to select the Nth newest inbound message, rather than relying on per-message read status
-- History sync persists conversations/messages and core contact identity data; joined-group sync persists participants, while history-chunk participant extraction and contact/group avatars remain incomplete
+- Group participant backend (#34): joined-group snapshots and explicit history participant records persist normalized phone/LID identities and ranks; live membership/role changes update SQLite and invalidate chats. History is insert-only and does not erase members or overwrite ranks. Existing chat responses include group-only numeric `rank` and safe name/identifier fallbacks. Frontend rendering is tracked in [#72](https://github.com/Dan1718/watauri/issues/72).
+- Durable departure markers prevent stale history from resurrecting observed departures, survive restarts, and follow mapped aliases. Live rejoins clear markers; requested snapshots can restore explicitly listed members only when no newer departure was processed after request start. Unsolicited snapshots cannot clear markers.
+- Complete roster reconciliation remains future work: snapshots do not prune absent members or guard all rank changes against live events; unknown mappings/missed events and pre-upgrade departures cannot be fully reconciled. Contact/group avatars remain incomplete.
 - History sync currently performs many per-row SQLite writes; batch inserts/transactions are needed for large initial syncs
 - Contact/group avatars: fetch profile picture URLs with whatsmeow, persist them in existing `contacts.avatar` and `chats.avatar`, and handle `*events.Picture` updates
 - Later safety net: merge existing duplicate direct chats/messages when `jid_mappings` shows an `@lid` chat and an `@s.whatsapp.net` chat belong to the same person. Full resets plus canonicalized writes should avoid most duplicates, so this is lower priority.

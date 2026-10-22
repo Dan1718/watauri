@@ -82,10 +82,12 @@ const ChatRow = memo(function ChatRow({
         {!chat.group ? (
           <Profile size="12" url={avatar} />
         ) : (
-          <Profile size="12">
-            <div className="h-full w-full flex justify-center items-center bg-white/50">
-              <UsersThreeIcon className="size-7 text-white" weight="fill" />
-            </div>
+          <Profile size="12" url={chat.groupAvatar}>
+            {!chat.groupAvatar ? (
+              <div className="h-full w-full flex justify-center items-center bg-white/50">
+                <UsersThreeIcon className="size-7 text-white" weight="fill" />
+              </div>
+            ) : undefined}
           </Profile>
         )}
       </div>

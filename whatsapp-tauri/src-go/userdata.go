@@ -1345,6 +1345,36 @@ func (s *UserDataStore) GetContacts() ([]User, error) {
 	return contacts, nil
 }
 
+func (s *UserDataStore) MissingAvatarCandidates() ([]avatarCandidate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, err := s.db.Query(`
+		SELECT jid FROM contacts
+		WHERE COALESCE(avatar_id, '') = '' AND COALESCE(avatar_status, '') <> 'removed'
+		UNION
+		SELECT jid FROM chats
+		WHERE is_group = 1 AND COALESCE(avatar_id, '') = '' AND COALESCE(avatar_status, '') <> 'removed'
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	candidates := make([]avatarCandidate, 0)
+	for rows.Next() {
+		var candidate avatarCandidate
+		if err := rows.Scan(&candidate.jid); err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return candidates, nil
+}
+
 func (s *UserDataStore) AvatarMetadata(jid string, group bool) (assetID, pictureID string, err error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

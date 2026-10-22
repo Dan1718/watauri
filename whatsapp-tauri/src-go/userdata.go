@@ -1053,6 +1053,116 @@ func (s *UserDataStore) InsertMessage(msg Message, incrementUnread bool) error {
 	return nil
 }
 
+// InsertHistoryMessages stores one conversation's parsed history in a single
+// SQLite transaction. It retains duplicate suppression and per-message
+// revisions while applying the chat summary update only once.
+func (s *UserDataStore) InsertHistoryMessages(messages []Message, senderPushNames map[string]string) (int, error) {
+	if len(messages) == 0 {
+		return 0, nil
+	}
+	type preparedMessage struct {
+		message  Message
+		epoch    int64
+		mentions string
+	}
+	prepared := make([]preparedMessage, 0, len(messages))
+	for _, message := range messages {
+		epoch, err := timestampEpoch(message.Timestamp)
+		if err != nil {
+			return 0, err
+		}
+		mentions, err := json.Marshal(message.MentionedJIDs)
+		if err != nil {
+			return 0, err
+		}
+		prepared = append(prepared, preparedMessage{message: message, epoch: epoch, mentions: string(mentions)})
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	start := time.Now()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	chatJID := messages[0].ChatJID
+	if _, err := tx.Exec(`INSERT INTO chats (jid, is_group, updated_at) VALUES (?, ?, ?) ON CONFLICT(jid) DO NOTHING`,
+		chatJID, boolToInt(strings.HasSuffix(chatJID, "@g.us")), time.Now().Format(time.RFC3339)); err != nil {
+		return 0, err
+	}
+	contactStmt, err := tx.Prepare(`INSERT INTO contacts (jid, push_name) VALUES (?, ?) ON CONFLICT(jid) DO UPDATE SET push_name=COALESCE(NULLIF(EXCLUDED.push_name, ''), push_name)`)
+	if err != nil {
+		return 0, err
+	}
+	for jid, pushName := range senderPushNames {
+		if _, err := contactStmt.Exec(jid, pushName); err != nil {
+			contactStmt.Close()
+			return 0, err
+		}
+	}
+	if err := contactStmt.Close(); err != nil {
+		return 0, err
+	}
+	var lastRevision int64
+	if err := tx.QueryRow(`UPDATE message_revision SET revision = revision + ? WHERE singleton = 1 RETURNING revision`, len(prepared)).Scan(&lastRevision); err != nil {
+		return 0, err
+	}
+	firstRevision := lastRevision - int64(len(prepared)) + 1
+	insertStmt, err := tx.Prepare(`INSERT OR IGNORE INTO messages (id, chat_jid, sender_jid, text, timestamp, timestamp_epoch, status, media_type, is_from_me, mentioned_jids, revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return 0, err
+	}
+	defer insertStmt.Close()
+	inserted := 0
+	var latest *preparedMessage
+	for i := range prepared {
+		item := &prepared[i]
+		message := item.message
+		if message.ChatJID != chatJID {
+			return 0, fmt.Errorf("history message chat %q does not match conversation %q", message.ChatJID, chatJID)
+		}
+		result, err := insertStmt.Exec(message.ID, chatJID, message.SenderID, message.Text, message.Timestamp, item.epoch,
+			message.Status, message.MediaType, boolToInt(message.IsFromMe), item.mentions, firstRevision+int64(i))
+		if err != nil {
+			log.Printf("[store] InsertHistoryMessages(%s) insert error: %v (%v)", message.ID, err, time.Since(start))
+			return 0, err
+		}
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		if rows == 0 {
+			continue
+		}
+		inserted++
+		if latest == nil || item.epoch >= latest.epoch {
+			latest = item
+		}
+	}
+	if latest != nil {
+		message := latest.message
+		_, err := tx.Exec(`UPDATE chats SET
+			last_message_id = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE last_message_id END,
+			last_message_text = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE last_message_text END,
+			last_message_timestamp = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE last_message_timestamp END,
+			last_message_sender = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE last_message_sender END,
+			last_message_timestamp_epoch = MAX(COALESCE(last_message_timestamp_epoch, ?), ?),
+			is_group = ?, updated_at = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE updated_at END
+			WHERE jid = ?`,
+			latest.epoch, message.ID, latest.epoch, message.Text, latest.epoch, message.Timestamp,
+			latest.epoch, message.SenderID, latest.epoch, latest.epoch,
+			boolToInt(strings.HasSuffix(chatJID, "@g.us")), latest.epoch, time.Now().Format(time.RFC3339), chatJID)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return inserted, nil
+}
+
 func (s *UserDataStore) GetUnreadInboundMessages(chatJID string, messageIDs []string) ([]Message, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

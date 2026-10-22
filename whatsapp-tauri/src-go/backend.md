@@ -159,6 +159,7 @@ Returns all chats for the authenticated user from local SQLite storage.
 - Group participants are returned when stored; otherwise `participants` is `[]`.
 - Each group participant includes numeric `rank`: `0` member, `1` admin, `2` superadmin. This field is omitted from direct-chat participants and contact responses. No new endpoint is required.
 - Participants come from joined-group snapshots, explicit history conversation `participant` records, and live group-info join/leave/promote/demote lists. History inserts missing members only: repeated, partial, or participant-free chunks never delete members or overwrite existing ranks. Missing history ranks default to member for newly inserted rows. Message senders and `pastParticipants` are not treated as current membership evidence.
+- History participants from each conversation are normalized and persisted together in one SQLite transaction, with a single mapping-table read; departure protection and insert-only rank semantics are retained.
 - Participant IDs are non-device phone JIDs where a reliable mapping is available, otherwise valid LIDs are retained. Legacy phone servers are normalized. Learning a mapping merges participant aliases transactionally, preserving the higher rank on collisions; subsequent live/snapshot updates can explicitly demote members. This normalization does not change direct-chat identity.
 - Contact enrichment is optional. Empty contact placeholders satisfy storage foreign keys; names fall back to push name, phone number, or the participant identifier. Unmapped participants remain visible.
 - Live participant changes publish the existing chat-scoped SSE invalidation after persistence. History chunks use the existing chat/resync invalidations, including mapping-only chunks.
@@ -216,6 +217,7 @@ Unknown chat IDs currently return an empty message page (`200`), not `404`.
 - Returns `[]` in `messages` for unknown or empty chats.
 - Message responses include `chatJid`, `senderId`, `text`, `timestamp`, `status`, and `isFromMe`; `mediaType` is omitted when empty because it uses `omitempty`.
 - Message responses include `mentionedJids`, an ordered array of the JIDs listed in the message payload's `ContextInfo`. Messages without mention metadata return an empty array. Live messages and parsed history-sync messages use the same extraction and persistence path.
+- Parsed history messages are inserted per conversation in one SQLite transaction. Duplicate IDs remain ignored, each inserted message receives a distinct revision, FTS triggers still index each inserted message, and the conversation's last-message summary is updated once for the newest imported message.
 - Mention JIDs are retained as supplied by WhatsApp, including LIDs. Existing LID/phone-JID mappings remain available in group-participant identity data so callers can match aliases to saved contacts or use the full phone JID as a fallback identifier.
 - For a zero unread count, returns the latest page. If the unread count exceeds the number of stored inbound messages, anchors at the oldest available inbound message.
 

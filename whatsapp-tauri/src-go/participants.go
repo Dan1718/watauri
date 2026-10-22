@@ -207,17 +207,137 @@ func (s *UserDataStore) writeParticipant(chatJID, raw string, rank int, write pa
 	return tx.Commit()
 }
 
+type historyParticipant struct {
+	jid  string
+	rank int
+}
+
+// writeHistoryParticipants persists one conversation's history membership in a
+// single transaction. Mapping lookup is performed once, while history remains
+// insert-only and never clears departure markers.
+func (s *UserDataStore) writeHistoryParticipants(chatJID string, participants []historyParticipant) error {
+	group, err := types.ParseJID(chatJID)
+	if err != nil || group.User == "" || group.Server != types.GroupServer {
+		return fmt.Errorf("invalid participant group %q", chatJID)
+	}
+	chatJID = group.ToNonAD().String()
+	type resolvedParticipant struct {
+		jid  string
+		rank int
+	}
+	resolved := make([]resolvedParticipant, 0, len(participants))
+	lookupSeen := make(map[string]struct{}, len(participants))
+	lookupJIDs := make([]string, 0, len(participants))
+	for _, participant := range participants {
+		jid, err := normalizeParticipantJID(participant.jid)
+		if err != nil {
+			continue
+		}
+		resolved = append(resolved, resolvedParticipant{jid: jid, rank: participant.rank})
+		if _, ok := lookupSeen[jid]; !ok {
+			lookupSeen[jid] = struct{}{}
+			lookupJIDs = append(lookupJIDs, jid)
+		}
+	}
+	if len(resolved) == 0 {
+		return nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(lookupJIDs)), ",")
+	args := make([]any, 0, len(lookupJIDs)*2)
+	for _, jid := range lookupJIDs {
+		args = append(args, jid)
+	}
+	for _, jid := range lookupJIDs {
+		args = append(args, jid)
+	}
+	rows, err := tx.Query(`SELECT lid_jid, phone_jid FROM jid_mappings WHERE lid_jid IN (`+placeholders+`) OR phone_jid IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return err
+	}
+	mappingByJID := make(map[string][2]string)
+	for rows.Next() {
+		var lid, phone string
+		if err := rows.Scan(&lid, &phone); err != nil {
+			rows.Close()
+			return err
+		}
+		mappingByJID[lid] = [2]string{lid, phone}
+		mappingByJID[phone] = [2]string{lid, phone}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	departureStmt, err := tx.Prepare(`SELECT 1 FROM participant_departures WHERE chat_jid = ? AND user_jid = ?`)
+	if err != nil {
+		return err
+	}
+	defer departureStmt.Close()
+	contactStmt, err := tx.Prepare(`INSERT INTO contacts (jid) VALUES (?) ON CONFLICT(jid) DO NOTHING`)
+	if err != nil {
+		return err
+	}
+	defer contactStmt.Close()
+	participantStmt, err := tx.Prepare(`INSERT INTO chat_participants (chat_jid, user_jid, rank, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(chat_jid, user_jid) DO NOTHING`)
+	if err != nil {
+		return err
+	}
+	defer participantStmt.Close()
+	updatedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, participant := range resolved {
+		jid := participant.jid
+		if mapping, ok := mappingByJID[jid]; ok {
+			lid, phone, valid := normalizedParticipantMapping(mapping[0], mapping[1])
+			if valid {
+				if err := mergeParticipantAlias(tx, lid, phone, chatJID); err != nil {
+					return err
+				}
+				jid = phone
+			}
+		}
+		var present int
+		err := departureStmt.QueryRow(chatJID, jid).Scan(&present)
+		if err == nil {
+			continue
+		}
+		if err != sql.ErrNoRows {
+			return err
+		}
+		if _, err := contactStmt.Exec(jid); err != nil {
+			return err
+		}
+		if _, err := participantStmt.Exec(chatJID, jid, participant.rank, updatedAt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (wa *WAManager) persistHistoryParticipants(conv *waHistorySync.Conversation) {
 	if conv == nil || wa.store == nil {
 		return
 	}
+	participants := make([]historyParticipant, 0, len(conv.GetParticipant()))
 	for _, participant := range conv.GetParticipant() {
 		if participant == nil {
 			continue
 		}
-		if err := wa.store.writeParticipant(conv.GetID(), participant.GetUserJID(), int(participant.GetRank()), participantWrite{source: participantHistory}); err != nil {
-			log.Printf("[wa] failed to persist history participant in %s: %v", conv.GetID(), err)
-		}
+		participants = append(participants, historyParticipant{jid: participant.GetUserJID(), rank: int(participant.GetRank())})
+	}
+	if err := wa.store.writeHistoryParticipants(conv.GetID(), participants); err != nil {
+		log.Printf("[wa] failed to persist history participants in %s: %v", conv.GetID(), err)
 	}
 }
 

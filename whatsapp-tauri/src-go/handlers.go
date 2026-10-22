@@ -425,6 +425,7 @@ func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": status,
 		"qr":     wa.GetQR(),
+		"error":  wa.GetAuthError(),
 	})
 }
 
@@ -438,6 +439,7 @@ func handleAuthStart(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": status,
 		"qr":     wa.GetQR(),
+		"error":  wa.GetAuthError(),
 	})
 }
 

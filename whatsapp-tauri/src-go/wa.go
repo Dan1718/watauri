@@ -33,6 +33,7 @@ var (
 type WAManager struct {
 	client            *whatsmeow.Client
 	status            string // "unauthenticated" | "connecting" | "connected"
+	authError         string
 	qrCode            string // base64 PNG data URL of the current QR
 	store             *UserDataStore
 	mu                sync.RWMutex
@@ -43,6 +44,9 @@ type WAManager struct {
 }
 
 const pairingQRTimeout = 30 * time.Second
+const latestWAVersionTimeout = 10 * time.Second
+
+const clientOutdatedError = "WhatsApp rejected the current client version. Restart the backend to fetch the latest version and try again."
 
 func newWAManager(store *UserDataStore) (*WAManager, error) {
 	log.Println("[wa] Opening session store: wa-session.db")
@@ -69,6 +73,16 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 	device.Platform = "Tauri"
 	log.Printf("[wa] Device platform set to %s", device.Platform)
 
+	versionCtx, cancelVersionFetch := context.WithTimeout(context.Background(), latestWAVersionTimeout)
+	version, err := whatsmeow.GetLatestVersion(versionCtx, nil)
+	cancelVersionFetch()
+	if err != nil {
+		log.Printf("[wa] GetLatestVersion failed, using built-in version: %v", err)
+	} else {
+		wastore.SetWAVersion(*version)
+		log.Printf("[wa] Updated WhatsApp Web version to %v", *version)
+	}
+
 	client := whatsmeow.NewClient(device, nil)
 	wa := &WAManager{client: client, status: "unauthenticated", store: store}
 	if device.ID != nil {
@@ -85,6 +99,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 		case *events.Connected:
 			wa.mu.Lock()
 			wa.status = "connected"
+			wa.authError = ""
 			wa.qrCode = ""
 			wa.mu.Unlock()
 			log.Println("[wa] Connected to Whatsapp")
@@ -92,10 +107,20 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			go wa.SyncContacts(context.Background())
 		case *events.Disconnected:
 			wa.mu.Lock()
-			wa.status = "unauthenticated"
+			if wa.status != "client_outdated" {
+				wa.status = "unauthenticated"
+				wa.authError = ""
+			}
 			wa.qrCode = ""
 			wa.mu.Unlock()
 			log.Println("[wa] Disconnected from WhatsApp")
+		case *events.ClientOutdated:
+			wa.mu.Lock()
+			wa.status = "client_outdated"
+			wa.authError = clientOutdatedError
+			wa.qrCode = ""
+			wa.mu.Unlock()
+			log.Printf("[wa] Client version rejected by WhatsApp: %s", clientOutdatedError)
 		case *events.Message:
 			if wa.store == nil {
 				log.Println("[wa] Skipping message: store is nil")
@@ -304,6 +329,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 		case *events.LoggedOut:
 			wa.mu.Lock()
 			wa.status = "unauthenticated"
+			wa.authError = ""
 			wa.qrCode = ""
 			wa.mu.Unlock()
 			log.Println("[wa] Logged out (session revoked)")
@@ -433,6 +459,7 @@ func (wa *WAManager) StartPairing() {
 		return
 	}
 	wa.status = "connecting"
+	wa.authError = ""
 	wa.qrCode = ""
 	wa.pairingAttempt++
 	attempt := wa.pairingAttempt
@@ -539,7 +566,7 @@ func (wa *WAManager) runPairingAttempt(attempt uint64) {
 func (wa *WAManager) failPairingAttempt(attempt uint64, reason string) {
 	log.Printf("[wa] Pairing attempt %d failed: %s", attempt, reason)
 	wa.mu.Lock()
-	if wa.pairingAttempt == attempt && wa.status != "connected" {
+	if wa.pairingAttempt == attempt && wa.status != "connected" && wa.status != "client_outdated" {
 		wa.status = "unauthenticated"
 		wa.qrCode = ""
 	}
@@ -553,6 +580,7 @@ func (wa *WAManager) completePairingAttempt(attempt uint64) bool {
 		return false
 	}
 	wa.status = "connected"
+	wa.authError = ""
 	wa.qrCode = ""
 	return true
 }
@@ -567,6 +595,12 @@ func (wa *WAManager) GetQR() string {
 	wa.mu.RLock()
 	defer wa.mu.RUnlock()
 	return wa.qrCode
+}
+
+func (wa *WAManager) GetAuthError() string {
+	wa.mu.RLock()
+	defer wa.mu.RUnlock()
+	return wa.authError
 }
 
 func (wa *WAManager) GetProfile() Profile {

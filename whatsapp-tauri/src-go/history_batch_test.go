@@ -278,6 +278,28 @@ func BenchmarkHistoryChunkTransactionScope(b *testing.B) {
 			}
 		}
 	})
+	b.Run("per_conversation_2000_messages", func(b *testing.B) {
+		s := benchmarkStore(b)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			for _, messages := range benchmarkChunkMessages(i, 100, 20) {
+				if _, err := s.InsertHistoryMessages(messages, nil); err != nil {
+					b.Fatal(err)
+				}
+			}
+		}
+	})
+	b.Run("one_per_chunk_2000_messages_experimental", func(b *testing.B) {
+		s := benchmarkStore(b)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := benchmarkInsertHistoryChunk(s, benchmarkChunkMessages(i, 100, 20)); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func BenchmarkHistoryParticipantPersistence(b *testing.B) {

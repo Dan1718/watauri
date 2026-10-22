@@ -8,7 +8,7 @@ import { useViewportReadMarking } from "@/app/hooks/use-viewport-read-marking";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
 import { useChats } from "@/app/hooks/use-chats";
 import { useProfile } from "@/app/hooks/use-profile";
-import { getDisplayNameFromJid } from "@/app/utils";
+import { getDisplayNameFromJid, normalizeJid } from "@/app/utils";
 import Reaction from "../message/reaction";
 import ChatInfoPanel from "./chat-info-panel";
 import ContactHeader from "./contact-header";
@@ -255,7 +255,11 @@ const MessageList = memo(function MessageList({
             !startsNewDay && !previous?.isSentFromUser && previous?.contactId === message.contactId;
           const compact = next?.isSentFromUser === message.isSentFromUser &&
             next?.contactId === message.contactId && !endsDay;
-          const contact = contacts?.[message.contactId];
+          const senderId = normalizeJid(message.contactId);
+          const contact = contacts?.[senderId] ?? Object.values(contacts ?? {}).find((candidate) =>
+            candidate && [candidate.id, candidate.phoneJid, candidate.lidJid]
+              .some((alias) => alias && normalizeJid(alias) === senderId)
+          );
           const isOldestUnread = openingUnreadCount > 0 && index === oldestUnreadIndex;
 
           return (

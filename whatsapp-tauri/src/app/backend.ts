@@ -7,7 +7,10 @@ export type BackendUser = {
   avatar?: string;
   status?: string;
   phoneNumber?: string;
+  phoneJid?: string;
+  lidJid?: string;
   isSaved?: boolean;
+  rank?: number;
 };
 
 export type BackendProfile = {

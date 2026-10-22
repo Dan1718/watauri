@@ -462,16 +462,29 @@ func (s *UserDataStore) resolveContactLocked(jid string) (User, bool, error) {
 	bestScore := 0
 	for _, candidate := range candidates {
 		var contact User
+		var name, avatar, pushName, status sql.NullString
 		err := s.db.QueryRow(
 			`SELECT jid, name, avatar, push_name, status FROM contacts WHERE jid = ?`,
 			candidate,
-		).Scan(&contact.ID, &contact.Name, &contact.Avatar, &contact.PushName, &contact.Status)
+		).Scan(&contact.ID, &name, &avatar, &pushName, &status)
 
 		if err == sql.ErrNoRows {
 			continue
 		}
 		if err != nil {
 			return User{}, false, err
+		}
+		if name.Valid {
+			contact.Name = name.String
+		}
+		if avatar.Valid {
+			contact.Avatar = avatar.String
+		}
+		if pushName.Valid {
+			contact.PushName = pushName.String
+		}
+		if status.Valid {
+			contact.Status = status.String
 		}
 		score := contactScore(contact)
 		if score > bestScore {
@@ -1238,9 +1251,22 @@ func (s *UserDataStore) GetContacts() ([]User, error) {
 	var contacts []User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.Name, &u.Avatar, &u.PushName, &u.Status); err != nil {
+		var name, avatar, pushName, status sql.NullString
+		if err := rows.Scan(&u.ID, &name, &avatar, &pushName, &status); err != nil {
 			log.Printf("[store] GetContacts row scan error: %v (%v)", err, time.Since(start))
 			return nil, err
+		}
+		if name.Valid {
+			u.Name = name.String
+		}
+		if avatar.Valid {
+			u.Avatar = avatar.String
+		}
+		if pushName.Valid {
+			u.PushName = pushName.String
+		}
+		if status.Valid {
+			u.Status = status.String
 		}
 		contacts = append(contacts, u)
 	}

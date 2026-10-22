@@ -155,6 +155,7 @@ Returns all chats for the authenticated user from local SQLite storage.
 - Reads chat metadata from local SQLite.
 - Includes archived chats; the frontend filters them.
 - Direct-chat names are resolved from stored contacts when available.
+- Null contact fields in placeholder rows are treated as empty when resolving direct-chat names.
 - Group participants are returned when stored; otherwise `participants` is `[]`.
 - Each group participant includes numeric `rank`: `0` member, `1` admin, `2` superadmin. This field is omitted from direct-chat participants and contact responses. No new endpoint is required.
 - Participants come from joined-group snapshots, explicit history conversation `participant` records, and live group-info join/leave/promote/demote lists. History inserts missing members only: repeated, partial, or participant-free chunks never delete members or overwrite existing ranks. Missing history ranks default to member for newly inserted rows. Message senders and `pastParticipants` are not treated as current membership evidence.
@@ -375,7 +376,7 @@ Returns all known contacts.
 ]
 ```
 
-**Behavior**: Populated from whatsmeow contact/history sync events and push-name events.
+**Behavior**: Populated from whatsmeow contact/history sync events and push-name events. Null fields in placeholder rows are returned as empty values.
 
 **Status**: Implemented (`GET`)
 

@@ -1091,18 +1091,20 @@ func (s *UserDataStore) InsertHistoryMessages(messages []Message, senderPushName
 		chatJID, boolToInt(strings.HasSuffix(chatJID, "@g.us")), time.Now().Format(time.RFC3339)); err != nil {
 		return 0, err
 	}
-	contactStmt, err := tx.Prepare(`INSERT INTO contacts (jid, push_name) VALUES (?, ?) ON CONFLICT(jid) DO UPDATE SET push_name=COALESCE(NULLIF(EXCLUDED.push_name, ''), push_name)`)
-	if err != nil {
-		return 0, err
-	}
-	for jid, pushName := range senderPushNames {
-		if _, err := contactStmt.Exec(jid, pushName); err != nil {
-			contactStmt.Close()
+	if len(senderPushNames) > 0 {
+		contactStmt, err := tx.Prepare(`INSERT INTO contacts (jid, push_name) VALUES (?, ?) ON CONFLICT(jid) DO UPDATE SET push_name=COALESCE(NULLIF(EXCLUDED.push_name, ''), push_name)`)
+		if err != nil {
 			return 0, err
 		}
-	}
-	if err := contactStmt.Close(); err != nil {
-		return 0, err
+		for jid, pushName := range senderPushNames {
+			if _, err := contactStmt.Exec(jid, pushName); err != nil {
+				contactStmt.Close()
+				return 0, err
+			}
+		}
+		if err := contactStmt.Close(); err != nil {
+			return 0, err
+		}
 	}
 	var lastRevision int64
 	if err := tx.QueryRow(`UPDATE message_revision SET revision = revision + ? WHERE singleton = 1 RETURNING revision`, len(prepared)).Scan(&lastRevision); err != nil {

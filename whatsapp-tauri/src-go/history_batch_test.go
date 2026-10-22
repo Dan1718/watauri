@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -133,6 +134,146 @@ func BenchmarkHistoryMessagePersistence(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			if _, err := s.InsertHistoryMessages(benchmarkMessages(i, batchSize), nil); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func benchmarkChunkMessages(iteration, conversations, perConversation int) [][]Message {
+	chunk := make([][]Message, conversations)
+	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	for conversation := range chunk {
+		chatJID := fmt.Sprintf("chat-%d@s.whatsapp.net", conversation)
+		chunk[conversation] = make([]Message, perConversation)
+		for i := range chunk[conversation] {
+			chunk[conversation][i] = Message{
+				ID:      fmt.Sprintf("chunk-%d-chat-%d-message-%d", iteration, conversation, i),
+				ChatJID: chatJID, SenderID: "sender", Text: "history chunk benchmark",
+				Timestamp: base.Add(time.Duration(iteration*conversations*perConversation+conversation*perConversation+i) * time.Second).Format(time.RFC3339Nano),
+				Status:    "received", MentionedJIDs: []string{},
+			}
+		}
+	}
+	return chunk
+}
+
+// benchmarkInsertHistoryChunk is an isolated experiment for comparing one
+// transaction across a full history chunk with the production per-conversation
+// batches. Production continues to use InsertHistoryMessages.
+func benchmarkInsertHistoryChunk(s *UserDataStore, chunk [][]Message) error {
+	all := make([]Message, 0)
+	for _, conversation := range chunk {
+		all = append(all, conversation...)
+	}
+	if len(all) == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	chatStmt, err := tx.Prepare(`INSERT INTO chats (jid, is_group, updated_at) VALUES (?, 0, ?) ON CONFLICT(jid) DO NOTHING`)
+	if err != nil {
+		return err
+	}
+	for _, conversation := range chunk {
+		if len(conversation) == 0 {
+			continue
+		}
+		if _, err := chatStmt.Exec(conversation[0].ChatJID, time.Now().Format(time.RFC3339)); err != nil {
+			chatStmt.Close()
+			return err
+		}
+	}
+	if err := chatStmt.Close(); err != nil {
+		return err
+	}
+	var lastRevision int64
+	if err := tx.QueryRow(`UPDATE message_revision SET revision = revision + ? WHERE singleton = 1 RETURNING revision`, len(all)).Scan(&lastRevision); err != nil {
+		return err
+	}
+	firstRevision := lastRevision - int64(len(all)) + 1
+	insertStmt, err := tx.Prepare(`INSERT OR IGNORE INTO messages (id, chat_jid, sender_jid, text, timestamp, timestamp_epoch, status, media_type, is_from_me, mentioned_jids, revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	latestByChat := make(map[string]Message, len(chunk))
+	latestEpochByChat := make(map[string]int64, len(chunk))
+	index := 0
+	for _, conversation := range chunk {
+		for _, message := range conversation {
+			epoch, err := timestampEpoch(message.Timestamp)
+			if err != nil {
+				insertStmt.Close()
+				return err
+			}
+			mentions, err := json.Marshal(message.MentionedJIDs)
+			if err != nil {
+				insertStmt.Close()
+				return err
+			}
+			result, err := insertStmt.Exec(message.ID, message.ChatJID, message.SenderID, message.Text, message.Timestamp, epoch,
+				message.Status, message.MediaType, boolToInt(message.IsFromMe), string(mentions), firstRevision+int64(index))
+			index++
+			if err != nil {
+				insertStmt.Close()
+				return err
+			}
+			inserted, err := result.RowsAffected()
+			if err != nil {
+				insertStmt.Close()
+				return err
+			}
+			if inserted > 0 && (latestByChat[message.ChatJID].ID == "" || epoch >= latestEpochByChat[message.ChatJID]) {
+				latestByChat[message.ChatJID] = message
+				latestEpochByChat[message.ChatJID] = epoch
+			}
+		}
+	}
+	if err := insertStmt.Close(); err != nil {
+		return err
+	}
+	for chatJID, message := range latestByChat {
+		epoch := latestEpochByChat[chatJID]
+		if _, err := tx.Exec(`UPDATE chats SET
+			last_message_id = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE last_message_id END,
+			last_message_text = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE last_message_text END,
+			last_message_timestamp = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE last_message_timestamp END,
+			last_message_sender = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE last_message_sender END,
+			last_message_timestamp_epoch = MAX(COALESCE(last_message_timestamp_epoch, ?), ?),
+			updated_at = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE updated_at END
+			WHERE jid = ?`, epoch, message.ID, epoch, message.Text, epoch, message.Timestamp,
+			epoch, message.SenderID, epoch, epoch, epoch, time.Now().Format(time.RFC3339), chatJID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func BenchmarkHistoryChunkTransactionScope(b *testing.B) {
+	const conversations, perConversation = 10, 10
+	b.Run("per_conversation", func(b *testing.B) {
+		s := benchmarkStore(b)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			for _, messages := range benchmarkChunkMessages(i, conversations, perConversation) {
+				if _, err := s.InsertHistoryMessages(messages, nil); err != nil {
+					b.Fatal(err)
+				}
+			}
+		}
+	})
+	b.Run("one_per_history_chunk_experimental", func(b *testing.B) {
+		s := benchmarkStore(b)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := benchmarkInsertHistoryChunk(s, benchmarkChunkMessages(i, conversations, perConversation)); err != nil {
 				b.Fatal(err)
 			}
 		}

@@ -31,13 +31,19 @@ export type MessageContentPart =
   | { type: "text"; text: string }
   | { type: "mention"; target: MentionTarget; fallbackText: string };
 
-export function splitMessageContent(message: string, mentionTargets?: MentionTarget[]): MessageContentPart[] {
+export function splitMessageContent(
+  message: string,
+  mentionTargets?: MentionTarget[],
+  resolveLegacyMention?: (identifier: string) => MentionTarget | undefined,
+): MessageContentPart[] {
   let mentionIndex = 0;
   const parts = splitMessageText(message).flatMap((part, partIndex): MessageContentPart[] => {
-    if (partIndex % 2 !== 0 || !mentionTargets?.length) return [{ type: "text", text: part }];
-    return part.split(/(@[+\d*•∙.…-]+)/gu).map((segment, segmentIndex) => {
+    if (partIndex % 2 !== 0 || (!mentionTargets?.length && !resolveLegacyMention)) return [{ type: "text", text: part }];
+    return part.split(/((?<![\w@])@\+?[\d*•∙.…-]*[\d*•∙…])/gu).map((segment, segmentIndex) => {
       if (segmentIndex % 2 === 0) return { type: "text", text: segment };
-      const target = mentionTargets[mentionIndex++];
+      const metadataTarget = mentionTargets?.[mentionIndex++];
+      const identifier = segment.slice(1);
+      const target = metadataTarget ?? (/^\+?\d+$/.test(identifier) ? resolveLegacyMention?.(identifier) : undefined);
       return target
         ? { type: "mention", target, fallbackText: segment }
         : { type: "text", text: segment };
@@ -64,6 +70,7 @@ export default function ChatMessage({
   senderName,
   senderAvatar,
   mentionTargets,
+  resolveLegacyMention,
   onOpenMention,
   showSender,
   blueTickEnabled,
@@ -73,11 +80,12 @@ export default function ChatMessage({
   senderName?: string;
   senderAvatar?: string;
   mentionTargets?: MentionTarget[];
+  resolveLegacyMention?: (identifier: string) => MentionTarget | undefined;
   onOpenMention: (jid: string) => void;
   showSender: boolean;
   blueTickEnabled: boolean;
 }) {
-  const textParts = splitMessageContent(message.message, mentionTargets);
+  const textParts = splitMessageContent(message.message, mentionTargets, resolveLegacyMention);
   const bubble = (
     <div
       data-unread-message-id={!message.isSentFromUser && !message.read ? message.id : undefined}

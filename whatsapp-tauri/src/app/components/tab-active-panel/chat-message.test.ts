@@ -32,6 +32,14 @@ describe("splitMessageText", () => {
 });
 
 describe("splitMessageContent", () => {
+  test("resolves known legacy IDs without metadata, preserving punctuation and unknown IDs", () => {
+    const resolve = (id: string) => id === "900001" ? { jid: "900001@lid", name: "Hansika" } : undefined;
+    const parts = splitMessageContent("Thanks @900001. @900001 and @999999; email a@900001", [], resolve);
+    expect(parts.filter((part) => part.type === "mention").map((part) => part.target.name)).toEqual(["Hansika", "Hansika"]);
+    expect(parts.map((part) => part.type === "mention" ? `@${part.target.name}` : part.text).join(""))
+      .toBe("Thanks @Hansika. @Hansika and @999999; email a@900001");
+  });
+
   test("resolves mention labels in JID order while preserving links and text", () => {
     expect(splitMessageContent("Hi @+91......80, then @919876543210 https://example.com", [
       { jid: "first@lid", name: "Alice" },

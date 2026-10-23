@@ -328,9 +328,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
         : prev);
       if (typeof chat.contactId == "string") {
         const contactId = chat.contactId;
-        const contact = contacts.find(
-          (contact: Contact) => contact.id === contactId
-        ) ?? {
+        const contact = getContact(contactId) ?? {
           id: contactId,
           displayName: resolveContactDisplayName({ jid: contactId }),
           contactAvatar: "",

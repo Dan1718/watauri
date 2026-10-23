@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -9,22 +10,20 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"go.mau.fi/whatsmeow/types"
-	_ "modernc.org/sqlite"
 )
 
 type UserDataStore struct {
 	db        *sql.DB
 	avatarDir string
-	mu        sync.RWMutex
+	mu        traceRWMutex
 }
 
 func newUserDataStore() (*UserDataStore, error) {
 	log.Println("[store] Opening userdata.db with WAL journal mode")
-	db, err := sql.Open("sqlite", "file:userdata.db?_journal_mode=WAL&_pragma=foreign_keys(1)")
+	db, err := openUserSQLite("file:userdata.db?_journal_mode=WAL&_pragma=foreign_keys(1)")
 	if err != nil {
 		log.Printf("[store] Failed to open userdata.db: %v", err)
 		return nil, err
@@ -499,10 +498,14 @@ func (s *UserDataStore) ResolveContact(jid string) (User, bool, error) {
 }
 
 func (s *UserDataStore) resolveContactLocked(jid string) (User, bool, error) {
+	return s.resolveContactContextLocked(context.Background(), jid)
+}
+
+func (s *UserDataStore) resolveContactContextLocked(ctx context.Context, jid string) (User, bool, error) {
 	candidates := []string{jid}
 	if strings.HasSuffix(jid, "@lid") {
 		var phoneJID string
-		err := s.db.QueryRow(
+		err := s.db.QueryRowContext(ctx,
 			`SELECT phone_jid FROM jid_mappings WHERE lid_jid = ?`,
 			jid,
 		).Scan(&phoneJID)
@@ -514,7 +517,7 @@ func (s *UserDataStore) resolveContactLocked(jid string) (User, bool, error) {
 		}
 	} else if strings.HasSuffix(jid, "@s.whatsapp.net") {
 		var lidJID string
-		err := s.db.QueryRow(
+		err := s.db.QueryRowContext(ctx,
 			`SELECT lid_jid FROM jid_mappings WHERE phone_jid = ?`,
 			jid,
 		).Scan(&lidJID)
@@ -531,7 +534,7 @@ func (s *UserDataStore) resolveContactLocked(jid string) (User, bool, error) {
 	for _, candidate := range candidates {
 		var contact User
 		var name, avatar, pushName, status sql.NullString
-		err := s.db.QueryRow(
+		err := s.db.QueryRowContext(ctx,
 			`SELECT jid, name, avatar, push_name, status FROM contacts WHERE jid = ?`,
 			candidate,
 		).Scan(&contact.ID, &name, &avatar, &pushName, &status)
@@ -660,11 +663,15 @@ func (s *UserDataStore) UpsertJIDMapping(lidJID, phoneJID string) error {
 }
 
 func (s *UserDataStore) GetChats() ([]Chat, error) {
+	return s.GetChatsContext(context.Background())
+}
+
+func (s *UserDataStore) GetChatsContext(ctx context.Context) ([]Chat, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	start := time.Now()
-	rows, err := s.db.Query(`SELECT
+	rows, err := s.db.QueryContext(ctx, `SELECT
 		c.jid, c.name, c.avatar,
 		m.id, m.chat_jid, m.sender_jid, m.text, m.timestamp, m.status, m.media_type, m.is_from_me, m.mentioned_jids,
 		c.unread_count, c.is_group, c.is_archived, c.is_starred, c.is_community,
@@ -796,7 +803,7 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 	// used by tests).
 	for i := range chats {
 		if !chats[i].IsGroup {
-			contact, ok, err := s.resolveContactLocked(chats[i].ID)
+			contact, ok, err := s.resolveContactContextLocked(ctx, chats[i].ID)
 			if err != nil {
 				log.Printf("[store] failed to resolve contact for chat %s: %v", chats[i].ID, err)
 			} else if ok {
@@ -809,7 +816,7 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 		}
 
 		if chats[i].IsGroup {
-			participants, err := s.getChatParticipantsLocked(chats[i].ID)
+			participants, err := s.getChatParticipantsContextLocked(ctx, chats[i].ID)
 			if err != nil {
 				log.Printf("[store] failed to load participants for group chat %s: %v", chats[i].ID, err)
 			} else {
@@ -822,7 +829,11 @@ func (s *UserDataStore) GetChats() ([]Chat, error) {
 }
 
 func (s *UserDataStore) getChatParticipantsLocked(chatJID string) ([]User, error) {
-	rows, err := s.db.Query(
+	return s.getChatParticipantsContextLocked(context.Background(), chatJID)
+}
+
+func (s *UserDataStore) getChatParticipantsContextLocked(ctx context.Context, chatJID string) ([]User, error) {
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT
 			p.user_jid,
 			COALESCE(
@@ -928,6 +939,10 @@ func phoneNumberFromJID(jid string) string {
 }
 
 func (s *UserDataStore) InsertMessage(msg Message, incrementUnread bool) error {
+	return s.InsertMessageContext(context.Background(), msg, incrementUnread)
+}
+
+func (s *UserDataStore) InsertMessageContext(ctx context.Context, msg Message, incrementUnread bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -936,14 +951,14 @@ func (s *UserDataStore) InsertMessage(msg Message, incrementUnread bool) error {
 	if err != nil {
 		return err
 	}
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 
 	// Satisfy the messages.chat_jid foreign key before inserting the message.
 	// The transaction rolls this placeholder back if the message insert fails.
-	if _, err := tx.Exec(
+	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO chats (jid, is_group, updated_at) VALUES (?, ?, ?) ON CONFLICT(jid) DO NOTHING`,
 		msg.ChatJID, boolToInt(strings.HasSuffix(msg.ChatJID, "@g.us")), time.Now().Format(time.RFC3339),
 	); err != nil {
@@ -956,7 +971,7 @@ func (s *UserDataStore) InsertMessage(msg Message, incrementUnread bool) error {
 		tx.Rollback()
 		return err
 	}
-	result, err := tx.Exec(
+	result, err := tx.ExecContext(ctx,
 		`INSERT OR IGNORE INTO messages (id, chat_jid, sender_jid, text, timestamp, timestamp_epoch, status, media_type, is_from_me, mentioned_jids, revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
 		msg.ID, msg.ChatJID, msg.SenderID, msg.Text, msg.Timestamp, epoch, msg.Status, msg.MediaType, boolToInt(msg.IsFromMe), string(mentionedJIDs),
 	)
@@ -977,7 +992,7 @@ func (s *UserDataStore) InsertMessage(msg Message, incrementUnread bool) error {
 			tx.Rollback()
 			return err
 		}
-		if _, err := tx.Exec(`UPDATE messages SET revision = ? WHERE id = ?`, revision, msg.ID); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE messages SET revision = ? WHERE id = ?`, revision, msg.ID); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -985,7 +1000,7 @@ func (s *UserDataStore) InsertMessage(msg Message, incrementUnread bool) error {
 		if incrementUnread && !msg.IsFromMe {
 			unreadIncrement = 1
 		}
-		_, err = tx.Exec(`
+		_, err = tx.ExecContext(ctx, `
     INSERT INTO chats (
         jid,
         last_message_id,
@@ -1059,6 +1074,10 @@ func (s *UserDataStore) InsertMessage(msg Message, incrementUnread bool) error {
 // SQLite transaction. It retains duplicate suppression and per-message
 // revisions while applying the chat summary update only once.
 func (s *UserDataStore) InsertHistoryMessages(messages []Message, senderPushNames map[string]string) (int, error) {
+	return s.InsertHistoryMessagesContext(context.Background(), messages, senderPushNames)
+}
+
+func (s *UserDataStore) InsertHistoryMessagesContext(ctx context.Context, messages []Message, senderPushNames map[string]string) (int, error) {
 	if len(messages) == 0 {
 		return 0, nil
 	}
@@ -1083,23 +1102,23 @@ func (s *UserDataStore) InsertHistoryMessages(messages []Message, senderPushName
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	start := time.Now()
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
 	chatJID := messages[0].ChatJID
-	if _, err := tx.Exec(`INSERT INTO chats (jid, is_group, updated_at) VALUES (?, ?, ?) ON CONFLICT(jid) DO NOTHING`,
+	if _, err := tx.ExecContext(ctx, `INSERT INTO chats (jid, is_group, updated_at) VALUES (?, ?, ?) ON CONFLICT(jid) DO NOTHING`,
 		chatJID, boolToInt(strings.HasSuffix(chatJID, "@g.us")), time.Now().Format(time.RFC3339)); err != nil {
 		return 0, err
 	}
 	if len(senderPushNames) > 0 {
-		contactStmt, err := tx.Prepare(`INSERT INTO contacts (jid, push_name) VALUES (?, ?) ON CONFLICT(jid) DO UPDATE SET push_name=COALESCE(NULLIF(EXCLUDED.push_name, ''), push_name)`)
+		contactStmt, err := tx.PrepareContext(ctx, `INSERT INTO contacts (jid, push_name) VALUES (?, ?) ON CONFLICT(jid) DO UPDATE SET push_name=COALESCE(NULLIF(EXCLUDED.push_name, ''), push_name)`)
 		if err != nil {
 			return 0, err
 		}
 		for jid, pushName := range senderPushNames {
-			if _, err := contactStmt.Exec(jid, pushName); err != nil {
+			if _, err := contactStmt.ExecContext(ctx, jid, pushName); err != nil {
 				contactStmt.Close()
 				return 0, err
 			}
@@ -1109,11 +1128,11 @@ func (s *UserDataStore) InsertHistoryMessages(messages []Message, senderPushName
 		}
 	}
 	var lastRevision int64
-	if err := tx.QueryRow(`UPDATE message_revision SET revision = revision + ? WHERE singleton = 1 RETURNING revision`, len(prepared)).Scan(&lastRevision); err != nil {
+	if err := tx.QueryRowContext(ctx, `UPDATE message_revision SET revision = revision + ? WHERE singleton = 1 RETURNING revision`, len(prepared)).Scan(&lastRevision); err != nil {
 		return 0, err
 	}
 	firstRevision := lastRevision - int64(len(prepared)) + 1
-	insertStmt, err := tx.Prepare(`INSERT OR IGNORE INTO messages (id, chat_jid, sender_jid, text, timestamp, timestamp_epoch, status, media_type, is_from_me, mentioned_jids, revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	insertStmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO messages (id, chat_jid, sender_jid, text, timestamp, timestamp_epoch, status, media_type, is_from_me, mentioned_jids, revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -1126,7 +1145,7 @@ func (s *UserDataStore) InsertHistoryMessages(messages []Message, senderPushName
 		if message.ChatJID != chatJID {
 			return 0, fmt.Errorf("history message chat %q does not match conversation %q", message.ChatJID, chatJID)
 		}
-		result, err := insertStmt.Exec(message.ID, chatJID, message.SenderID, message.Text, message.Timestamp, item.epoch,
+		result, err := insertStmt.ExecContext(ctx, message.ID, chatJID, message.SenderID, message.Text, message.Timestamp, item.epoch,
 			message.Status, message.MediaType, boolToInt(message.IsFromMe), item.mentions, firstRevision+int64(i))
 		if err != nil {
 			log.Printf("[store] InsertHistoryMessages(%s) insert error: %v (%v)", message.ID, err, time.Since(start))
@@ -1146,7 +1165,7 @@ func (s *UserDataStore) InsertHistoryMessages(messages []Message, senderPushName
 	}
 	if latest != nil {
 		message := latest.message
-		_, err := tx.Exec(`UPDATE chats SET
+		_, err := tx.ExecContext(ctx, `UPDATE chats SET
 			last_message_id = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE last_message_id END,
 			last_message_text = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE last_message_text END,
 			last_message_timestamp = CASE WHEN last_message_timestamp_epoch IS NULL OR last_message_timestamp_epoch <= ? THEN ? ELSE last_message_timestamp END,
@@ -1288,12 +1307,16 @@ type messageCursor struct {
 }
 
 func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *messageCursor) ([]Message, bool, int64, error) {
+	return s.GetMessagesContext(context.Background(), chatJID, limit, before, after)
+}
+
+func (s *UserDataStore) GetMessagesContext(ctx context.Context, chatJID string, limit int, before, after *messageCursor) ([]Message, bool, int64, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	start := time.Now()
 	var latestRevision int64
-	if err := s.db.QueryRow(`SELECT COALESCE(MAX(revision), 0) FROM messages WHERE chat_jid = ?`, chatJID).Scan(&latestRevision); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(revision), 0) FROM messages WHERE chat_jid = ?`, chatJID).Scan(&latestRevision); err != nil {
 		return nil, false, 0, err
 	}
 	query := `SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, mentioned_jids, revision FROM messages WHERE chat_jid = ?`
@@ -1320,7 +1343,7 @@ func (s *UserDataStore) GetMessages(chatJID string, limit int, before, after *me
 	query += ` LIMIT ?`
 	args = append(args, limit+1)
 
-	rows, err := s.db.Query(query, args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		log.Printf("[store] GetMessages(%s) query error: %v (%v)", chatJID, err, time.Since(start))
 		return nil, false, 0, err
@@ -1367,16 +1390,20 @@ func nextMessageRevision(tx *sql.Tx) (int64, error) {
 }
 
 func (s *UserDataStore) UpdateMessageStatus(messageIDs []string, status string) error {
+	return s.UpdateMessageStatusContext(context.Background(), messageIDs, status)
+}
+
+func (s *UserDataStore) UpdateMessageStatusContext(ctx context.Context, messageIDs []string, status string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	start := time.Now()
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		log.Printf("[store] UpdateMessageStatus begin tx error: %v (%v)", err, time.Since(start))
 		return err
 	}
-	stmt, err := tx.Prepare(`UPDATE messages SET status = ?, revision = ? WHERE id = ? AND status != ?`)
+	stmt, err := tx.PrepareContext(ctx, `UPDATE messages SET status = ?, revision = ? WHERE id = ? AND status != ?`)
 	if err != nil {
 		log.Printf("[store] UpdateMessageStatus prepare error: %v (%v)", err, time.Since(start))
 		tx.Rollback()
@@ -1390,7 +1417,7 @@ func (s *UserDataStore) UpdateMessageStatus(messageIDs []string, status string) 
 			tx.Rollback()
 			return err
 		}
-		if _, err := stmt.Exec(status, revision, id, status); err != nil {
+		if _, err := stmt.ExecContext(ctx, status, revision, id, status); err != nil {
 			log.Printf("[store] UpdateMessageStatus exec for %s error: %v (%v)", id, err, time.Since(start))
 			tx.Rollback()
 			return err
@@ -1490,13 +1517,17 @@ func (s *UserDataStore) MissingAvatarCandidates() ([]avatarCandidate, error) {
 }
 
 func (s *UserDataStore) AvatarMetadata(jid string, group bool) (assetID, pictureID string, err error) {
+	return s.AvatarMetadataContext(context.Background(), jid, group)
+}
+
+func (s *UserDataStore) AvatarMetadataContext(ctx context.Context, jid string, group bool) (assetID, pictureID string, err error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	table := "contacts"
 	if group {
 		table = "chats"
 	}
-	err = s.db.QueryRow(`SELECT COALESCE(avatar_id,''), COALESCE(avatar_picture_id,'') FROM `+table+` WHERE jid = ?`, jid).Scan(&assetID, &pictureID)
+	err = s.db.QueryRowContext(ctx, `SELECT COALESCE(avatar_id,''), COALESCE(avatar_picture_id,'') FROM `+table+` WHERE jid = ?`, jid).Scan(&assetID, &pictureID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", nil
 	}
@@ -1504,13 +1535,17 @@ func (s *UserDataStore) AvatarMetadata(jid string, group bool) (assetID, picture
 }
 
 func (s *UserDataStore) SaveAvatar(jid, assetID, pictureID string, group bool) error {
+	return s.SaveAvatarContext(context.Background(), jid, assetID, pictureID, group)
+}
+
+func (s *UserDataStore) SaveAvatarContext(ctx context.Context, jid, assetID, pictureID string, group bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	table := "contacts"
 	if group {
 		table = "chats"
 	}
-	_, err := s.db.Exec(`INSERT INTO `+table+` (jid, avatar, avatar_id, avatar_picture_id, avatar_status, avatar_updated_at)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO `+table+` (jid, avatar, avatar_id, avatar_picture_id, avatar_status, avatar_updated_at)
 		VALUES (?, ?, ?, ?, 'ready', ?) ON CONFLICT(jid) DO UPDATE SET avatar=excluded.avatar, avatar_id=excluded.avatar_id,
 		avatar_picture_id=excluded.avatar_picture_id, avatar_status='ready', avatar_updated_at=excluded.avatar_updated_at`,
 		jid, "/api/avatars/"+assetID, assetID, pictureID, time.Now().UTC().Format(time.RFC3339))
@@ -1518,6 +1553,10 @@ func (s *UserDataStore) SaveAvatar(jid, assetID, pictureID string, group bool) e
 }
 
 func (s *UserDataStore) ClearAvatar(jid string, group bool) (string, error) {
+	return s.ClearAvatarContext(context.Background(), jid, group)
+}
+
+func (s *UserDataStore) ClearAvatarContext(ctx context.Context, jid string, group bool) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	table := "contacts"
@@ -1525,11 +1564,11 @@ func (s *UserDataStore) ClearAvatar(jid string, group bool) (string, error) {
 		table = "chats"
 	}
 	var oldID string
-	queryErr := s.db.QueryRow(`SELECT COALESCE(avatar_id,'') FROM `+table+` WHERE jid = ?`, jid).Scan(&oldID)
+	queryErr := s.db.QueryRowContext(ctx, `SELECT COALESCE(avatar_id,'') FROM `+table+` WHERE jid = ?`, jid).Scan(&oldID)
 	if queryErr != nil && !errors.Is(queryErr, sql.ErrNoRows) {
 		return "", queryErr
 	}
-	_, err := s.db.Exec(`UPDATE `+table+` SET avatar=NULL, avatar_id=NULL, avatar_picture_id=NULL, avatar_status='removed', avatar_updated_at=? WHERE jid=?`, time.Now().UTC().Format(time.RFC3339), jid)
+	_, err := s.db.ExecContext(ctx, `UPDATE `+table+` SET avatar=NULL, avatar_id=NULL, avatar_picture_id=NULL, avatar_status='removed', avatar_updated_at=? WHERE jid=?`, time.Now().UTC().Format(time.RFC3339), jid)
 	return oldID, err
 }
 
@@ -1605,22 +1644,27 @@ func intToBool(i int) bool {
 }
 
 func (s *UserDataStore) GetMessagesAnchoredAtOldestUnread(chatJID string, limit int) ([]Message, bool, bool, int64, error) {
+	messages, hasOlder, hasNewer, latestRevision, _, err := s.GetMessagesAnchoredAtOldestUnreadContext(context.Background(), chatJID, limit)
+	return messages, hasOlder, hasNewer, latestRevision, err
+}
+
+func (s *UserDataStore) GetMessagesAnchoredAtOldestUnreadContext(ctx context.Context, chatJID string, limit int) ([]Message, bool, bool, int64, string, error) {
 	s.mu.RLock()
 	var unreadCount int
-	err := s.db.QueryRow(`SELECT unread_count FROM chats WHERE jid = ?`, chatJID).Scan(&unreadCount)
+	err := s.db.QueryRowContext(ctx, `SELECT unread_count FROM chats WHERE jid = ?`, chatJID).Scan(&unreadCount)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		s.mu.RUnlock()
-		return nil, false, false, 0, err
+		return nil, false, false, 0, "", err
 	}
 	if errors.Is(err, sql.ErrNoRows) || unreadCount <= 0 {
 		s.mu.RUnlock()
-		messages, hasMore, latestRevision, err := s.GetMessages(chatJID, limit, nil, nil)
-		return messages, hasMore, false, latestRevision, err
+		messages, hasMore, latestRevision, err := s.GetMessagesContext(ctx, chatJID, limit, nil, nil)
+		return messages, hasMore, false, latestRevision, "", err
 	}
 
 	var anchorID string
 	var anchorEpoch int64
-	err = s.db.QueryRow(`
+	err = s.db.QueryRowContext(ctx, `
 		SELECT id, timestamp_epoch
 		FROM messages
 		WHERE chat_jid = ? AND is_from_me = 0
@@ -1629,7 +1673,7 @@ func (s *UserDataStore) GetMessagesAnchoredAtOldestUnread(chatJID string, limit 
 	if errors.Is(err, sql.ErrNoRows) {
 		// A stale count can exceed the number of stored inbound messages. Anchor
 		// at the oldest available inbound message rather than the latest page.
-		err = s.db.QueryRow(`
+		err = s.db.QueryRowContext(ctx, `
 			SELECT id, timestamp_epoch
 			FROM messages
 			WHERE chat_jid = ? AND is_from_me = 0
@@ -1638,44 +1682,44 @@ func (s *UserDataStore) GetMessagesAnchoredAtOldestUnread(chatJID string, limit 
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		s.mu.RUnlock()
-		messages, hasMore, latestRevision, err := s.GetMessages(chatJID, limit, nil, nil)
-		return messages, hasMore, false, latestRevision, err
+		messages, hasMore, latestRevision, err := s.GetMessagesContext(ctx, chatJID, limit, nil, nil)
+		return messages, hasMore, false, latestRevision, "", err
 	}
 	if err != nil {
 		s.mu.RUnlock()
-		return nil, false, false, 0, err
+		return nil, false, false, 0, "", err
 	}
 
 	defer s.mu.RUnlock()
 
 	var latestRevision int64
-	if err := s.db.QueryRow(`
+	if err := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(MAX(revision), 0) FROM messages where chat_jid = ? `, chatJID).Scan(&latestRevision); err != nil {
-		return nil, false, false, 0, err
+		return nil, false, false, 0, "", err
 	}
 	beforeLimit := limit / 2
 	afterLimit := limit - beforeLimit
 
-	older, hasOlder, err := s.getMessagesBeforeAnchor(chatJID, anchorEpoch, anchorID, beforeLimit)
+	older, hasOlder, err := s.getMessagesBeforeAnchorContext(ctx, chatJID, anchorEpoch, anchorID, beforeLimit)
 	if err != nil {
-		return nil, false, false, 0, err
+		return nil, false, false, 0, "", err
 	}
 
-	newer, hasNewer, err := s.getMessagesFromAnchor(chatJID, anchorEpoch, anchorID, afterLimit)
+	newer, hasNewer, err := s.getMessagesFromAnchorContext(ctx, chatJID, anchorEpoch, anchorID, afterLimit)
 	if err != nil {
-		return nil, false, false, 0, err
+		return nil, false, false, 0, "", err
 	}
 
 	messages := append(older, newer...)
-	return messages, hasOlder, hasNewer, latestRevision, nil
+	return messages, hasOlder, hasNewer, latestRevision, anchorID, nil
 
 }
 
-func (s *UserDataStore) getMessagesBeforeAnchor(chatJID string, anchorEpoch int64, anchorID string, limit int) ([]Message, bool, error) {
+func (s *UserDataStore) getMessagesBeforeAnchorContext(ctx context.Context, chatJID string, anchorEpoch int64, anchorID string, limit int) ([]Message, bool, error) {
 	if limit <= 0 {
 		return []Message{}, false, nil
 	}
-	rows, err := s.db.Query(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, mentioned_jids, revision
 		FROM messages
 		WHERE chat_jid = ?
@@ -1699,12 +1743,12 @@ func (s *UserDataStore) getMessagesBeforeAnchor(chatJID string, anchorEpoch int6
 	return messages, hasOlder, nil
 }
 
-func (s *UserDataStore) getMessagesFromAnchor(chatJID string, anchorEpoch int64, anchorID string, limit int) ([]Message, bool, error) {
+func (s *UserDataStore) getMessagesFromAnchorContext(ctx context.Context, chatJID string, anchorEpoch int64, anchorID string, limit int) ([]Message, bool, error) {
 	if limit <= 0 {
 		return []Message{}, false, nil
 	}
 
-	rows, err := s.db.Query(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, sender_jid, text, timestamp, status, media_type, is_from_me, mentioned_jids, revision
 		FROM messages
 		WHERE chat_jid = ?

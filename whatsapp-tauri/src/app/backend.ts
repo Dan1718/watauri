@@ -31,6 +31,7 @@ export type BackendMessage = {
 
 export type MessagePage = {
   messages: BackendMessage[];
+  anchorMessageId?: string;
   nextCursor: string | null;
   latestCursor: string | null;
   hasMore: boolean;
@@ -39,6 +40,7 @@ export type MessagePage = {
 export type MessagePageOptions = {
   before?: string;
   after?: string;
+  anchor?: "oldestUnread";
   limit?: number;
   signal?: AbortSignal;
 };
@@ -93,11 +95,12 @@ export const getBackendProfile = (signal?: AbortSignal) =>
 
 export const listBackendMessages = (
   chatId: string,
-  { before, after, limit, signal }: MessagePageOptions = {}
+  { before, after, anchor, limit, signal }: MessagePageOptions = {}
 ) => {
   const query = new URLSearchParams();
   if (before) query.set("before", before);
   if (after) query.set("after", after);
+  if (anchor) query.set("anchor", anchor);
   if (limit !== undefined) query.set("limit", String(limit));
   const suffix = query.size ? `?${query}` : "";
   return request<MessagePage>(`/api/chats/${chatId}${suffix}`, { signal });
@@ -113,10 +116,9 @@ export const sendBackendMessage = (chatId: string, text: string, clientSendId: s
   });
 
 export const markBackendChatRead = (chatId: string, sendReceipt: boolean, messageIds: string[]) => {
-  if (!messageIds.length) return Promise.reject(new Error("Read requests require message IDs"));
   return request<{ unreadCount: number }>(`/api/chats/${chatId}/read`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sendReceipt, messageIds }),
+    body: JSON.stringify(messageIds.length ? { sendReceipt, messageIds } : { sendReceipt }),
   });
 };

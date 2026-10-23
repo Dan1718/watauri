@@ -57,6 +57,27 @@ describe("read batches", () => {
     expect(called).toBe(true);
   });
 
+  test("marks the whole chat and retries that operation after failure", async () => {
+    const batches = new ReadBatches();
+    const messages = [message("1"), message("2", { isSentFromUser: true }), message("3", { read: true })];
+    const optimistic: string[][] = [];
+    const requests: string[][] = [];
+    await expect(batches.markAll(
+      "a", messages, () => true,
+      async () => { throw new Error("offline"); },
+      () => {},
+      (ids) => optimistic.push(ids),
+    )).rejects.toThrow("offline");
+    expect(optimistic).toEqual([["1"]]);
+
+    await batches.mark("a", messages, ["1"], () => true, async (ids) => {
+      requests.push(ids);
+      return { unreadCount: 0 };
+    }, () => {});
+    expect(requests).toEqual([[]]);
+    expect(batches.reconcile("a", messages)[0].read).toBe(true);
+  });
+
   test("does not dispatch for inactive conversations", async () => {
     const batches = new ReadBatches();
     await batches.mark("a", [message("1")], ["1"], () => false, async () => { throw new Error("must not send"); }, () => {});

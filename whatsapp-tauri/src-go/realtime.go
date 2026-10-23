@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -118,8 +119,8 @@ func (h *EventHub) Publish(event RealtimeEvent) {
 	if event.Type == "" {
 		return
 	}
+	started := time.Now()
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if event.Type == "sync" && event.SyncType != "" && event.Progress != nil {
 		if *event.Progress >= 100 {
 			delete(h.syncProgress, event.SyncType)
@@ -129,9 +130,12 @@ func (h *EventHub) Publish(event RealtimeEvent) {
 	}
 	if len(h.syncTypes) > 0 && isInvalidationEvent(event.Type) {
 		h.pending = true
+		h.mu.Unlock()
+		traceEvent(context.Background(), "realtime.publish", map[string]any{"type": event.Type, "coalesced": true, "duration_ns": time.Since(started).Nanoseconds()})
 		return
 	}
 	h.publishLocked(event)
+	h.mu.Unlock()
 }
 
 func isInvalidationEvent(eventType string) bool {
@@ -144,10 +148,14 @@ func isInvalidationEvent(eventType string) bool {
 }
 
 func (h *EventHub) publishLocked(event RealtimeEvent) {
+	started := time.Now()
+	subscriberCount := len(h.subscribers)
+	replaced := 0
 	for ch := range h.subscribers {
 		select {
 		case ch <- event:
 		default:
+			replaced++
 			// Invalidations are coalescible. A slow consumer gets one full-resync
 			// signal instead of blocking WhatsApp event processing or growing memory.
 			for {
@@ -161,6 +169,7 @@ func (h *EventHub) publishLocked(event RealtimeEvent) {
 		}
 	nextSubscriber:
 	}
+	traceEvent(context.Background(), "realtime.publish", map[string]any{"type": event.Type, "subscribers": subscriberCount, "slow_subscriber_resyncs": replaced, "duration_ns": time.Since(started).Nanoseconds()})
 }
 
 func (h *EventHub) SubscriberCount() int {
@@ -207,20 +216,30 @@ func handleEventsWithHub(w http.ResponseWriter, r *http.Request, hub *EventHub) 
 			if !open {
 				return
 			}
+			writeStarted := time.Now()
 			payload, err := json.Marshal(event)
 			if err != nil {
+				traceEvent(r.Context(), "realtime.encode", map[string]any{"type": event.Type, "duration_ns": time.Since(writeStarted).Nanoseconds(), "failed": true, "error_type": errorType(err)})
 				log.Printf("[http] failed to encode realtime event %q: %v", event.Type, err)
 				continue
 			}
-			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, payload); err != nil {
+			traceEvent(r.Context(), "realtime.encode", map[string]any{"type": event.Type, "duration_ns": time.Since(writeStarted).Nanoseconds(), "bytes": len(payload)})
+			writeStarted = time.Now()
+			written, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, payload)
+			if err != nil {
+				traceEvent(r.Context(), "realtime.write", map[string]any{"type": event.Type, "duration_ns": time.Since(writeStarted).Nanoseconds(), "failed": true, "error_type": errorType(err)})
 				return
 			}
 			flusher.Flush()
+			traceEvent(r.Context(), "realtime.write", map[string]any{"type": event.Type, "bytes": written, "duration_ns": time.Since(writeStarted).Nanoseconds()})
 		case <-ticker.C:
+			writeStarted := time.Now()
 			if _, err := fmt.Fprint(w, ": keep-alive\n\n"); err != nil {
+				traceEvent(r.Context(), "realtime.heartbeat", map[string]any{"duration_ns": time.Since(writeStarted).Nanoseconds(), "failed": true, "error_type": errorType(err)})
 				return
 			}
 			flusher.Flush()
+			traceEvent(r.Context(), "realtime.heartbeat", map[string]any{"duration_ns": time.Since(writeStarted).Nanoseconds()})
 		}
 	}
 }

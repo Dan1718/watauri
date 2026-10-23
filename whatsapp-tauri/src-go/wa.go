@@ -54,6 +54,7 @@ type WAManager struct {
 
 type historySyncStats struct {
 	startedAt            time.Time
+	traceID              string
 	chunks               int
 	progress             uint32
 	conversationsSeen    int
@@ -121,6 +122,8 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 		}()
 	}
 	client.AddEventHandler(func(evt interface{}) {
+		eventCtx, finishEventTrace := traceStart(context.Background(), "whatsapp.event", map[string]any{"type": fmt.Sprintf("%T", evt)})
+		defer func() { finishEventTrace(nil) }()
 		switch v := evt.(type) {
 		case *events.Connected:
 			wa.mu.Lock()
@@ -130,8 +133,8 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			wa.mu.Unlock()
 			log.Println("[wa] Connected to Whatsapp")
 			go func() {
-				wa.SyncGroups(context.Background())
-				wa.SyncContacts(context.Background())
+				wa.SyncGroups(eventCtx)
+				wa.SyncContacts(eventCtx)
 			}()
 		case *events.Disconnected:
 			wa.mu.Lock()
@@ -168,7 +171,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				log.Printf("[wa] Failed to upsert placeholder chat %s: %v", canonicalChatJID, err)
 				break
 			}
-			wa.storeMessageEvent(v, "live")
+			wa.storeMessageEventContext(eventCtx, v, "live")
 		case *events.Receipt:
 			log.Printf("[wa] Event: receipt type=%s ids=%v chat=%s sender=%s", v.Type, v.MessageIDs, v.Chat, v.Sender)
 			if len(v.MessageIDs) > 0 && wa.store != nil {
@@ -176,7 +179,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				if v.Type == "read" || v.Type == "read-self" {
 					newStatus = "read"
 				}
-				if err := wa.store.UpdateMessageStatus(v.MessageIDs, newStatus); err != nil {
+				if err := wa.store.UpdateMessageStatusContext(eventCtx, v.MessageIDs, newStatus); err != nil {
 					log.Printf("[wa] Failed to update receipt status for %v: %v", v.MessageIDs, err)
 				} else {
 					chatJID := v.Chat.String()
@@ -193,7 +196,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			if v.Remove {
 				go wa.removeAvatar(jid, jid.Server == types.GroupServer)
 			} else {
-				go wa.refreshAvatar(context.Background(), jid)
+				go wa.refreshAvatar(eventCtx, jid)
 			}
 		case *events.GroupInfo:
 			wa.handleGroupInfoEvent(v)
@@ -212,11 +215,19 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				log.Printf("[wa] history sync skipped: nil data")
 				break
 			}
-			dumpHistorySync(data)
 			wa.beginHistorySync(data)
-
+			syncCtx := wa.historySyncTraceContext(data.GetSyncType().String())
+			syncCtx, finishSyncTrace := traceStart(syncCtx, "history_sync.chunk", map[string]any{
+				"sync_type": data.GetSyncType().String(), "progress": data.GetProgress(),
+				"conversation_count": len(data.GetConversations()), "pushname_count": len(data.GetPushnames()),
+				"mapping_count": len(data.GetPhoneNumberToLidMappings()),
+			})
+			dumpStarted := time.Now()
+			dumpHistorySync(data)
+			traceEvent(syncCtx, "history_sync.dump", map[string]any{"duration_ns": time.Since(dumpStarted).Nanoseconds()})
 			pushnamesStored := 0
 			inlineContactsStored := 0
+			_, finishPushnames := traceStart(syncCtx, "history_sync.pushnames", map[string]any{"count": len(data.GetPushnames())})
 			for _, push := range data.GetPushnames() {
 				jid := push.GetID()
 				pushName := push.GetPushname()
@@ -232,6 +243,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 				}
 				pushnamesStored++
 			}
+			finishPushnames(nil)
 
 			conversationsSeen := len(data.GetConversations())
 			conversationsStored := 0
@@ -241,6 +253,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			messagesSkipped := 0
 			jidMappingsStored := 0
 			jidMappingsSkipped := 0
+			_, finishMappings := traceStart(syncCtx, "history_sync.jid_mappings", map[string]any{"count": len(data.GetPhoneNumberToLidMappings())})
 			for _, mapping := range data.GetPhoneNumberToLidMappings() {
 				pn, err := types.ParseJID(mapping.GetPnJID())
 				if err != nil {
@@ -271,6 +284,8 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 
 				jidMappingsStored++
 			}
+			finishMappings(nil)
+			_, finishConversations := traceStart(syncCtx, "history_sync.conversations", map[string]any{"count": len(data.GetConversations())})
 			for _, conv := range data.GetConversations() {
 				chatJID, err := types.ParseJID(conv.GetID())
 				if err != nil {
@@ -313,15 +328,18 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 					continue
 				}
 				if chat.IsGroup {
+					_, finishParticipants := traceStart(syncCtx, "history_sync.participants_and_metadata", nil)
 					wa.persistHistoryParticipants(conv)
 					if err := wa.store.UpsertGroupMetadata(canonicalChatJID, groupMetadataUpdateFromHistoryConversation(conv)); err != nil {
 						log.Printf("[wa] failed to upsert history group metadata %s: %v", canonicalChatJID, err)
 					}
+					finishParticipants(nil)
 				}
 				conversationsStored++
 
 				historyMessages := make([]Message, 0, len(conv.GetMessages()))
 				historyPushNames := make(map[string]string)
+				parseStarted := time.Now()
 				for _, historymsg := range conv.GetMessages() {
 					messagesSeen++
 					evt, err := client.ParseWebMessage(chatJID, historymsg.GetMessage())
@@ -346,15 +364,20 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 						historyPushNames[evt.Info.Sender.String()] = evt.Info.PushName
 					}
 				}
-				if inserted, err := wa.store.InsertHistoryMessages(historyMessages, historyPushNames); err != nil {
+				traceEvent(syncCtx, "history_sync.parse_messages", map[string]any{"input_count": len(conv.GetMessages()), "parsed_count": len(historyMessages), "duration_ns": time.Since(parseStarted).Nanoseconds()})
+				insertCtx, finishInsert := traceStart(syncCtx, "history_sync.insert_messages", map[string]any{"count": len(historyMessages)})
+				if inserted, err := wa.store.InsertHistoryMessagesContext(insertCtx, historyMessages, historyPushNames); err != nil {
+					finishInsert(err)
 					log.Printf("[wa] failed to persist history messages for %s: %v", chatJID, err)
 					messagesSkipped += len(historyMessages)
 				} else {
+					finishInsert(nil)
 					messagesStored += inserted
 					messagesSkipped += len(historyMessages) - inserted
 				}
 			}
-			go wa.SyncContacts(context.Background())
+			finishConversations(nil)
+			go wa.SyncContacts(syncCtx)
 			wa.finishHistorySyncChunk(data, historySyncStats{
 				conversationsSeen:    conversationsSeen,
 				conversationsStored:  conversationsStored,
@@ -375,6 +398,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 			} else if conversationsStored > 0 || pushnamesStored > 0 || inlineContactsStored > 0 || jidMappingsStored > 0 {
 				publishRealtime(RealtimeEvent{Type: "chat"})
 			}
+			finishSyncTrace(nil)
 		case *events.PushName:
 			log.Printf("[wa] Event: pushName jid=%s old=%q new=%q", v.JID, v.OldPushName, v.NewPushName)
 			if wa.store != nil {
@@ -382,7 +406,7 @@ func newWAManager(store *UserDataStore) (*WAManager, error) {
 					ID:       v.JID.String(),
 					PushName: v.NewPushName,
 				}); err == nil {
-					go wa.fetchMissingAvatar(context.Background(), v.JID)
+					go wa.fetchMissingAvatar(eventCtx, v.JID)
 					publishRealtime(RealtimeEvent{Type: "chat"})
 				}
 			}
@@ -408,11 +432,30 @@ func (wa *WAManager) beginHistorySync(data *waHistorySync.HistorySync) {
 		wa.historySyncs = make(map[string]*historySyncStats)
 	}
 	if wa.historySyncs[syncType] == nil {
-		wa.historySyncs[syncType] = &historySyncStats{startedAt: time.Now()}
+		stats := &historySyncStats{startedAt: time.Now()}
+		if traceEnabled {
+			stats.traceID = newTraceID()
+		}
+		wa.historySyncs[syncType] = stats
 		realtimeHub.BeginHistorySync(syncType)
 		log.Printf("[wa] history sync started type=%s", syncType)
 	}
 	wa.historySyncMu.Unlock()
+}
+
+func (wa *WAManager) historySyncTraceContext(syncType string) context.Context {
+	if !traceEnabled {
+		return context.Background()
+	}
+	wa.historySyncMu.Lock()
+	stats := wa.historySyncs[syncType]
+	if stats == nil {
+		stats = &historySyncStats{startedAt: time.Now(), traceID: newTraceID()}
+		wa.historySyncs[syncType] = stats
+	}
+	id := stats.traceID
+	wa.historySyncMu.Unlock()
+	return context.WithValue(context.Background(), traceIDKey{}, id)
 }
 
 func (wa *WAManager) finishHistorySyncChunk(data *waHistorySync.HistorySync, chunk historySyncStats) {
@@ -421,6 +464,9 @@ func (wa *WAManager) finishHistorySyncChunk(data *waHistorySync.HistorySync, chu
 	stats := wa.historySyncs[syncType]
 	if stats == nil {
 		stats = &historySyncStats{startedAt: time.Now()}
+		if traceEnabled {
+			stats.traceID = newTraceID()
+		}
 		wa.historySyncs[syncType] = stats
 	}
 	stats.chunks++
@@ -499,13 +545,18 @@ func dumpHistorySync(data *waHistorySync.HistorySync) {
 
 // / Stores a parsed Message event and stores it. The caller is responsible for upserting the chat before calling.
 func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool {
+	return wa.storeMessageEventContext(context.Background(), evt, source)
+}
+
+func (wa *WAManager) storeMessageEventContext(ctx context.Context, evt *events.Message, source string) bool {
 	ourMsg, ok := messageFromEvent(evt)
 	if !ok {
 		log.Printf("[wa] Skipping message %s: empty text, no media (reaction/receipt)", evt.Info.ID)
 		return false
 	}
-	log.Printf("[wa] Event: message id = %s chat = %s sender = %s sender_push = %s text = %q media = %s isFromMe = %v ",
-		evt.Info.ID, evt.Info.Chat, evt.Info.Sender, evt.Info.PushName, ourMsg.Text, ourMsg.MediaType, evt.Info.IsFromMe)
+	ctx, finish := traceStart(ctx, "whatsapp.persist_message", map[string]any{"source": source, "text_bytes": len(ourMsg.Text), "media_type": ourMsg.MediaType, "from_me": ourMsg.IsFromMe})
+	defer func() { finish(nil) }()
+	log.Printf("[wa] Event: message source=%s has_text=%v media=%s isFromMe=%v", source, ourMsg.Text != "", ourMsg.MediaType, ourMsg.IsFromMe)
 
 	if evt.Info.Chat.Server != types.GroupServer {
 		canonicalChatJID, err := wa.store.CanonicalDirectChatJID(ourMsg.ChatJID)
@@ -520,7 +571,7 @@ func (wa *WAManager) storeMessageEvent(evt *events.Message, source string) bool 
 			log.Printf("[wa] failed to upsert history message pushname %s: %v", evt.Info.Sender, err)
 		}
 	}
-	if err := wa.store.InsertMessage(ourMsg, source == "live"); err != nil {
+	if err := wa.store.InsertMessageContext(ctx, ourMsg, source == "live"); err != nil {
 		log.Printf("[wa] Failed to store message %s: %v", evt.Info.ID, err)
 		return false
 	}
@@ -773,6 +824,8 @@ func (wa *WAManager) GetProfile() Profile {
 	return profile
 }
 func (wa *WAManager) SyncContacts(ctx context.Context) {
+	ctx, finish := traceStart(ctx, "whatsapp.sync_contacts", nil)
+	defer func() { finish(nil) }()
 	start := time.Now()
 	wa.mu.RLock()
 	client := wa.client
@@ -881,6 +934,8 @@ func (wa *WAManager) persistGroupParticipant(chatJID string, participant types.G
 }
 
 func (wa *WAManager) SyncGroups(ctx context.Context) {
+	ctx, finish := traceStart(ctx, "whatsapp.sync_groups", nil)
+	defer func() { finish(nil) }()
 	wa.mu.RLock()
 	client := wa.client
 	store := wa.store
@@ -1131,7 +1186,9 @@ func boolPointer(value bool) *bool { return &value }
 
 func intPointer(value int) *int { return &value }
 
-func (wa *WAManager) SendText(ctx context.Context, chatID, text, clientSendID string) (Message, error) {
+func (wa *WAManager) SendText(ctx context.Context, chatID, text, clientSendID string) (result Message, resultErr error) {
+	ctx, finish := traceStart(ctx, "whatsapp.send_text", map[string]any{"text_bytes": len(text), "client_send_id_present": clientSendID != ""})
+	defer func() { finish(resultErr) }()
 	to, err := types.ParseJID(chatID)
 	if err != nil {
 		return Message{}, fmt.Errorf("%w: %v", errInvalidChatID, err)
@@ -1161,17 +1218,26 @@ func (wa *WAManager) SendText(ctx context.Context, chatID, text, clientSendID st
 		IsFromMe:      true,
 		MentionedJIDs: []string{},
 	}
-	if err := wa.store.InsertMessage(message, false); err != nil {
+	insertCtx, finishInsert := traceStart(ctx, "whatsapp.send_persist_pending", nil)
+	if err := wa.store.InsertMessageContext(insertCtx, message, false); err != nil {
+		finishInsert(err)
 		return Message{}, fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
+	finishInsert(nil)
 	publishRealtime(RealtimeEvent{Type: "message", ChatID: chatID, MessageIDs: []string{message.ID}, ClientSendID: clientSendID})
+	sendStarted := time.Now()
 	if _, err := client.SendMessage(ctx, to, &waE2E.Message{Conversation: proto.String(text)}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		traceEvent(ctx, "whatsapp.send_network", map[string]any{"duration_ns": time.Since(sendStarted).Nanoseconds(), "error": err.Error()})
 		return Message{}, fmt.Errorf("failed to send message: %w", err)
 	}
+	traceEvent(ctx, "whatsapp.send_network", map[string]any{"duration_ns": time.Since(sendStarted).Nanoseconds()})
 	message.Status = "sent"
-	if err := wa.store.UpdateMessageStatus([]string{message.ID}, message.Status); err != nil {
+	statusCtx, finishStatus := traceStart(ctx, "whatsapp.send_persist_status", nil)
+	if err := wa.store.UpdateMessageStatusContext(statusCtx, []string{message.ID}, message.Status); err != nil {
+		finishStatus(err)
 		return Message{}, fmt.Errorf("%w: %v", errPersistMessage, err)
 	}
+	finishStatus(nil)
 	publishRealtime(RealtimeEvent{Type: "receipt", ChatID: chatID, MessageIDs: []string{message.ID}})
 	return message, nil
 }

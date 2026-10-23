@@ -12,7 +12,7 @@ import { normalizeJid, resolveContactDisplayName } from "@/app/utils";
 import Reaction from "../message/reaction";
 import ChatInfoPanel from "./chat-info-panel";
 import ContactHeader from "./contact-header";
-import ChatMessage from "./chat-message";
+import ChatMessage, { MentionTarget } from "./chat-message";
 import MessageReactions from "./message-reactions";
 
 const INITIAL_ITEM_INDEX = 1_000_000;
@@ -53,7 +53,8 @@ type MessageRowProps = {
   isGroup: boolean;
   senderName?: string;
   senderAvatar?: string;
-  mentionNames?: (string | undefined)[];
+  mentionTargets?: MentionTarget[];
+  onOpenMention: (jid: string) => void;
   showSender: boolean;
   compact: boolean;
   isLast: boolean;
@@ -67,7 +68,8 @@ const MessageRow = memo(function MessageRow({
   isGroup,
   senderName,
   senderAvatar,
-  mentionNames,
+  mentionTargets,
+  onOpenMention,
   showSender,
   compact,
   isLast,
@@ -101,7 +103,8 @@ const MessageRow = memo(function MessageRow({
           isGroup={isGroup}
           senderName={senderName}
           senderAvatar={senderAvatar}
-          mentionNames={mentionNames}
+          mentionTargets={mentionTargets}
+          onOpenMention={onOpenMention}
           showSender={showSender}
           blueTickEnabled={blueTickEnabled}
         />
@@ -139,6 +142,7 @@ const MessageList = memo(function MessageList({
   scrollToBottomRequest,
   markVisibleMessagesRead,
   markEntireChatRead,
+  onOpenMention,
 }: {
   chatId: string;
   messages: Message[];
@@ -154,6 +158,7 @@ const MessageList = memo(function MessageList({
   scrollToBottomRequest: number;
   markVisibleMessagesRead: (chatId: string, ids: string[]) => void;
   markEntireChatRead: (chatId: string) => void;
+  onOpenMention: (jid: string) => void;
 }) {
   const setScroller = useViewportReadMarking(chatId, markVisibleMessagesRead);
   const scrollerRef = useRef<HTMLElement | null>(null);
@@ -292,16 +297,20 @@ const MessageList = memo(function MessageList({
             candidate && [candidate.id, candidate.phoneJid, candidate.lidJid]
               .some((alias) => alias && normalizeJid(alias) === senderId)
           );
-          const mentionNames = message.mentionedJids?.map((jid) => {
+          const mentionTargets = message.mentionedJids?.map((jid) => {
             const normalizedJid = normalizeJid(jid);
             const mentionedContact = contacts?.[normalizedJid] ?? Object.values(contacts ?? {}).find((candidate) =>
               candidate && [candidate.id, candidate.phoneJid, candidate.lidJid]
                 .some((alias) => alias && normalizeJid(alias) === normalizedJid)
             );
-            if (mentionedContact) return mentionedContact.displayName;
-            return jid.endsWith("@s.whatsapp.net")
-              ? resolveContactDisplayName({ jid })
-              : undefined;
+            const resolvedName = mentionedContact?.displayName && mentionedContact.displayName !== "Unknown contact"
+              ? mentionedContact.displayName
+              : resolveContactDisplayName({
+                  phoneNumber: mentionedContact?.phone,
+                  jid: mentionedContact?.phoneJid ?? jid,
+                });
+            const name = resolvedName === "Unknown contact" ? undefined : resolvedName;
+            return { jid, name };
           });
           const isOldestUnread = unreadCount > 0 && index === unreadMarkerIndex;
 
@@ -320,7 +329,8 @@ const MessageList = memo(function MessageList({
                 isGroup={isGroup}
                 senderName={contact?.displayName ?? resolveContactDisplayName({ jid: message.contactId })}
                 senderAvatar={contact?.contactAvatar}
-                mentionNames={mentionNames}
+                mentionTargets={mentionTargets}
+                onOpenMention={onOpenMention}
                 showSender={!repeatedIncomingSender}
                 compact={compact}
                 isLast={index === messages.length - 1}
@@ -666,6 +676,38 @@ export default function CurrentChat() {
   } = useCurrentChat();
   const { chats: { complete } } = useChats();
   const { profile: { blueTickEnabled, id: userId } } = useProfile();
+  const openMentionedChat = useCallback((jid: string) => {
+    const normalizedJid = normalizeJid(jid);
+    const mentionedContact = Object.values(group?.contacts ?? {}).find((candidate) =>
+      candidate && [candidate.id, candidate.phoneJid, candidate.lidJid]
+        .some((alias) => alias && normalizeJid(alias) === normalizedJid)
+    );
+    const aliases = new Set(
+      [jid, mentionedContact?.id, mentionedContact?.phoneJid, mentionedContact?.lidJid]
+        .filter((alias): alias is string => Boolean(alias))
+        .map(normalizeJid)
+    );
+    const directChat = complete.find((chat) => !chat.group && [
+      chat.id,
+      ...(typeof chat.contactId === "string" ? [chat.contactId] : []),
+      ...(chat.participants ?? []).flatMap((participant) => [participant.id, participant.phoneJid, participant.lidJid]
+        .filter((alias): alias is string => Boolean(alias))),
+    ].some((alias) => aliases.has(normalizeJid(alias))));
+    const targetJid = mentionedContact?.phoneJid || jid;
+    const targetContact = mentionedContact ?? {
+      id: targetJid,
+      displayName: resolveContactDisplayName({ jid: targetJid }),
+      contactAvatar: "",
+      statusMessage: "",
+    };
+    loadCurrentChat({
+      chatId: directChat?.id ?? targetJid,
+      page: 0,
+      unreadCount: directChat?.unreadCount ?? 0,
+      contact: targetContact,
+      group: null,
+    });
+  }, [complete, group?.contacts, loadCurrentChat]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -677,7 +719,6 @@ export default function CurrentChat() {
     document.addEventListener("keydown", closeChatOnEscape);
     return () => document.removeEventListener("keydown", closeChatOnEscape);
   }, [chatId, loadCurrentChat]);
-
   if (!chatId) {
     return (
       <section className="flex h-full w-full items-center justify-center bg-[#1d1f1f] text-white">
@@ -708,6 +749,7 @@ export default function CurrentChat() {
             loadOlderMessages={loadOlderMessages}
             markVisibleMessagesRead={markVisibleMessagesRead}
             markEntireChatRead={markEntireChatRead}
+            onOpenMention={openMentionedChat}
             unreadCount={unreadCount}
             unreadAnchorMessageId={unreadAnchorMessageId}
             scrollToBottomRequest={scrollToBottomRequest}

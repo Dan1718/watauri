@@ -100,6 +100,7 @@ export default function ChatMessage({
                   className="cursor-pointer text-[#53bdeb] hover:underline"
                   key={index}
                   onClick={() => onOpenMention(part.target.jid)}
+                  style={{ color: "#53bdeb" }}
                   type="button"
                 >
                   @{part.target.name ?? part.fallbackText.slice(1)}

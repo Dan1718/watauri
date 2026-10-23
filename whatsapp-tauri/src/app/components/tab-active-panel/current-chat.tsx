@@ -8,6 +8,8 @@ import { useViewportReadMarking, useViewportScrollerRef } from "@/app/hooks/use-
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
 import { useChats } from "@/app/hooks/use-chats";
 import { useProfile } from "@/app/hooks/use-profile";
+import { useContacts } from "@/app/hooks/use-contacts";
+import { resolveMessageIdentity } from "@/app/utils/message-identity";
 import { normalizeJid, resolveContactDisplayName } from "@/app/utils";
 import Reaction from "../message/reaction";
 import ChatInfoPanel from "./chat-info-panel";
@@ -54,6 +56,7 @@ type MessageRowProps = {
   senderName?: string;
   senderAvatar?: string;
   mentionTargets?: MentionTarget[];
+  resolveLegacyMention: (identifier: string) => MentionTarget | undefined;
   onOpenMention: (jid: string) => void;
   showSender: boolean;
   compact: boolean;
@@ -69,6 +72,7 @@ const MessageRow = memo(function MessageRow({
   senderName,
   senderAvatar,
   mentionTargets,
+  resolveLegacyMention,
   onOpenMention,
   showSender,
   compact,
@@ -104,6 +108,7 @@ const MessageRow = memo(function MessageRow({
           senderName={senderName}
           senderAvatar={senderAvatar}
           mentionTargets={mentionTargets}
+          resolveLegacyMention={resolveLegacyMention}
           onOpenMention={onOpenMention}
           showSender={showSender}
           blueTickEnabled={blueTickEnabled}
@@ -160,6 +165,10 @@ const MessageList = memo(function MessageList({
   markEntireChatRead: (chatId: string) => void;
   onOpenMention: (jid: string) => void;
 }) {
+  const { getContact } = useContacts();
+  const mentionIdentities = useMemo(() => Object.values(contacts ?? {}).filter((contact) => contact !== undefined), [contacts]);
+  const resolveLegacyMention = useCallback((identifier: string) =>
+    resolveMessageIdentity(identifier, mentionIdentities, getContact, true), [mentionIdentities, getContact]);
   const setScroller = useViewportReadMarking(chatId, markVisibleMessagesRead);
   const scrollerRef = useRef<HTMLElement | null>(null);
   const handleScrollerRef = useViewportScrollerRef(setScroller, scrollerRef);
@@ -297,21 +306,8 @@ const MessageList = memo(function MessageList({
             candidate && [candidate.id, candidate.phoneJid, candidate.lidJid]
               .some((alias) => alias && normalizeJid(alias) === senderId)
           );
-          const mentionTargets = message.mentionedJids?.map((jid) => {
-            const normalizedJid = normalizeJid(jid);
-            const mentionedContact = contacts?.[normalizedJid] ?? Object.values(contacts ?? {}).find((candidate) =>
-              candidate && [candidate.id, candidate.phoneJid, candidate.lidJid]
-                .some((alias) => alias && normalizeJid(alias) === normalizedJid)
-            );
-            const resolvedName = mentionedContact?.displayName && mentionedContact.displayName !== "Unknown contact"
-              ? mentionedContact.displayName
-              : resolveContactDisplayName({
-                  phoneNumber: mentionedContact?.phone,
-                  jid: mentionedContact?.phoneJid ?? jid,
-                });
-            const name = resolvedName === "Unknown contact" ? undefined : resolvedName;
-            return { jid, name };
-          });
+          const mentionTargets = message.mentionedJids?.map((jid) =>
+            resolveMessageIdentity(jid, mentionIdentities, getContact) ?? { jid });
           const isOldestUnread = unreadCount > 0 && index === unreadMarkerIndex;
 
           return (
@@ -330,6 +326,7 @@ const MessageList = memo(function MessageList({
                 senderName={contact?.displayName ?? resolveContactDisplayName({ jid: message.contactId })}
                 senderAvatar={contact?.contactAvatar}
                 mentionTargets={mentionTargets}
+                resolveLegacyMention={resolveLegacyMention}
                 onOpenMention={onOpenMention}
                 showSender={!repeatedIncomingSender}
                 compact={compact}
@@ -676,12 +673,13 @@ export default function CurrentChat() {
   } = useCurrentChat();
   const { chats: { complete } } = useChats();
   const { profile: { blueTickEnabled, id: userId } } = useProfile();
+  const { getContact } = useContacts();
   const openMentionedChat = useCallback((jid: string) => {
     const normalizedJid = normalizeJid(jid);
     const mentionedContact = Object.values(group?.contacts ?? {}).find((candidate) =>
       candidate && [candidate.id, candidate.phoneJid, candidate.lidJid]
         .some((alias) => alias && normalizeJid(alias) === normalizedJid)
-    );
+    ) ?? getContact(jid);
     const aliases = new Set(
       [jid, mentionedContact?.id, mentionedContact?.phoneJid, mentionedContact?.lidJid]
         .filter((alias): alias is string => Boolean(alias))
@@ -707,7 +705,7 @@ export default function CurrentChat() {
       contact: targetContact,
       group: null,
     });
-  }, [complete, group?.contacts, loadCurrentChat]);
+  }, [complete, group?.contacts, getContact, loadCurrentChat]);
 
   useEffect(() => {
     if (!chatId) return;

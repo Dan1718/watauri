@@ -7,8 +7,9 @@ import {
   useState,
 } from "react";
 import { BackendUser, listBackendContacts } from "../backend";
-import { getDisplayNameFromJid, normalizeJid, resolveContactDisplayName } from "../utils";
+import { getDisplayNameFromJid, resolveContactDisplayName } from "../utils";
 import { useRealtime } from "./realtime-provider";
+import { contactAliasKey, createContactLookup } from "../utils/contact-lookup";
 
 export type Contact = {
   id: string;
@@ -121,10 +122,7 @@ export default function ContactsProvider({ children }: PropsWithChildren) {
   }, [subscribe]);
 
   const contactMap = useMemo(
-    () => new Map(contacts.contacts.flatMap((contact) => [
-      [contact.id, contact] as const,
-      ...(contact.phone ? [[contact.phone, contact] as const] : []),
-    ])),
+    () => createContactLookup(contacts.contacts),
     [contacts.contacts]
   );
   const filteredContacts = useMemo(() => {
@@ -146,15 +144,8 @@ export default function ContactsProvider({ children }: PropsWithChildren) {
   }, []);
 
   const getContact = useCallback((id: string) => {
-    const exact = contactMap.get(id);
-    if (exact) return exact;
-    const normalizedID = normalizeJid(id);
-    const phoneID = id.replace(/^\+/, "");
-    return contacts.contacts.find((contact) =>
-      [contact.id, contact.phoneJid, contact.lidJid].some((alias) => alias && normalizeJid(alias) === normalizedID) ||
-      Boolean(contact.phone && contact.phone.replace(/^\+/, "") === phoneID)
-    );
-  }, [contactMap, contacts.contacts]);
+    return contactMap.get(contactAliasKey(id));
+  }, [contactMap]);
 
   const setIsContactTyping = useCallback((id: string, typing: boolean) => {
     setContacts((prev) => {

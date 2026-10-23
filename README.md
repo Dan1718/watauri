@@ -31,7 +31,7 @@ Look at [FEATURES.md](./FEATURES.md) for everything.
 - [x] Message pagination
 - [x] Read receipts
 - [ ] Real-time updates with Server-Sent Events
-- [ ] Contact name sync (names come from available sync data; coverage is incomplete)
+- [ ] Contact name sync (display order is saved name, usable push name, then phone number; sync coverage is incomplete)
 - [ ] Group metadata (in progress; names are persisted, live updates are pending)
 - [ ] Group participants (in progress; joined-group sync is implemented)
 - [x] Contact and group avatars (stored locally and served through opaque local API URLs)

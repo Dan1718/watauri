@@ -193,10 +193,11 @@ Returns all chats for the authenticated user from local SQLite storage.
 - Null contact fields in placeholder rows are treated as empty when resolving direct-chat names.
 - Group participants are returned when stored; otherwise `participants` is `[]`.
 - Each group participant includes numeric `rank`: `0` member, `1` admin, `2` superadmin. This field is omitted from direct-chat participants and contact responses. No new endpoint is required.
+- Group participant records preserve `name` and `pushName` separately, include `phoneNumber` and phone/LID aliases when mapped, and set `isSaved` when a saved contact name exists under either alias.
 - Participants come from joined-group snapshots, explicit history conversation `participant` records, and live group-info join/leave/promote/demote lists. History inserts missing members only: repeated, partial, or participant-free chunks never delete members or overwrite existing ranks. Missing history ranks default to member for newly inserted rows. Message senders and `pastParticipants` are not treated as current membership evidence.
 - History participants from each conversation are normalized and persisted together in one SQLite transaction, with a single mapping-table read; departure protection and insert-only rank semantics are retained.
 - Participant IDs are non-device phone JIDs where a reliable mapping is available, otherwise valid LIDs are retained. Legacy phone servers are normalized. Learning a mapping merges participant aliases transactionally, preserving the higher rank on collisions; subsequent live/snapshot updates can explicitly demote members. This normalization does not change direct-chat identity.
-- Contact enrichment is optional. Empty contact placeholders satisfy storage foreign keys; names fall back to push name, phone number, or the participant identifier. Unmapped participants remain visible.
+- Contact enrichment is optional. Empty contact placeholders satisfy storage foreign keys. The frontend displays group participant names in saved-name, usable push-name, phone-number order and uses `Unknown contact` when no phone mapping exists; it does not display an unmapped LID as a contact name.
 - Live participant changes publish the existing chat-scoped SSE invalidation after persistence. History chunks use the existing chat/resync invalidations, including mapping-only chunks.
 - Live leaves atomically delete active membership and persist a group/participant departure marker in `participant_departures`. History and role-only events cannot restore departed members, including after restarts. An explicit live join clears the marker atomically with its participant upsert.
 - Requested joined-group snapshots capture the durable `participant_revision` before the network request. A snapshot can restore an explicitly listed member only if their departure was already recorded when that request began. Departures processed while the snapshot was in flight remain protected. Unsolicited `JoinedGroup` snapshots lack this boundary and cannot clear departure markers. Snapshots never infer removals from omitted members.
@@ -415,11 +416,20 @@ Returns all known contacts.
 **Response `200`**
 ```json
 [
-  { "id": "user-1", "name": "Alice", "avatar": "/api/avatars/0123456789abcdef0123456789abcdef", "status": "online" }
+  {
+    "id": "123@s.whatsapp.net",
+    "name": "Alice",
+    "pushName": "Ali",
+    "phoneNumber": "123",
+    "phoneJid": "123@s.whatsapp.net",
+    "lidJid": "456@lid",
+    "avatar": "/api/avatars/0123456789abcdef0123456789abcdef",
+    "status": "online"
+  }
 ]
 ```
 
-**Behavior**: Populated from whatsmeow contact/history sync events and push-name events. Null fields in placeholder rows are returned as empty values.
+**Behavior**: Populated from whatsmeow contact/history sync events and push-name events. A known phone/LID mapping adds the phone number and both aliases to the response. The frontend resolves display names in this order: saved name, usable push name, phone number; if no phone number is known, it shows `Unknown contact` instead of a JID. Null fields in placeholder rows are returned as empty values.
 
 **Status**: Implemented (`GET`)
 

@@ -7,12 +7,14 @@ import {
   useState,
 } from "react";
 import { BackendUser, listBackendContacts } from "../backend";
-import { getDisplayNameFromJid, isPhonePlaceholder } from "../utils";
+import { getDisplayNameFromJid, normalizeJid, resolveContactDisplayName } from "../utils";
 import { useRealtime } from "./realtime-provider";
 
 export type Contact = {
   id: string;
   displayName: string;
+  name?: string;
+  pushName?: string;
   contactAvatar: string;
   statusMessage: string;
   phone?: string;
@@ -45,7 +47,9 @@ function toContact(user: BackendUser): Contact {
   const phone = user.phoneNumber || (user.id.endsWith("@s.whatsapp.net") ? getDisplayNameFromJid(user.id) : undefined);
   return {
     id: user.id,
-    displayName: user.name || (!isPhonePlaceholder(user.pushName) ? user.pushName : undefined) || getDisplayNameFromJid(user.id),
+    displayName: resolveContactDisplayName({ name: user.name, pushName: user.pushName, phoneNumber: phone, jid: user.id }),
+    name: user.name,
+    pushName: user.pushName,
     contactAvatar: user.avatar ?? "",
     statusMessage: user.status ?? "",
     phone,
@@ -141,7 +145,16 @@ export default function ContactsProvider({ children }: PropsWithChildren) {
     }));
   }, []);
 
-  const getContact = useCallback((id: string) => contactMap.get(id), [contactMap]);
+  const getContact = useCallback((id: string) => {
+    const exact = contactMap.get(id);
+    if (exact) return exact;
+    const normalizedID = normalizeJid(id);
+    const phoneID = id.replace(/^\+/, "");
+    return contacts.contacts.find((contact) =>
+      [contact.id, contact.phoneJid, contact.lidJid].some((alias) => alias && normalizeJid(alias) === normalizedID) ||
+      Boolean(contact.phone && contact.phone.replace(/^\+/, "") === phoneID)
+    );
+  }, [contactMap, contacts.contacts]);
 
   const setIsContactTyping = useCallback((id: string, typing: boolean) => {
     setContacts((prev) => {

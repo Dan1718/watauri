@@ -849,6 +849,7 @@ func (s *UserDataStore) getChatParticipantsContextLocked(ctx context.Context, ch
 			COALESCE(NULLIF(c.avatar, ''), NULLIF(pc.avatar, ''), NULLIF(lc.avatar, '')) AS avatar,
 			COALESCE(NULLIF(c.push_name, ''), NULLIF(pc.push_name, ''), NULLIF(lc.push_name, '')) AS push_name,
 			COALESCE(NULLIF(c.status, ''), NULLIF(pc.status, ''), NULLIF(lc.status, '')) AS status,
+			CASE WHEN COALESCE(NULLIF(c.name, ''), NULLIF(pc.name, ''), NULLIF(lc.name, '')) IS NOT NULL THEN 1 ELSE 0 END AS is_saved,
 			p.rank
 		FROM chat_participants p
 		LEFT JOIN contacts c ON c.jid = p.user_jid
@@ -878,7 +879,7 @@ func (s *UserDataStore) getChatParticipantsContextLocked(ctx context.Context, ch
 
 	for rows.Next() {
 		var participant User
-		var rank int
+		var rank, isSaved int
 		var name, avatar, pushName, status, phoneJID, lidJID sql.NullString
 		if err := rows.Scan(
 			&participant.ID,
@@ -888,11 +889,13 @@ func (s *UserDataStore) getChatParticipantsContextLocked(ctx context.Context, ch
 			&avatar,
 			&pushName,
 			&status,
+			&isSaved,
 			&rank,
 		); err != nil {
 			return nil, err
 		}
 		participant.Rank = &rank
+		participant.IsSaved = isSaved != 0
 		if name.Valid {
 			participant.Name = name.String
 		}
@@ -1449,7 +1452,12 @@ func (s *UserDataStore) GetContacts() ([]User, error) {
 	defer s.mu.RUnlock()
 
 	start := time.Now()
-	rows, err := s.db.Query(`SELECT jid, name, avatar, push_name, status FROM contacts`)
+	rows, err := s.db.Query(`SELECT c.jid, c.name, c.avatar, c.push_name, c.status,
+		COALESCE(CASE WHEN c.jid LIKE '%@s.whatsapp.net' THEN c.jid END, lid_map.phone_jid, phone_map.phone_jid),
+		COALESCE(CASE WHEN c.jid LIKE '%@lid' THEN c.jid END, phone_map.lid_jid)
+		FROM contacts c
+		LEFT JOIN jid_mappings lid_map ON lid_map.lid_jid = c.jid
+		LEFT JOIN jid_mappings phone_map ON phone_map.phone_jid = c.jid`)
 	if err != nil {
 		log.Printf("[store] GetContacts query error: %v (%v)", err, time.Since(start))
 		return nil, err
@@ -1459,8 +1467,8 @@ func (s *UserDataStore) GetContacts() ([]User, error) {
 	var contacts []User
 	for rows.Next() {
 		var u User
-		var name, avatar, pushName, status sql.NullString
-		if err := rows.Scan(&u.ID, &name, &avatar, &pushName, &status); err != nil {
+		var name, avatar, pushName, status, phoneJID, lidJID sql.NullString
+		if err := rows.Scan(&u.ID, &name, &avatar, &pushName, &status, &phoneJID, &lidJID); err != nil {
 			log.Printf("[store] GetContacts row scan error: %v (%v)", err, time.Since(start))
 			return nil, err
 		}
@@ -1475,6 +1483,13 @@ func (s *UserDataStore) GetContacts() ([]User, error) {
 		}
 		if status.Valid {
 			u.Status = status.String
+		}
+		if phoneJID.Valid {
+			u.PhoneJID = phoneJID.String
+			u.PhoneNumber = phoneNumberFromJID(phoneJID.String)
+		}
+		if lidJID.Valid {
+			u.LIDJID = lidJID.String
 		}
 		contacts = append(contacts, u)
 	}

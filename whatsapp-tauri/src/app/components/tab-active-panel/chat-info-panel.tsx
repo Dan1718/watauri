@@ -2,7 +2,7 @@ import { Chat, Message } from "@/app/context/chats-provider";
 import { Contact } from "@/app/context/contacts-provider";
 import { CurrentChatContactsGroup } from "@/app/context/current-chat-provider";
 import { useChats } from "@/app/hooks/use-chats";
-import { getDisplayNameFromJid } from "@/app/utils";
+import { getDisplayNameFromJid, resolveContactDisplayName } from "@/app/utils";
 import { XIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import Profile from "../profile";
@@ -87,7 +87,12 @@ export default function ChatInfoPanel({ chatId, contact, group, messages, userId
       id,
       isSelf: id === userId || contact?.id === userId,
       role: contact?.rank === 2 ? "Superadmin" : contact?.rank === 1 ? "Admin" : undefined,
-      name: contact?.displayName || (contact?.phone ? `+${contact.phone}` : getDisplayNameFromJid(id)),
+      name: resolveContactDisplayName({
+        name: contact?.name,
+        pushName: contact?.pushName,
+        phoneNumber: contact?.phone,
+        jid: id,
+      }),
     }))
     .sort((a, b) => Number(Boolean(b.contact?.isSaved)) - Number(Boolean(a.contact?.isSaved)) ||
       Number(b.isSelf) - Number(a.isSelf) ||

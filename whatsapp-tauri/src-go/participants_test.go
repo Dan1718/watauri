@@ -491,6 +491,52 @@ func TestMigrationReconcilesExistingParticipantAliases(t *testing.T) {
 	}
 }
 
+func TestContactAndParticipantResponsesIncludePhoneAliasesAndSavedName(t *testing.T) {
+	newTestStore(t)
+	const lid = "111@lid"
+	const phone = "919876543210@s.whatsapp.net"
+	if err := store.UpsertContact(User{ID: lid, PushName: "~Yashaswi"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertContact(User{ID: phone, Name: "Yashaswi Priya IIITH+0"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertJIDMapping(lid, phone); err != nil {
+		t.Fatal(err)
+	}
+	contacts, err := store.GetContacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mapped *User
+	for i := range contacts {
+		if contacts[i].ID == lid {
+			mapped = &contacts[i]
+			break
+		}
+	}
+	if mapped == nil || mapped.PhoneJID != phone || mapped.PhoneNumber != "919876543210" {
+		t.Fatalf("mapped contact = %+v, want phone alias and phone number", mapped)
+	}
+	if err := store.UpsertChat(Chat{ID: "group@g.us", IsGroup: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`INSERT INTO chat_participants (chat_jid, user_jid, rank) VALUES (?, ?, 0)`, "group@g.us", lid); err != nil {
+		t.Fatal(err)
+	}
+	chats, err := store.GetChats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chats) != 1 || len(chats[0].Participants) != 1 {
+		t.Fatalf("chats/participants = %+v, want one group participant", chats)
+	}
+	participant := chats[0].Participants[0]
+	if participant.Name != "Yashaswi Priya IIITH+0" || participant.PushName != "~Yashaswi" || !participant.IsSaved {
+		t.Fatalf("participant = %+v, want saved name, separate push name, and isSaved", participant)
+	}
+}
+
 func TestParticipantMappingLookupFailureKeepsValidFallback(t *testing.T) {
 	newTestStore(t)
 	if err := store.UpsertChat(Chat{ID: "one@g.us", IsGroup: true}); err != nil {

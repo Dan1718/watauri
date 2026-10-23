@@ -1604,18 +1604,18 @@ func intToBool(i int) bool {
 	return i == 1
 }
 
-func (s *UserDataStore) GetMessagesAnchoredAtOldestUnread(chatJID string, limit int) ([]Message, bool, bool, int64, error) {
+func (s *UserDataStore) GetMessagesAnchoredAtOldestUnread(chatJID string, limit int) ([]Message, bool, bool, int64, string, error) {
 	s.mu.RLock()
 	var unreadCount int
 	err := s.db.QueryRow(`SELECT unread_count FROM chats WHERE jid = ?`, chatJID).Scan(&unreadCount)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		s.mu.RUnlock()
-		return nil, false, false, 0, err
+		return nil, false, false, 0, "", err
 	}
 	if errors.Is(err, sql.ErrNoRows) || unreadCount <= 0 {
 		s.mu.RUnlock()
 		messages, hasMore, latestRevision, err := s.GetMessages(chatJID, limit, nil, nil)
-		return messages, hasMore, false, latestRevision, err
+		return messages, hasMore, false, latestRevision, "", err
 	}
 
 	var anchorID string
@@ -1639,11 +1639,11 @@ func (s *UserDataStore) GetMessagesAnchoredAtOldestUnread(chatJID string, limit 
 	if errors.Is(err, sql.ErrNoRows) {
 		s.mu.RUnlock()
 		messages, hasMore, latestRevision, err := s.GetMessages(chatJID, limit, nil, nil)
-		return messages, hasMore, false, latestRevision, err
+		return messages, hasMore, false, latestRevision, "", err
 	}
 	if err != nil {
 		s.mu.RUnlock()
-		return nil, false, false, 0, err
+		return nil, false, false, 0, "", err
 	}
 
 	defer s.mu.RUnlock()
@@ -1651,23 +1651,23 @@ func (s *UserDataStore) GetMessagesAnchoredAtOldestUnread(chatJID string, limit 
 	var latestRevision int64
 	if err := s.db.QueryRow(`
 		SELECT COALESCE(MAX(revision), 0) FROM messages where chat_jid = ? `, chatJID).Scan(&latestRevision); err != nil {
-		return nil, false, false, 0, err
+		return nil, false, false, 0, "", err
 	}
 	beforeLimit := limit / 2
 	afterLimit := limit - beforeLimit
 
 	older, hasOlder, err := s.getMessagesBeforeAnchor(chatJID, anchorEpoch, anchorID, beforeLimit)
 	if err != nil {
-		return nil, false, false, 0, err
+		return nil, false, false, 0, "", err
 	}
 
 	newer, hasNewer, err := s.getMessagesFromAnchor(chatJID, anchorEpoch, anchorID, afterLimit)
 	if err != nil {
-		return nil, false, false, 0, err
+		return nil, false, false, 0, "", err
 	}
 
 	messages := append(older, newer...)
-	return messages, hasOlder, hasNewer, latestRevision, nil
+	return messages, hasOlder, hasNewer, latestRevision, anchorID, nil
 
 }
 

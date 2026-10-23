@@ -35,14 +35,15 @@ type Profile struct {
 }
 
 type MessagePage struct {
-	Messages     []Message `json:"messages"`
-	NextCursor   *string   `json:"nextCursor"`
-	LatestCursor *string   `json:"latestCursor"`
-	HasMore      bool      `json:"hasMore"`
-	OlderCursor  *string   `json:"olderCursor"`
-	NewerCursor  *string   `json:"newerCursor"`
-	HasOlder     bool      `json:"hasOlder"`
-	HasNewer     bool      `json:"hasNewer"`
+	Messages        []Message `json:"messages"`
+	AnchorMessageID string    `json:"anchorMessageId,omitempty"`
+	NextCursor      *string   `json:"nextCursor"`
+	LatestCursor    *string   `json:"latestCursor"`
+	HasMore         bool      `json:"hasMore"`
+	OlderCursor     *string   `json:"olderCursor"`
+	NewerCursor     *string   `json:"newerCursor"`
+	HasOlder        bool      `json:"hasOlder"`
+	HasNewer        bool      `json:"hasNewer"`
 }
 
 type GroupMetadata struct {

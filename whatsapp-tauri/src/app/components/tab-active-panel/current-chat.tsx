@@ -132,6 +132,7 @@ const MessageList = memo(function MessageList({
   hasMoreMessages,
   loadOlderMessages,
   unreadCount,
+  unreadAnchorMessageId,
   scrollToBottomRequest,
   markVisibleMessagesRead,
   markEntireChatRead,
@@ -146,11 +147,13 @@ const MessageList = memo(function MessageList({
   hasMoreMessages: boolean;
   loadOlderMessages: () => Promise<void>;
   unreadCount: number;
+  unreadAnchorMessageId: string | null;
   scrollToBottomRequest: number;
   markVisibleMessagesRead: (chatId: string, ids: string[]) => void;
   markEntireChatRead: (chatId: string) => void;
 }) {
   const setScroller = useViewportReadMarking(chatId, markVisibleMessagesRead);
+  const scrollerRef = useRef<HTMLElement | null>(null);
   const [activeReactionId, setActiveReactionId] = useState<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isScrolling, setIsScrolling] = useState(false);
@@ -174,7 +177,10 @@ const MessageList = memo(function MessageList({
   let firstItemIndex = committedFirstItemIndex.current;
   // Keep the opening scroll target stable as viewport reads reduce the count.
   const openingUnreadCount = useRef(unreadCount).current;
-  const oldestUnreadIndex = openingUnreadCount > 0 && incomingMessageIndexes.length > 0
+  const anchoredUnreadIndex = unreadAnchorMessageId ? messageIndexes.get(unreadAnchorMessageId) ?? -1 : -1;
+  const oldestUnreadIndex = anchoredUnreadIndex >= 0
+    ? anchoredUnreadIndex
+    : openingUnreadCount > 0 && incomingMessageIndexes.length > 0
     ? incomingMessageIndexes[Math.max(0, incomingMessageIndexes.length - openingUnreadCount)]
     : -1;
   const unreadMarkerIndex = unreadCount > 0 && incomingMessageIndexes.length > 0
@@ -201,17 +207,26 @@ const MessageList = memo(function MessageList({
 
   useLayoutEffect(() => {
     if (positionedAtUnread.current || openingUnreadCount === 0 || messages.length === 0 || isLoading) return;
-    if (openingUnreadCount > incomingMessageIndexes.length && hasMoreMessages) {
+    if (!unreadAnchorMessageId && openingUnreadCount > incomingMessageIndexes.length && hasMoreMessages) {
       void loadOlderMessages();
       return;
     }
 
     positionedAtUnread.current = true;
+    const anchorIndex = oldestUnreadIndex;
     virtuosoRef.current?.scrollToIndex({
-      index: firstItemIndex + Math.max(0, oldestUnreadIndex),
+      index: firstItemIndex + Math.max(0, anchorIndex),
       align: "center",
     });
-  }, [firstItemIndex, hasMoreMessages, incomingMessageIndexes.length, isLoading, loadOlderMessages, messages.length, oldestUnreadIndex, openingUnreadCount]);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const scroller = scrollerRef.current;
+      const marker = scroller?.querySelector<HTMLElement>("[data-unread-marker='true']");
+      if (!scroller || !marker) return;
+      const viewport = scroller.getBoundingClientRect();
+      const markerRect = marker.getBoundingClientRect();
+      scroller.scrollTop += markerRect.top + markerRect.height / 2 - (viewport.top + scroller.clientHeight / 2);
+    }));
+  }, [firstItemIndex, hasMoreMessages, incomingMessageIndexes.length, isLoading, loadOlderMessages, messages.length, oldestUnreadIndex, openingUnreadCount, unreadAnchorMessageId]);
 
   const toggleReactionMenu = useCallback((messageId: string) => {
     setActiveReactionId((current) => current === messageId ? null : messageId);
@@ -238,7 +253,10 @@ const MessageList = memo(function MessageList({
         {visibleTimestamp !== null ? <DatePill timestamp={visibleTimestamp} floating /> : null}
       </div>
       <Virtuoso
-        scrollerRef={setScroller}
+        scrollerRef={(element) => {
+          scrollerRef.current = element instanceof HTMLElement ? element : null;
+          setScroller(element);
+        }}
         ref={virtuosoRef}
         key={chatId}
         className="h-full w-full"
@@ -273,13 +291,13 @@ const MessageList = memo(function MessageList({
             candidate && [candidate.id, candidate.phoneJid, candidate.lidJid]
               .some((alias) => alias && normalizeJid(alias) === senderId)
           );
-          const isOldestUnread = index === unreadMarkerIndex;
+          const isOldestUnread = unreadCount > 0 && index === unreadMarkerIndex;
 
           return (
             <>
               {startsNewDay ? <DatePill timestamp={message.timestamp} /> : null}
               {isOldestUnread ? (
-                <div className="flex w-full items-center gap-2 px-4 py-3 text-[11px] font-medium text-[#00a884]">
+                <div data-unread-marker="true" className="flex w-full items-center gap-2 px-4 py-3 text-[11px] font-medium text-[#00a884]">
                   <span className="h-px flex-1 bg-[#00a884]/50" />
                   <span>New</span>
                   <span className="h-px flex-1 bg-[#00a884]/50" />
@@ -626,6 +644,7 @@ export default function CurrentChat() {
     error,
     hasMoreMessages,
     unreadCount,
+    unreadAnchorMessageId,
     sendMessage,
     loadOlderMessages,
     markVisibleMessagesRead,
@@ -664,6 +683,7 @@ export default function CurrentChat() {
             markVisibleMessagesRead={markVisibleMessagesRead}
             markEntireChatRead={markEntireChatRead}
             unreadCount={unreadCount}
+            unreadAnchorMessageId={unreadAnchorMessageId}
             scrollToBottomRequest={scrollToBottomRequest}
           />
           {cannotSend ? (

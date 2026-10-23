@@ -116,7 +116,7 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if anchor == "oldestUnread" {
-		messages, hasOlder, hasNewer, latestRevision, err := store.GetMessagesAnchoredAtOldestUnread(chatID, limit)
+		messages, hasOlder, hasNewer, latestRevision, anchorMessageID, err := store.GetMessagesAnchoredAtOldestUnread(chatID, limit)
 		if err != nil {
 			log.Printf("[http] GET /api/chats/%s error: %v", chatID, err)
 			http.Error(w, `{"error":"failed to fetch messages"}`, http.StatusInternalServerError)
@@ -138,14 +138,15 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 
 		json.NewEncoder(w).Encode(MessagePage{
-			Messages:     messages,
-			NextCursor:   olderCursor,
-			LatestCursor: latestRevisionCursor(latestRevision),
-			HasMore:      hasOlder,
-			OlderCursor:  olderCursor,
-			NewerCursor:  newerCursor,
-			HasOlder:     hasOlder,
-			HasNewer:     hasNewer,
+			Messages:        messages,
+			AnchorMessageID: anchorMessageID,
+			NextCursor:      olderCursor,
+			LatestCursor:    latestRevisionCursor(latestRevision),
+			HasMore:         hasOlder,
+			OlderCursor:     olderCursor,
+			NewerCursor:     newerCursor,
+			HasOlder:        hasOlder,
+			HasNewer:        hasNewer,
 		})
 
 		log.Printf("[http] GET /api/chats/%s -> %d anchored messages", chatID, len(messages))

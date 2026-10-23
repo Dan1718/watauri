@@ -220,7 +220,7 @@ Unknown chat IDs currently return an empty message page (`200`), not `404`.
 - `limit` — bounded page size.
 - `before` — cursor for older messages.
 - `after` — revision cursor for polling deltas, or a time cursor for newer messages.
-- `anchor=oldestUnread` — returns a window around the inbound message at the unread boundary. The boundary is determined by the chat's `unreadCount`: for a count of `N`, it is the Nth newest inbound message, regardless of individual message statuses. Outgoing messages do not contribute to the count.
+- `anchor=oldestUnread` — returns a window around the inbound message at the unread boundary and includes its ID in `anchorMessageId`. The boundary is determined by the chat's `unreadCount`: for a count of `N`, it is the Nth newest inbound message, regardless of individual message statuses. Outgoing messages do not contribute to the count.
 
 **Behavior**:
 - Returns `[]` in `messages` for unknown or empty chats.

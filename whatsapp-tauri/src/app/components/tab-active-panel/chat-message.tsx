@@ -22,6 +22,30 @@ export function splitMessageText(message: string) {
   return message.split(messageUrlPattern);
 }
 
+export type MentionTarget = {
+  jid: string;
+  name?: string;
+};
+
+export type MessageContentPart =
+  | { type: "text"; text: string }
+  | { type: "mention"; target: MentionTarget; fallbackText: string };
+
+export function splitMessageContent(message: string, mentionTargets?: MentionTarget[]): MessageContentPart[] {
+  let mentionIndex = 0;
+  const parts = splitMessageText(message).flatMap((part, partIndex): MessageContentPart[] => {
+    if (partIndex % 2 !== 0 || !mentionTargets?.length) return [{ type: "text", text: part }];
+    return part.split(/(@[+\d*•∙.…-]+)/gu).map((segment, segmentIndex) => {
+      if (segmentIndex % 2 === 0) return { type: "text", text: segment };
+      const target = mentionTargets[mentionIndex++];
+      return target
+        ? { type: "mention", target, fallbackText: segment }
+        : { type: "text", text: segment };
+    });
+  });
+  return parts.filter((part) => part.type !== "text" || part.text.length > 0);
+}
+
 export function getMessageHref(text: string) {
   if (/^https?:\/\//i.test(text)) return text;
   const tld = text.split(/[/:?#]/)[0].split(".").pop()?.toLowerCase();
@@ -39,7 +63,8 @@ export default function ChatMessage({
   isGroup,
   senderName,
   senderAvatar,
-  mentionNames,
+  mentionTargets,
+  onOpenMention,
   showSender,
   blueTickEnabled,
 }: {
@@ -47,19 +72,12 @@ export default function ChatMessage({
   isGroup: boolean;
   senderName?: string;
   senderAvatar?: string;
-  mentionNames?: (string | undefined)[];
+  mentionTargets?: MentionTarget[];
+  onOpenMention: (jid: string) => void;
   showSender: boolean;
   blueTickEnabled: boolean;
 }) {
-  let mentionIndex = 0;
-  const textParts = splitMessageText(message.message).flatMap((part, partIndex) => {
-    if (partIndex % 2 !== 0 || !mentionNames?.length) return [part];
-    return part.split(/(@[+\d*•∙.…-]+)/gu).map((segment, index) => {
-      if (index % 2 === 0) return segment;
-      const mentionName = mentionNames[mentionIndex++];
-      return mentionName ? `@${mentionName}` : segment;
-    });
-  });
+  const textParts = splitMessageContent(message.message, mentionTargets);
   const bubble = (
     <div
       data-unread-message-id={!message.isSentFromUser && !message.read ? message.id : undefined}
@@ -75,7 +93,20 @@ export default function ChatMessage({
       <div className="flex min-w-0 max-w-full items-end justify-between gap-2">
         <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-white">
           {textParts.map((part, index) => {
-            const href = getMessageHref(part);
+            if (part.type === "mention") {
+              return (
+                <button
+                  aria-label={`Open chat with ${part.target.name ?? part.fallbackText}`}
+                  className="cursor-pointer text-[#53bdeb] hover:underline"
+                  key={index}
+                  onClick={() => onOpenMention(part.target.jid)}
+                  type="button"
+                >
+                  @{part.target.name ?? part.fallbackText.slice(1)}
+                </button>
+              );
+            }
+            const href = getMessageHref(part.text);
             return href ? (
               <a
                 className="hover:opacity-80"
@@ -85,7 +116,7 @@ export default function ChatMessage({
                 target="_blank"
               >
                 <span style={{ borderBottom: "1px solid currentColor", paddingBottom: "1px" }}>
-                  {part}
+                  {part.text}
                   <span
                     aria-hidden="true"
                     className="material-symbols-outlined ml-0.5 align-middle !text-[14px]"
@@ -96,7 +127,7 @@ export default function ChatMessage({
                 </span>
                 <span className="sr-only"> (opens in a new tab)</span>
               </a>
-            ) : part;
+            ) : part.text;
           })}
         </p>
         <p className="shrink-0 text-xs text-white/80">{formatTime(message.timestamp)}</p>

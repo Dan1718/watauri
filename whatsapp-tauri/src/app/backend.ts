@@ -113,10 +113,9 @@ export const sendBackendMessage = (chatId: string, text: string, clientSendId: s
   });
 
 export const markBackendChatRead = (chatId: string, sendReceipt: boolean, messageIds: string[]) => {
-  if (!messageIds.length) return Promise.reject(new Error("Read requests require message IDs"));
   return request<{ unreadCount: number }>(`/api/chats/${chatId}/read`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sendReceipt, messageIds }),
+    body: JSON.stringify(messageIds.length ? { sendReceipt, messageIds } : { sendReceipt }),
   });
 };

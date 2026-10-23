@@ -46,6 +46,7 @@ export type CurrentChat = CurrentChatData & {
   sendMessage: (text: string) => boolean;
   loadOlderMessages: () => Promise<void>;
   markVisibleMessagesRead: (chatId: string, ids: string[]) => void;
+  markEntireChatRead: (chatId: string) => void;
 };
 
 export const CurrentChatContext = createContext<undefined | CurrentChat>(
@@ -424,6 +425,39 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     });
   }, [readBatches, setChatUnreadCount]);
 
+  const markEntireChatRead = useCallback((chatId: string) => {
+    const isActive = () => mountedRef.current && activeChatIdRef.current === chatId && currentChatRef.current.chatId === chatId &&
+      canReadConversation(readSettingsRef.current.pollingActive, document.visibilityState, document.hasFocus());
+    void readBatches.markAll(chatId, currentChatRef.current.messages, isActive,
+      () => markBackendChatRead(chatId, readSettingsRef.current.readReceiptsEnabled, []),
+      (_ids, unreadCount) => {
+        if (!mountedRef.current) return;
+        const cached = cacheRef.current.get(chatId);
+        if (cached) cacheRef.current.set(chatId, {
+          ...cached, messages: readBatches.reconcile(chatId, cached.messages),
+        });
+        setChatUnreadCount(chatId, unreadCount);
+        setCurrentChat((prev) => prev.chatId === chatId
+          ? { ...prev, unreadCount, error: null, messages: readBatches.reconcile(chatId, prev.messages) }
+          : prev);
+      },
+      (messageIds) => {
+        if (!mountedRef.current) return;
+        readBatches.beginOptimistic(chatId, messageIds);
+        const cached = cacheRef.current.get(chatId);
+        if (cached) cacheRef.current.set(chatId, {
+          ...cached, messages: readBatches.reconcile(chatId, cached.messages),
+        });
+        setChatUnreadCount(chatId, 0);
+        setCurrentChat((prev) => prev.chatId === chatId
+          ? { ...prev, unreadCount: 0, messages: readBatches.reconcile(chatId, prev.messages) }
+          : prev);
+      },
+    ).catch(() => {
+      // Preserve optimistic state and retry the whole-chat operation on the next viewport pass.
+    });
+  }, [readBatches, setChatUnreadCount]);
+
   const loadOlderMessages = useCallback(async () => {
     const chatId = currentChatRef.current.chatId;
     if (!chatId) return;
@@ -506,8 +540,8 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   }, []);
 
   const value = useMemo(
-    () => ({ ...currentChat, loadCurrentChat, sendMessage, loadOlderMessages, markVisibleMessagesRead }),
-    [currentChat, loadCurrentChat, sendMessage, loadOlderMessages, markVisibleMessagesRead]
+    () => ({ ...currentChat, loadCurrentChat, sendMessage, loadOlderMessages, markVisibleMessagesRead, markEntireChatRead }),
+    [currentChat, loadCurrentChat, sendMessage, loadOlderMessages, markVisibleMessagesRead, markEntireChatRead]
   );
 
   return (

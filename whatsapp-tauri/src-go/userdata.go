@@ -1502,16 +1502,48 @@ func (s *UserDataStore) GetContacts() ([]User, error) {
 }
 
 func (s *UserDataStore) MissingAvatarCandidates() ([]avatarCandidate, error) {
+	return s.MissingAvatarCandidatesPrioritized(0)
+}
+
+func (s *UserDataStore) MissingAvatarCandidatesPrioritized(recentChatLimit int) ([]avatarCandidate, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	rows, err := s.db.Query(`
-		SELECT jid FROM contacts
-		WHERE COALESCE(avatar_id, '') = '' AND COALESCE(avatar_status, '') <> 'removed'
-		UNION
-		SELECT jid FROM chats
-		WHERE is_group = 1 AND COALESCE(avatar_id, '') = '' AND COALESCE(avatar_status, '') <> 'removed'
-	`)
+		WITH recent_chats AS (
+			SELECT jid, is_group, ROW_NUMBER() OVER (ORDER BY last_message_timestamp_epoch DESC) AS recent_rank
+			FROM chats
+			WHERE last_message_timestamp_epoch IS NOT NULL
+			ORDER BY last_message_timestamp_epoch DESC
+			LIMIT ?
+		), recent_targets AS (
+			SELECT jid, recent_rank FROM recent_chats
+			UNION ALL
+			SELECT participant.user_jid, recent_chats.recent_rank
+			FROM recent_chats
+			JOIN chat_participants AS participant ON participant.chat_jid = recent_chats.jid
+			WHERE recent_chats.is_group = 1
+			UNION ALL
+			SELECT contact.jid, recent_chats.recent_rank
+			FROM recent_chats
+			JOIN jid_mappings AS mapping ON mapping.lid_jid = recent_chats.jid OR mapping.phone_jid = recent_chats.jid
+			JOIN contacts AS contact ON contact.jid = mapping.lid_jid OR contact.jid = mapping.phone_jid
+		), prioritized AS (
+			SELECT jid, MIN(recent_rank) AS recent_rank
+			FROM recent_targets
+			GROUP BY jid
+		), candidates AS (
+			SELECT jid FROM contacts
+			WHERE COALESCE(avatar_id, '') = '' AND COALESCE(avatar_status, '') <> 'removed'
+			UNION
+			SELECT jid FROM chats
+			WHERE is_group = 1 AND COALESCE(avatar_id, '') = '' AND COALESCE(avatar_status, '') <> 'removed'
+		)
+		SELECT candidates.jid, prioritized.recent_rank IS NOT NULL AS is_recent
+		FROM candidates
+		LEFT JOIN prioritized ON prioritized.jid = candidates.jid
+		ORDER BY is_recent DESC, prioritized.recent_rank ASC, candidates.jid ASC
+	`, recentChatLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1520,9 +1552,11 @@ func (s *UserDataStore) MissingAvatarCandidates() ([]avatarCandidate, error) {
 	candidates := make([]avatarCandidate, 0)
 	for rows.Next() {
 		var candidate avatarCandidate
-		if err := rows.Scan(&candidate.jid); err != nil {
+		var recent int
+		if err := rows.Scan(&candidate.jid, &recent); err != nil {
 			return nil, err
 		}
+		candidate.recent = recent != 0
 		candidates = append(candidates, candidate)
 	}
 	if err := rows.Err(); err != nil {

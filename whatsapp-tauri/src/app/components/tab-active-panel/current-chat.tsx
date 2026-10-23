@@ -134,6 +134,7 @@ const MessageList = memo(function MessageList({
   unreadCount,
   scrollToBottomRequest,
   markVisibleMessagesRead,
+  markEntireChatRead,
 }: {
   chatId: string;
   messages: Message[];
@@ -147,6 +148,7 @@ const MessageList = memo(function MessageList({
   unreadCount: number;
   scrollToBottomRequest: number;
   markVisibleMessagesRead: (chatId: string, ids: string[]) => void;
+  markEntireChatRead: (chatId: string) => void;
 }) {
   const setScroller = useViewportReadMarking(chatId, markVisibleMessagesRead);
   const [activeReactionId, setActiveReactionId] = useState<string | null>(null);
@@ -165,11 +167,18 @@ const MessageList = memo(function MessageList({
   const committedFirstItemIndex = useRef(INITIAL_ITEM_INDEX);
   const positionedAtUnread = useRef(false);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
+    setIsAtBottom(atBottom);
+    if (atBottom && positionedAtUnread.current) markEntireChatRead(chatId);
+  }, [chatId, markEntireChatRead]);
   let firstItemIndex = committedFirstItemIndex.current;
   // Keep the opening scroll target stable as viewport reads reduce the count.
   const openingUnreadCount = useRef(unreadCount).current;
   const oldestUnreadIndex = openingUnreadCount > 0 && incomingMessageIndexes.length > 0
     ? incomingMessageIndexes[Math.max(0, incomingMessageIndexes.length - openingUnreadCount)]
+    : -1;
+  const unreadMarkerIndex = unreadCount > 0 && incomingMessageIndexes.length > 0
+    ? incomingMessageIndexes[Math.max(0, incomingMessageIndexes.length - unreadCount)]
     : -1;
 
   if (previousMessages.current !== messages && previousMessages.current[0]) {
@@ -238,7 +247,7 @@ const MessageList = memo(function MessageList({
         initialTopMostItemIndex={Math.max(0, messages.length - 1)}
         alignToBottom
         followOutput={(isAtBottom) => isAtBottom ? "auto" : false}
-        atBottomStateChange={setIsAtBottom}
+        atBottomStateChange={handleAtBottomStateChange}
         increaseViewportBy={{ top: 0, bottom: 200 }}
         computeItemKey={(_index, message) => message.id}
         isScrolling={setIsScrolling}
@@ -264,7 +273,7 @@ const MessageList = memo(function MessageList({
             candidate && [candidate.id, candidate.phoneJid, candidate.lidJid]
               .some((alias) => alias && normalizeJid(alias) === senderId)
           );
-          const isOldestUnread = openingUnreadCount > 0 && index === oldestUnreadIndex;
+          const isOldestUnread = index === unreadMarkerIndex;
 
           return (
             <>
@@ -620,6 +629,7 @@ export default function CurrentChat() {
     sendMessage,
     loadOlderMessages,
     markVisibleMessagesRead,
+    markEntireChatRead,
   } = useCurrentChat();
   const { chats: { complete } } = useChats();
   const { profile: { blueTickEnabled, id: userId } } = useProfile();
@@ -652,6 +662,7 @@ export default function CurrentChat() {
             hasMoreMessages={hasMoreMessages}
             loadOlderMessages={loadOlderMessages}
             markVisibleMessagesRead={markVisibleMessagesRead}
+            markEntireChatRead={markEntireChatRead}
             unreadCount={unreadCount}
             scrollToBottomRequest={scrollToBottomRequest}
           />

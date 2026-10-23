@@ -20,7 +20,7 @@ let focused = true;
 let visibility = "visible";
 let selectedTab = "chats";
 let receipts = true;
-let requests: { chatId: string; sendReceipt: boolean; messageIds: string[] }[];
+let requests: { chatId: string; sendReceipt: boolean; messageIds?: string[] }[];
 let deferChats = false;
 let resolveChats: ((response: Response) => void) | undefined;
 let serverUnreadCount = 3;
@@ -167,9 +167,11 @@ test("dispatch is blocked when unfocused, hidden, or on another app tab", async 
   await respond(0, 2);
 });
 
-test("API refuses an empty ID batch before fetch", async () => {
-  await expect(markBackendChatRead("a", true, [])).rejects.toThrow("require message IDs");
-  expect(requests).toHaveLength(0);
+test("API omits IDs for a whole-chat read request", async () => {
+  const pending = markBackendChatRead("a", true, []);
+  expect(requests).toEqual([{ chatId: "a", sendReceipt: true }]);
+  await respond(0, 0);
+  await expect(pending).resolves.toEqual({ unreadCount: 0 });
 });
 
 test("viewport batch remeasures after scrolling, excludes overscan, and checks focus at flush", async () => {
@@ -181,7 +183,7 @@ test("viewport batch remeasures after scrolling, excludes overscan, and checks f
   let top = 310;
   scroller.getBoundingClientRect = () => new dom.DOMRect(0, 50, 500, 250);
   row.getBoundingClientRect = () => new dom.DOMRect(0, top, 100, 50);
-  const markVisible = (_chatId: string, ids: string[]) => { batches.push(ids); };
+  const markVisible = (_chatId: string, ids: string[]) => { if (ids.length) batches.push(ids); };
   function ViewportProbe() {
     const setScroller = useViewportReadMarking("a", markVisible);
     return <div ref={(node) => { if (node) setScroller(scroller as unknown as HTMLElement); }} />;
@@ -242,7 +244,7 @@ test("switching away and back while a read is in flight reconciles the reopened 
   expect(requests).toHaveLength(1);
 });
 
-test("a failed request from an earlier selection cannot set an error on another or reopened chat", async () => {
+test("a failed request from an earlier selection keeps optimistic state without setting a reopened chat error", async () => {
   await render();
   await open("a");
   await mark("a", ["a-1"]);
@@ -255,7 +257,7 @@ test("a failed request from an earlier selection cannot set an error on another 
   await open("a");
   await act(async () => readResponses[1](new Response(null, { status: 500 })));
   expect(current.error).toBeNull();
-  expect(current.messages[0].read).toBe(false);
+  expect(current.messages[0].read).toBe(true);
   await mark("a", ["a-1"]);
   expect(requests).toHaveLength(3);
   await respond(2, 2);

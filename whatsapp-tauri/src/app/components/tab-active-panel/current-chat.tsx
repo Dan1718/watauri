@@ -8,7 +8,7 @@ import { useViewportReadMarking } from "@/app/hooks/use-viewport-read-marking";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
 import { useChats } from "@/app/hooks/use-chats";
 import { useProfile } from "@/app/hooks/use-profile";
-import { getDisplayNameFromJid, normalizeJid } from "@/app/utils";
+import { getDisplayNameFromJid, normalizeJid, resolveContactDisplayName } from "@/app/utils";
 import Reaction from "../message/reaction";
 import ChatInfoPanel from "./chat-info-panel";
 import ContactHeader from "./contact-header";
@@ -279,7 +279,7 @@ const MessageList = memo(function MessageList({
               <MessageRow
                 message={message}
                 isGroup={isGroup}
-                senderName={contact?.displayName ?? getDisplayNameFromJid(message.contactId)}
+                senderName={contact?.displayName ?? resolveContactDisplayName({ jid: message.contactId })}
                 senderAvatar={contact?.contactAvatar}
                 showSender={!repeatedIncomingSender}
                 compact={compact}

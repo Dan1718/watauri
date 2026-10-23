@@ -22,4 +22,19 @@ export const getDisplayNameFromJid = (jid: string) => {
 export const isPhonePlaceholder = (name?: string) =>
   Boolean(name && /^\+?[\d\s∙•*….-]+$/u.test(name));
 
+export const resolveContactDisplayName = (options: {
+  name?: string;
+  pushName?: string;
+  phoneNumber?: string;
+  jid: string;
+}) => {
+  if (options.name && !isPhonePlaceholder(options.name)) return options.name;
+  if (options.pushName && !isPhonePlaceholder(options.pushName)) return options.pushName;
+  const phoneNumber = options.phoneNumber || (/^\d+@s\.whatsapp\.net$/u.test(options.jid)
+    ? options.jid.slice(0, options.jid.indexOf("@"))
+    : undefined);
+  if (phoneNumber) return `+${phoneNumber.replace(/^\+/, "")}`;
+  return "Unknown contact";
+};
+
 export const normalizeJid = (jid: string) => jid.replace(/:\d+(?=@)/, "");

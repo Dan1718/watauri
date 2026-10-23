@@ -11,7 +11,9 @@ Each chat should return this shape:
 ```json
 {
   "id": "123@s.whatsapp.net",
-  "participants": [],
+  "participants": [
+    { "id": "123@s.whatsapp.net", "name": "Alice", "pushName": "Ali", "phoneNumber": "123", "isSaved": true }
+  ],
   "lastMessage": {
     "id": "message-id",
     "chatJid": "123@s.whatsapp.net",
@@ -53,6 +55,7 @@ Required details:
 - Escape or route chat IDs safely because JIDs contain `@` and may contain other URL-sensitive characters.
 - Support `limit`, `before`, and `after` cursors for older-page loading and polling deltas.
 - Support `anchor=oldestUnread` for loading a window around the oldest unread inbound message. ✅ Done
+- Group participant records keep `name` and `pushName` separate, include a mapped phone number when available, and mark `isSaved` when a saved contact name exists under the participant or its mapped JID alias.
 
 ### `GET /api/contacts`
 
@@ -63,6 +66,8 @@ Return contacts independently from chats:
   {
     "id": "123@s.whatsapp.net",
     "name": "Alice",
+    "pushName": "Ali",
+    "phoneNumber": "123",
     "avatar": "",
     "status": ""
   }
@@ -73,6 +78,7 @@ Required details:
 
 - Return `[]` when no contacts are available.
 - Populate names from push names, history sync, contact sync, or a readable fallback.
+- Include mapped phone/LID aliases and the phone number where a JID mapping exists, so the frontend can resolve phone fallbacks consistently.
 - Avoid requiring chat participants for contacts. The frontend now calls this endpoint directly.
 
 ### `POST /api/chats/:id/send` - ✅ Done

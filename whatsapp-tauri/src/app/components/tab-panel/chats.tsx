@@ -12,7 +12,7 @@ import { Chat, Filters } from "@/app/context/chats-provider";
 import Profile from "../profile";
 import { useContacts } from "@/app/hooks/use-contacts";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
-import { formatTime, getDisplayNameFromJid, isPhonePlaceholder } from "@/app/utils";
+import { formatTime, getDisplayNameFromJid, resolveContactDisplayName } from "@/app/utils";
 import MessageStatusIcon from "../message-status-icon";
 import { useProfile } from "@/app/hooks/use-profile";
 import { createPortal } from "react-dom";
@@ -196,7 +196,7 @@ const ChatList = memo(function ChatList({
     const contactId = typeof chat.contactId === "string" ? chat.contactId : undefined;
     const contact = contactId ? getContact(contactId) : undefined;
     return contactId
-      ? contact?.displayName ?? getDisplayNameFromJid(contactId)
+      ? resolveContactDisplayName({ name: contact?.name, pushName: contact?.pushName, phoneNumber: contact?.phone, jid: contactId })
       : chat.groupName ?? getDisplayNameFromJid(chat.id);
   };
   const matchingChats = chats.filter((chat) =>
@@ -213,13 +213,13 @@ const ChatList = memo(function ChatList({
     const senderContact = lastMessage && chat.group
       ? (sender?.phoneNumber ? getContact(sender.phoneNumber) : undefined) ?? getContact(lastMessage.contactId)
       : undefined;
-    const senderDisplayName = sender?.name && !isPhonePlaceholder(sender.name) ? sender.name : undefined;
-    const contactDisplayName = senderContact?.displayName && !isPhonePlaceholder(senderContact.displayName)
-      ? senderContact.displayName
-      : undefined;
     const senderName = lastMessage && chat.group
-      ? (senderContact?.isSaved ? senderContact.displayName : undefined) || senderDisplayName ||
-        contactDisplayName || (sender?.phoneNumber ? `+${sender.phoneNumber}` : getDisplayNameFromJid(lastMessage.contactId))
+      ? resolveContactDisplayName({
+          name: senderContact?.name || (sender?.isSaved ? sender?.name : undefined),
+          pushName: senderContact?.pushName || sender?.pushName,
+          phoneNumber: sender?.phoneNumber || senderContact?.phone,
+          jid: lastMessage.contactId,
+        })
       : undefined;
     return (
       <ChatRow

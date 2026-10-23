@@ -11,7 +11,7 @@ import { Chat, Message } from "./chats-provider";
 import { useChats } from "../hooks/use-chats";
 import { useContacts } from "../hooks/use-contacts";
 import { Contact } from "./contacts-provider";
-import { getDisplayNameFromJid, isPhonePlaceholder, normalizeJid } from "../utils";
+import { getDisplayNameFromJid, normalizeJid, resolveContactDisplayName } from "../utils";
 import { BackendMessage, listBackendMessages, markBackendChatRead, sendBackendMessage } from "../backend";
 import { useChatPollingActive } from "../hooks/use-chat-polling-active";
 import { useRealtime } from "./realtime-provider";
@@ -315,7 +315,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
           (contact: Contact) => contact.id === contactId
         ) ?? {
           id: contactId,
-          displayName: getDisplayNameFromJid(contactId),
+          displayName: resolveContactDisplayName({ jid: contactId }),
           contactAvatar: "",
           statusMessage: "",
         };
@@ -327,16 +327,14 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
         chat.contactId.forEach((groupContact: string) => {
           const participant = chat.participants?.find(({ id }) => id === groupContact);
           const contact = (participant?.phoneNumber ? getContact(participant.phoneNumber) : undefined) ?? getContact(groupContact);
-          const displayName = participant?.name && !isPhonePlaceholder(participant.name)
-            ? participant.name
-            : undefined;
-          const contactDisplayName = contact?.displayName && !isPhonePlaceholder(contact.displayName)
-            ? contact.displayName
-            : undefined;
           groupContacts[groupContact] = participant ? {
             id: participant.id,
-            displayName: (contact?.isSaved ? contact.displayName : undefined) || displayName || contactDisplayName ||
-              (participant.phoneNumber ? `+${participant.phoneNumber}` : getDisplayNameFromJid(participant.id)),
+            displayName: resolveContactDisplayName({
+              name: contact?.name || (participant.isSaved ? participant.name : undefined),
+              pushName: contact?.pushName || participant.pushName,
+              phoneNumber: participant.phoneNumber || contact?.phone,
+              jid: participant.id,
+            }),
             contactAvatar: contact?.contactAvatar || participant.avatar || "",
             statusMessage: contact?.statusMessage || participant.status || "",
             phone: participant.phoneNumber || contact?.phone,

@@ -658,6 +658,7 @@ export default function CurrentChat() {
     hasMoreMessages,
     unreadCount,
     unreadAnchorMessageId,
+    loadCurrentChat,
     sendMessage,
     loadOlderMessages,
     markVisibleMessagesRead,
@@ -665,6 +666,18 @@ export default function CurrentChat() {
   } = useCurrentChat();
   const { chats: { complete } } = useChats();
   const { profile: { blueTickEnabled, id: userId } } = useProfile();
+
+  useEffect(() => {
+    if (!chatId) return;
+    const closeChatOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (event.target instanceof Element && event.target.closest('[role="menu"], [role="dialog"], [aria-modal="true"]')) return;
+      loadCurrentChat({ chatId: null });
+    };
+    document.addEventListener("keydown", closeChatOnEscape);
+    return () => document.removeEventListener("keydown", closeChatOnEscape);
+  }, [chatId, loadCurrentChat]);
+
   if (!chatId) {
     return (
       <section className="flex h-full w-full items-center justify-center bg-[#1d1f1f] text-white">

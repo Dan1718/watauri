@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { Window } from "happy-dom";
-import { act, useContext } from "react";
+import { act, useCallback, useContext, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import ChatsProvider, { ChatsContext, type Chats } from "../context/chats-provider";
 import CurrentChatProvider, { type CurrentChat } from "../context/current-chat-provider";
@@ -9,7 +9,7 @@ import { ContactsContext } from "../context/contacts-provider";
 import { ProfileContext } from "../context/profile-provider";
 import { TabContext } from "../context/tab-provider";
 import { useCurrentChat } from "../hooks/use-current-chat";
-import { useViewportReadMarking } from "../hooks/use-viewport-read-marking";
+import { useViewportReadMarking, useViewportScrollerRef } from "../hooks/use-viewport-read-marking";
 import { markBackendChatRead } from "../backend";
 
 let root: Root;
@@ -204,6 +204,26 @@ test("viewport batch remeasures after scrolling, excludes overscan, and checks f
   dom.dispatchEvent(new dom.Event("focus"));
   await act(async () => { await Bun.sleep(230); });
   expect(batches).toEqual([["1"]]);
+});
+
+test("viewport scroller ref stays attached across state and parent rerenders", async () => {
+  const attached: (HTMLElement | globalThis.Window | null)[] = [];
+  function RefProbe({ revision }: { revision: number }) {
+    const [scroller, setScroller] = useState<HTMLElement | null>(null);
+    const scrollerRef = useRef<HTMLElement | null>(null);
+    const trackScroller = useCallback((element: HTMLElement | globalThis.Window | null) => {
+      attached.push(element);
+      setScroller(element instanceof HTMLElement ? element : null);
+    }, []);
+    const ref = useViewportScrollerRef(trackScroller, scrollerRef);
+    return <div data-revision={revision} data-attached={Boolean(scroller)} ref={ref} />;
+  }
+
+  await act(async () => root.render(<RefProbe revision={0} />));
+  await act(async () => root.render(<RefProbe revision={1} />));
+
+  expect(attached).toHaveLength(1);
+  expect(attached[0]).toBeInstanceOf(dom.HTMLElement);
 });
 
 

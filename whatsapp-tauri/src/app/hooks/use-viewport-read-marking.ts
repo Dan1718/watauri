@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type MutableRefObject } from "react";
 import { useChatPollingActive } from "./use-chat-polling-active";
 import { canReadConversation, visibleUnreadIds } from "../read-marking/viewport";
 
@@ -47,4 +47,14 @@ export function useViewportReadMarking(
   return useCallback((element: HTMLElement | Window | null) => {
     setScroller(element instanceof HTMLElement ? element : null);
   }, []);
+}
+
+export function useViewportScrollerRef(
+  setScroller: (element: HTMLElement | Window | null) => void,
+  scrollerRef: MutableRefObject<HTMLElement | null>,
+) {
+  return useCallback((element: HTMLElement | Window | null) => {
+    scrollerRef.current = element instanceof HTMLElement ? element : null;
+    setScroller(element);
+  }, [scrollerRef, setScroller]);
 }

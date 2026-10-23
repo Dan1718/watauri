@@ -4,7 +4,7 @@ import dayjs from "dayjs";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Message } from "@/app/context/chats-provider";
 import { CurrentChatContacts } from "@/app/context/current-chat-provider";
-import { useViewportReadMarking } from "@/app/hooks/use-viewport-read-marking";
+import { useViewportReadMarking, useViewportScrollerRef } from "@/app/hooks/use-viewport-read-marking";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
 import { useChats } from "@/app/hooks/use-chats";
 import { useProfile } from "@/app/hooks/use-profile";
@@ -154,6 +154,7 @@ const MessageList = memo(function MessageList({
 }) {
   const setScroller = useViewportReadMarking(chatId, markVisibleMessagesRead);
   const scrollerRef = useRef<HTMLElement | null>(null);
+  const handleScrollerRef = useViewportScrollerRef(setScroller, scrollerRef);
   const [activeReactionId, setActiveReactionId] = useState<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isScrolling, setIsScrolling] = useState(false);
@@ -253,10 +254,7 @@ const MessageList = memo(function MessageList({
         {visibleTimestamp !== null ? <DatePill timestamp={visibleTimestamp} floating /> : null}
       </div>
       <Virtuoso
-        scrollerRef={(element) => {
-          scrollerRef.current = element instanceof HTMLElement ? element : null;
-          setScroller(element);
-        }}
+        scrollerRef={handleScrollerRef}
         ref={virtuosoRef}
         key={chatId}
         className="h-full w-full"

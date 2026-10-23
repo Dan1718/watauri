@@ -21,17 +21,93 @@ const (
 func withCORS(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		traceCtx, finishTrace := traceStart(r.Context(), "http.request", map[string]any{"method": r.Method, "route": traceRoute(r.URL.Path)})
+		r = r.WithContext(traceCtx)
+		var tracked *traceResponseWriter
+		var responseWriter http.ResponseWriter = w
+		if traceEnabled {
+			tracked = &traceResponseWriter{ResponseWriter: w}
+			responseWriter = tracked
+		}
 		log.Printf("[http] %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
+			responseWriter.WriteHeader(http.StatusNoContent)
 			log.Printf("[http] OPTIONS %s -> 204 (%v)", r.URL.Path, time.Since(start))
+			finishTrace(nil)
+			if tracked != nil {
+				traceEvent(r.Context(), "http.response", map[string]any{"status": tracked.statusCode(), "bytes": tracked.bytes})
+			}
 			return
 		}
-		h(w, r)
+		h(responseWriter, r)
 		log.Printf("[http] %s %s -> done (%v)", r.Method, r.URL.Path, time.Since(start))
+		finishTrace(nil)
+		if tracked != nil {
+			traceEvent(r.Context(), "http.response", map[string]any{"status": tracked.statusCode(), "bytes": tracked.bytes})
+		}
+	}
+}
+
+type traceResponseWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (w *traceResponseWriter) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *traceResponseWriter) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	n, err := w.ResponseWriter.Write(data)
+	w.bytes += n
+	return n, err
+}
+
+func (w *traceResponseWriter) Flush() {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (w *traceResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w *traceResponseWriter) statusCode() int {
+	if w.status == 0 {
+		return http.StatusOK
+	}
+	return w.status
+}
+
+func traceRoute(path string) string {
+	switch {
+	case path == "/api/chats":
+		return path
+	case strings.HasPrefix(path, "/api/chats/"):
+		suffix := strings.TrimPrefix(path, "/api/chats/")
+		if strings.HasSuffix(suffix, "/send") {
+			return "/api/chats/:id/send"
+		}
+		if strings.HasSuffix(suffix, "/read") {
+			return "/api/chats/:id/read"
+		}
+		return "/api/chats/:id/messages"
+	case strings.HasPrefix(path, "/api/avatars/"):
+		return "/api/avatars/:id"
+	default:
+		return path
 	}
 }
 
@@ -60,7 +136,9 @@ func handleChats(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 
-	chats, err := store.GetChats()
+	storeCtx, finishStore := traceStart(r.Context(), "api.chats.store_and_assemble", nil)
+	chats, err := store.GetChatsContext(storeCtx)
+	finishStore(err)
 	if err != nil {
 		log.Printf("[http] GET /api/chats error: %v", err)
 		http.Error(w, `{"error":"failed to fetch chats"}`, http.StatusInternalServerError)
@@ -69,7 +147,9 @@ func handleChats(w http.ResponseWriter, r *http.Request) {
 	if chats == nil {
 		chats = []Chat{}
 	}
-	json.NewEncoder(w).Encode(chats)
+	_, finishEncode := traceStart(r.Context(), "api.chats.encode", map[string]any{"chat_count": len(chats)})
+	err = json.NewEncoder(w).Encode(chats)
+	finishEncode(err)
 	log.Printf("[http] GET /api/chats -> %d chats", len(chats))
 }
 
@@ -116,7 +196,9 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if anchor == "oldestUnread" {
-		messages, hasOlder, hasNewer, latestRevision, err := store.GetMessagesAnchoredAtOldestUnread(chatID, limit)
+		messagesCtx, finishMessages := traceStart(r.Context(), "api.messages.query_anchor", map[string]any{"limit": limit})
+		messages, hasOlder, hasNewer, latestRevision, anchorMessageID, err := store.GetMessagesAnchoredAtOldestUnreadContext(messagesCtx, chatID, limit)
+		finishMessages(err)
 		if err != nil {
 			log.Printf("[http] GET /api/chats/%s error: %v", chatID, err)
 			http.Error(w, `{"error":"failed to fetch messages"}`, http.StatusInternalServerError)
@@ -137,21 +219,26 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		json.NewEncoder(w).Encode(MessagePage{
-			Messages:     messages,
-			NextCursor:   olderCursor,
-			LatestCursor: latestRevisionCursor(latestRevision),
-			HasMore:      hasOlder,
-			OlderCursor:  olderCursor,
-			NewerCursor:  newerCursor,
-			HasOlder:     hasOlder,
-			HasNewer:     hasNewer,
+		_, finishEncode := traceStart(r.Context(), "api.messages.encode", map[string]any{"message_count": len(messages)})
+		encodeErr := json.NewEncoder(w).Encode(MessagePage{
+			Messages:        messages,
+			AnchorMessageID: anchorMessageID,
+			NextCursor:      olderCursor,
+			LatestCursor:    latestRevisionCursor(latestRevision),
+			HasMore:         hasOlder,
+			OlderCursor:     olderCursor,
+			NewerCursor:     newerCursor,
+			HasOlder:        hasOlder,
+			HasNewer:        hasNewer,
 		})
+		finishEncode(encodeErr)
 
 		log.Printf("[http] GET /api/chats/%s -> %d anchored messages", chatID, len(messages))
 		return
 	}
-	messages, hasMore, latestRevision, err := store.GetMessages(chatID, limit, before, after)
+	messagesCtx, finishMessages := traceStart(r.Context(), "api.messages.query", map[string]any{"limit": limit})
+	messages, hasMore, latestRevision, err := store.GetMessagesContext(messagesCtx, chatID, limit, before, after)
+	finishMessages(err)
 	if err != nil {
 		log.Printf("[http] GET /api/chats/%s error: %v", chatID, err)
 		http.Error(w, `{"error":"failed to fetch messages"}`, http.StatusInternalServerError)
@@ -199,7 +286,9 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 			olderCursor = nextCursor
 		}
 	}
-	json.NewEncoder(w).Encode(MessagePage{Messages: messages, NextCursor: nextCursor, LatestCursor: latestCursor, HasMore: hasMore, OlderCursor: olderCursor, NewerCursor: newerCursor, HasOlder: hasOlder, HasNewer: hasNewer})
+	_, finishEncode := traceStart(r.Context(), "api.messages.encode", map[string]any{"message_count": len(messages)})
+	encodeErr := json.NewEncoder(w).Encode(MessagePage{Messages: messages, NextCursor: nextCursor, LatestCursor: latestCursor, HasMore: hasMore, OlderCursor: olderCursor, NewerCursor: newerCursor, HasOlder: hasOlder, HasNewer: hasNewer})
+	finishEncode(encodeErr)
 	log.Printf("[http] GET /api/chats/%s -> %d messages", chatID, len(messages))
 }
 

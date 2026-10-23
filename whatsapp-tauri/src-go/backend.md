@@ -10,6 +10,32 @@ History sync emits one start log per sync type and one completion summary when p
 
 History-sync JSON dumps are separate from normal logging and are disabled by default. Setting `WATAURI_DUMP_HISTORY_SYNC=1` writes full parsed sync payloads to `WATAURI_HISTORY_SYNC_DUMP_DIR` (or `history-sync-dumps` by default); those files can contain private message and contact data.
 
+### Opt-in performance tracing
+
+Set `WATAURI_TRACE=1` in the environment before launching the app to enable verbose structured trace records. For a local Tauri run, rebuild the sidecar and start the app from the same shell:
+
+```sh
+cd whatsapp-tauri
+bun run build:backend
+WATAURI_TRACE=1 bun run dev:app
+```
+
+Trace records are emitted as one-line JSON with a `[trace]` prefix to backend stderr; the Tauri host relays them to its console with the `[go:err]` prefix. Tracing is disabled by default.
+
+The trace stream includes:
+
+- HTTP request spans and response status/byte counts. Dynamic chat and avatar IDs are replaced with route placeholders in trace route names.
+- Chat-list and message-page store/assembly and JSON-encoding spans.
+- History-sync chunk, dump, push-name, JID-mapping, conversation, group participant/metadata, message parsing, and message insertion timings and item counts.
+- WhatsApp event-handler duration by event type, sync/contact/group sync spans, and text-send persistence, network-send, and status-update timings. Message content and JIDs are not included in trace fields.
+- Avatar backfill, attempt, queue wait, per-JID lock wait, WhatsApp picture lookup, download, file write, and metadata persistence timings. Avatar events report contact/group type and byte/count fields, not JIDs or URLs.
+- Realtime event publication fan-out and SSE event encoding/write/flush timings, including slow-subscriber resync counts.
+- SQLite prepare, query, execution, and row-iteration timings for database calls. SQL statement text is included to identify the operation; bound argument values are omitted.
+- One-second aggregates for store read/write mutex acquisitions: counts, cumulative wait, and maximum wait, to show contention without writing a log record while a store lock is held.
+- Logging overhead. Each trace event reports the prior trace event's end-to-end emission time and the most recent logger output write time in `previous_trace_emit_ns` and `previous_log_write_ns`. These values are necessarily one event behind because a record cannot include the duration of its own completed write.
+
+History-sync chunks share a trace ID for the lifetime of a sync type. Context-aware HTTP, history-message insertion, message sending, and avatar database operations carry `trace_id` and `span_id` fields for correlation. Other SQLite operations still emit individual timings, but may not share their caller's trace ID when they use legacy non-context database calls. Trace instrumentation adds work and can increase log volume; enable it for diagnosis and turn it off for normal use. The ordinary application logs remain unchanged when tracing is disabled.
+
 ---
 
 ## Health
@@ -221,7 +247,7 @@ Unknown chat IDs currently return an empty message page (`200`), not `404`.
 - `limit` — bounded page size.
 - `before` — cursor for older messages.
 - `after` — revision cursor for polling deltas, or a time cursor for newer messages.
-- `anchor=oldestUnread` — returns a window around the inbound message at the unread boundary. The boundary is determined by the chat's `unreadCount`: for a count of `N`, it is the Nth newest inbound message, regardless of individual message statuses. Outgoing messages do not contribute to the count.
+- `anchor=oldestUnread` — returns a window around the inbound message at the unread boundary and includes its ID in `anchorMessageId`. The boundary is determined by the chat's `unreadCount`: for a count of `N`, it is the Nth newest inbound message, regardless of individual message statuses. Outgoing messages do not contribute to the count.
 
 **Behavior**:
 - Returns `[]` in `messages` for unknown or empty chats.

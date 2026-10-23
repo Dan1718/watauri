@@ -20,7 +20,7 @@ let focused = true;
 let visibility = "visible";
 let selectedTab = "chats";
 let receipts = true;
-let requests: { chatId: string; sendReceipt: boolean; messageIds: string[] }[];
+let requests: { chatId: string; sendReceipt: boolean; messageIds?: string[] }[];
 let deferChats = false;
 let resolveChats: ((response: Response) => void) | undefined;
 let serverUnreadCount = 3;
@@ -167,9 +167,11 @@ test("dispatch is blocked when unfocused, hidden, or on another app tab", async 
   await respond(0, 2);
 });
 
-test("API refuses an empty ID batch before fetch", async () => {
-  await expect(markBackendChatRead("a", true, [])).rejects.toThrow("require message IDs");
-  expect(requests).toHaveLength(0);
+test("API omits IDs for a whole-chat read request", async () => {
+  const pending = markBackendChatRead("a", true, []);
+  expect(requests).toEqual([{ chatId: "a", sendReceipt: true }]);
+  await respond(0, 0);
+  await expect(pending).resolves.toEqual({ unreadCount: 0 });
 });
 
 test("viewport batch remeasures after scrolling, excludes overscan, and checks focus at flush", async () => {

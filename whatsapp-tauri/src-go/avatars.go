@@ -35,8 +35,15 @@ type avatarRefreshFlight struct {
 }
 
 type avatarCandidate struct {
-	jid string
+	jid    string
+	recent bool
 }
+
+const (
+	recentAvatarChatLimit   = 50
+	recentAvatarWorkerCount = 4
+	backgroundAvatarDelay   = time.Second
+)
 
 func (s *UserDataStore) avatarPath(id string) (string, error) {
 	if !avatarIDPattern.MatchString(id) {
@@ -255,25 +262,54 @@ func (wa *WAManager) backfillMissingAvatars(ctx context.Context) {
 		wa.avatarBackfillMu.Unlock()
 	}()
 
-	candidates, err := wa.store.MissingAvatarCandidates()
+	candidates, err := wa.store.MissingAvatarCandidatesPrioritized(recentAvatarChatLimit)
 	traceEvent(ctx, "avatar.backfill_candidates", map[string]any{"count": len(candidates), "failed": err != nil, "error_type": errorType(err)})
 	if err != nil {
 		log.Printf("[avatar] failed to list backfill candidates: %v", err)
 		return
 	}
-	var workers sync.WaitGroup
+	recent := make([]avatarCandidate, 0, len(candidates))
+	background := make([]avatarCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.recent {
+			recent = append(recent, candidate)
+		} else {
+			background = append(background, candidate)
+		}
+	}
+	if !wa.processAvatarCandidates(ctx, recent, recentAvatarWorkerCount, 0) {
+		return
+	}
+	// Keep the long tail out of the recent-chat burst: drain it in one worker
+	// with a pause between candidates after all priority candidates finish.
+	wa.processAvatarCandidates(ctx, background, 1, backgroundAvatarDelay)
+	log.Printf("[avatar] backfill completed: candidates=%d", len(candidates))
+}
+
+func (wa *WAManager) processAvatarCandidates(ctx context.Context, candidates []avatarCandidate, workerCount int, delay time.Duration) bool {
+	if len(candidates) == 0 {
+		return ctx.Err() == nil
+	}
 	jobs := make(chan avatarCandidate)
-	workerCount := 4
+	var workers sync.WaitGroup
 	for range workerCount {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
 			for candidate := range jobs {
 				jid, err := types.ParseJID(candidate.jid)
-				if err != nil {
-					continue
+				if err == nil {
+					wa.fetchMissingAvatar(ctx, jid)
 				}
-				wa.fetchMissingAvatar(ctx, jid)
+				if delay > 0 && ctx.Err() == nil {
+					timer := time.NewTimer(delay)
+					select {
+					case <-ctx.Done():
+						timer.Stop()
+						return
+					case <-timer.C:
+					}
+				}
 			}
 		}()
 	}
@@ -282,13 +318,13 @@ func (wa *WAManager) backfillMissingAvatars(ctx context.Context) {
 		case <-ctx.Done():
 			close(jobs)
 			workers.Wait()
-			return
+			return false
 		case jobs <- candidate:
 		}
 	}
 	close(jobs)
 	workers.Wait()
-	log.Printf("[avatar] backfill completed: candidates=%d", len(candidates))
+	return ctx.Err() == nil
 }
 
 func avatarTargetType(jid types.JID) string {

@@ -15,6 +15,7 @@ export type RealtimeNotification = {
 
 type RealtimeContextValue = {
   connected: boolean;
+  historySync: { active: boolean; progress: number; label: string };
   subscribe: (listener: (event: RealtimeNotification) => void) => () => void;
 };
 
@@ -28,6 +29,7 @@ export function useRealtime() {
 
 export default function RealtimeProvider({ children }: PropsWithChildren) {
   const [connected, setConnected] = useState(false);
+  const [historySyncs, setHistorySyncs] = useState<Record<string, number>>({});
   const listenersRef = useRef(new Set<(event: RealtimeNotification) => void>());
 
   const subscribe = useCallback((listener: (event: RealtimeNotification) => void) => {
@@ -41,6 +43,17 @@ export default function RealtimeProvider({ children }: PropsWithChildren) {
     if (typeof EventSource === "undefined") return;
     const source = new EventSource(`${API_BASE}/api/events`);
     const notify = (event: RealtimeNotification) => {
+      if (event.type === "sync" && event.syncType && event.progress !== undefined) {
+        setHistorySyncs((current) => {
+          if (event.progress! >= 100) {
+            if (!(event.syncType! in current)) return current;
+            const next = { ...current };
+            delete next[event.syncType!];
+            return next;
+          }
+          return { ...current, [event.syncType!]: Math.max(0, Math.min(100, event.progress!)) };
+        });
+      }
       for (const listener of listenersRef.current) listener(event);
     };
 
@@ -70,6 +83,16 @@ export default function RealtimeProvider({ children }: PropsWithChildren) {
     };
   }, []);
 
-  const value = useMemo(() => ({ connected, subscribe }), [connected, subscribe]);
+  const syncProgress = Object.values(historySyncs);
+  const historySync = useMemo(() => ({
+    active: syncProgress.length > 0,
+    progress: syncProgress.length
+      ? Math.round(syncProgress.reduce((sum, progress) => sum + progress, 0) / syncProgress.length)
+      : 0,
+    label: Object.keys(historySyncs).length === 1
+      ? `Syncing ${Object.keys(historySyncs)[0].toLowerCase().replaceAll("_", " ")}`
+      : "Syncing history",
+  }), [historySyncs]);
+  const value = useMemo(() => ({ connected, historySync, subscribe }), [connected, historySync, subscribe]);
   return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>;
 }

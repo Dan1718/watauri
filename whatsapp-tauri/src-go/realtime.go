@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	realtimeClientBuffer = 32
-	realtimeHeartbeat    = 20 * time.Second
+	realtimeClientBuffer     = 32
+	realtimeHeartbeat        = 20 * time.Second
+	historySyncFlushInterval = time.Minute
 )
 
 type RealtimeEvent struct {
@@ -24,20 +25,81 @@ type RealtimeEvent struct {
 }
 
 type EventHub struct {
-	mu          sync.RWMutex
-	subscribers map[chan RealtimeEvent]struct{}
+	mu           sync.RWMutex
+	subscribers  map[chan RealtimeEvent]struct{}
+	syncTypes    map[string]struct{}
+	syncProgress map[string]int
+	pending      bool
+	flushTimer   *time.Timer
 }
 
 var realtimeHub = NewEventHub()
 
 func NewEventHub() *EventHub {
-	return &EventHub{subscribers: make(map[chan RealtimeEvent]struct{})}
+	return &EventHub{
+		subscribers:  make(map[chan RealtimeEvent]struct{}),
+		syncTypes:    make(map[string]struct{}),
+		syncProgress: make(map[string]int),
+	}
+}
+
+// BeginHistorySync coalesces invalidations while one or more history syncs run.
+func (h *EventHub) BeginHistorySync(syncType string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, exists := h.syncTypes[syncType]; exists {
+		return
+	}
+	wasActive := len(h.syncTypes) > 0
+	h.syncTypes[syncType] = struct{}{}
+	h.syncProgress[syncType] = 0
+	zero := 0
+	h.publishLocked(RealtimeEvent{Type: "sync", Progress: &zero, SyncType: syncType})
+	if !wasActive {
+		h.flushTimer = time.AfterFunc(historySyncFlushInterval, h.flushDuringHistorySync)
+	}
+}
+
+// EndHistorySync flushes pending invalidations immediately after the last sync ends.
+func (h *EventHub) EndHistorySync(syncType string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.syncTypes, syncType)
+	if len(h.syncTypes) > 0 {
+		return
+	}
+	if h.flushTimer != nil {
+		h.flushTimer.Stop()
+		h.flushTimer = nil
+	}
+	if h.pending {
+		h.pending = false
+		h.publishLocked(RealtimeEvent{Type: "resync"})
+	}
+}
+
+func (h *EventHub) flushDuringHistorySync() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.syncTypes) == 0 {
+		h.flushTimer = nil
+		return
+	}
+	if h.pending {
+		h.pending = false
+		h.publishLocked(RealtimeEvent{Type: "resync"})
+	}
+	h.flushTimer = time.AfterFunc(historySyncFlushInterval, h.flushDuringHistorySync)
 }
 
 func (h *EventHub) Subscribe() (<-chan RealtimeEvent, func()) {
 	ch := make(chan RealtimeEvent, realtimeClientBuffer)
 	h.mu.Lock()
 	h.subscribers[ch] = struct{}{}
+	for syncType, progress := range h.syncProgress {
+		progress := progress
+		ch <- RealtimeEvent{Type: "sync", Progress: &progress, SyncType: syncType}
+	}
 	h.mu.Unlock()
 
 	var once sync.Once
@@ -56,8 +118,32 @@ func (h *EventHub) Publish(event RealtimeEvent) {
 	if event.Type == "" {
 		return
 	}
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if event.Type == "sync" && event.SyncType != "" && event.Progress != nil {
+		if *event.Progress >= 100 {
+			delete(h.syncProgress, event.SyncType)
+		} else {
+			h.syncProgress[event.SyncType] = *event.Progress
+		}
+	}
+	if len(h.syncTypes) > 0 && isInvalidationEvent(event.Type) {
+		h.pending = true
+		return
+	}
+	h.publishLocked(event)
+}
+
+func isInvalidationEvent(eventType string) bool {
+	switch eventType {
+	case "message", "receipt", "chat", "contact", "resync":
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *EventHub) publishLocked(event RealtimeEvent) {
 	for ch := range h.subscribers {
 		select {
 		case ch <- event:

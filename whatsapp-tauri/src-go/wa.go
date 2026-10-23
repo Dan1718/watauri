@@ -409,6 +409,7 @@ func (wa *WAManager) beginHistorySync(data *waHistorySync.HistorySync) {
 	}
 	if wa.historySyncs[syncType] == nil {
 		wa.historySyncs[syncType] = &historySyncStats{startedAt: time.Now()}
+		realtimeHub.BeginHistorySync(syncType)
 		log.Printf("[wa] history sync started type=%s", syncType)
 	}
 	wa.historySyncMu.Unlock()
@@ -445,6 +446,7 @@ func (wa *WAManager) finishHistorySyncChunk(data *waHistorySync.HistorySync, chu
 	done := *stats
 	delete(wa.historySyncs, syncType)
 	wa.historySyncMu.Unlock()
+	realtimeHub.EndHistorySync(syncType)
 
 	log.Printf("[wa] history sync completed type=%s chunks=%d progress=%d conversations=%d stored=%d skipped=%d messages=%d stored=%d skipped=%d pushnames=%d/%d jidMappings=%d/%d skipped=%d duration=%s",
 		syncType, done.chunks, done.progress,

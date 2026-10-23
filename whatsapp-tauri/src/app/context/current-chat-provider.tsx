@@ -388,9 +388,13 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
   }, []);
 
   const markVisibleMessagesRead = useCallback((chatId: string, ids: string[]) => {
+    const messages = currentChatRef.current.messages;
+    const newlyReadCount = messages.filter((message) =>
+      ids.includes(message.id) && !message.isSentFromUser && !message.read
+    ).length;
     const isActive = () => mountedRef.current && activeChatIdRef.current === chatId && currentChatRef.current.chatId === chatId &&
       canReadConversation(readSettingsRef.current.pollingActive, document.visibilityState, document.hasFocus());
-    void readBatches.mark(chatId, currentChatRef.current.messages, ids, isActive,
+    void readBatches.mark(chatId, messages, ids, isActive,
       (messageIds) => markBackendChatRead(chatId, readSettingsRef.current.readReceiptsEnabled, messageIds),
       (_ids, unreadCount) => {
         if (!mountedRef.current) return;
@@ -420,7 +424,17 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
           : prev);
       },
     ).catch(() => {
-      // Keep the optimistic read state; the viewport hook will retry this batch.
+      const cached = cacheRef.current.get(chatId);
+      if (cached) cacheRef.current.set(chatId, {
+        ...cached, messages: readBatches.rollback(chatId, cached.messages, ids),
+      });
+      setCurrentChat((prev) => prev.chatId === chatId
+        ? {
+            ...prev,
+            unreadCount: prev.unreadCount + newlyReadCount,
+            messages: readBatches.rollback(chatId, prev.messages, ids),
+          }
+        : prev);
     });
   }, [readBatches, setChatUnreadCount]);
 

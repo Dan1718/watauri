@@ -6,7 +6,7 @@ import ContactsProvider from "../context/contacts-provider";
 import CurrentChatProvider from "../context/current-chat-provider";
 import NewChatProvider from "../context/new-chat-provider";
 import ProfileProvider from "../context/profile-provider";
-import RealtimeProvider from "../context/realtime-provider";
+import RealtimeProvider, { useRealtime } from "../context/realtime-provider";
 import TabProvider from "../context/tab-provider";
 import TabActivePanel from "./tab-active-panel";
 import TabIcons from "./tab-icons";
@@ -65,6 +65,7 @@ export default function AuthenticatedShell() {
             <ChatsProvider>
               <CurrentChatProvider>
                 <NewChatProvider>
+                  <HistorySyncProgress />
                   <section className="flex h-full w-full overflow-hidden">
                     <div className="h-full w-20 shrink-0">
                       <TabIcons />
@@ -137,5 +138,27 @@ export default function AuthenticatedShell() {
         </RealtimeProvider>
       </TabProvider>
     </ProfileProvider>
+  );
+}
+
+function HistorySyncProgress() {
+  const { historySync } = useRealtime();
+  if (!historySync.active) return null;
+  return (
+    <div className="pointer-events-none fixed left-0 right-0 top-0 z-[100]" role="status" aria-live="polite">
+      <div
+        aria-label={`${historySync.label}: ${historySync.progress}%`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={historySync.progress}
+        className="h-1 w-full bg-white/10"
+        role="progressbar"
+      >
+        <div className="h-full bg-[#25D366] transition-[width] duration-300" style={{ width: `${historySync.progress}%` }} />
+      </div>
+      <div className="absolute right-3 top-2 rounded-md bg-[#202322]/95 px-2.5 py-1 text-xs text-white/80 shadow">
+        {historySync.label} · {historySync.progress}%
+      </div>
+    </div>
   );
 }

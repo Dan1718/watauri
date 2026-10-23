@@ -19,6 +19,15 @@ export class ReadBatches {
     return changed ? next : messages;
   }
 
+  rollback(chatId: string, messages: Message[], ids: string[]): Message[] {
+    const failed = new Set(ids);
+    return messages.map((message) =>
+      failed.has(message.id) && !message.isSentFromUser && !this.confirmed.get(chatId)?.has(message.id)
+        ? { ...message, read: false }
+        : message
+    );
+  }
+
   beginOptimistic(chatId: string, ids: string[]) {
     const optimistic = this.optimistic.get(chatId) ?? new Set<string>();
     ids.forEach((id) => optimistic.add(id));
@@ -62,6 +71,8 @@ export class ReadBatches {
     } catch (error) {
       ids.forEach((id) => retryIds.add(id));
       this.retry.set(chatId, retryIds);
+      ids.forEach((id) => this.optimistic.get(chatId)?.delete(id));
+      if (this.optimistic.get(chatId)?.size === 0) this.optimistic.delete(chatId);
       throw error;
     } finally {
       this.inFlight.delete(chatId);

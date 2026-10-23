@@ -27,6 +27,7 @@ export type BackendMessage = {
   status: "pending" | "received" | "sent" | "delivered" | "read";
   mediaType?: string;
   isFromMe?: boolean;
+  mentionedJids?: string[];
 };
 
 export type MessagePage = {

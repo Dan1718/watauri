@@ -68,6 +68,7 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
     read: message.status === "read",
     pending: message.status === "pending",
     mediaType: message.mediaType,
+    mentionedJids: message.mentionedJids ?? [],
   };
 }
 
@@ -85,6 +86,8 @@ function sameMessage(a: Message, b: Message) {
     a.read === b.read && a.sent === b.sent && a.delivered === b.delivered &&
     a.pending === b.pending &&
     a.mediaType === b.mediaType &&
+    a.mentionedJids?.length === b.mentionedJids?.length &&
+    (a.mentionedJids ?? []).every((jid, index) => jid === b.mentionedJids?.[index]) &&
     (a.reactions === b.reactions || Boolean(a.reactions && b.reactions &&
       a.reactions.length === b.reactions.length && a.reactions.every((reaction, index) =>
         reaction.emoji === b.reactions![index].emoji && reaction.count === b.reactions![index].count)));

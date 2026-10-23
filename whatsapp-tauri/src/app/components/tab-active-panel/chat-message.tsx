@@ -39,6 +39,7 @@ export default function ChatMessage({
   isGroup,
   senderName,
   senderAvatar,
+  mentionNames,
   showSender,
   blueTickEnabled,
 }: {
@@ -46,9 +47,19 @@ export default function ChatMessage({
   isGroup: boolean;
   senderName?: string;
   senderAvatar?: string;
+  mentionNames?: (string | undefined)[];
   showSender: boolean;
   blueTickEnabled: boolean;
 }) {
+  let mentionIndex = 0;
+  const textParts = splitMessageText(message.message).flatMap((part, partIndex) => {
+    if (partIndex % 2 !== 0 || !mentionNames?.length) return [part];
+    return part.split(/(@[+\d*•∙.…-]+)/gu).map((segment, index) => {
+      if (index % 2 === 0) return segment;
+      const mentionName = mentionNames[mentionIndex++];
+      return mentionName ? `@${mentionName}` : segment;
+    });
+  });
   const bubble = (
     <div
       data-unread-message-id={!message.isSentFromUser && !message.read ? message.id : undefined}
@@ -63,7 +74,7 @@ export default function ChatMessage({
       ) : null}
       <div className="flex min-w-0 max-w-full items-end justify-between gap-2">
         <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-white">
-          {splitMessageText(message.message).map((part, index) => {
+          {textParts.map((part, index) => {
             const href = getMessageHref(part);
             return href ? (
               <a

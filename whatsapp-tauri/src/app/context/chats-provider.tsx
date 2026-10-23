@@ -37,6 +37,7 @@ export type Message = {
   pending?: boolean;
   reactions?: ReactionType[];
   mediaType?: string;
+  mentionedJids?: string[];
 };
 
 export type Chat = {
@@ -93,6 +94,7 @@ function toMessage(message: BackendMessage, fallbackContactId: string): Message 
     read: message.status === "read",
     pending: message.status === "pending",
     mediaType: message.mediaType,
+    mentionedJids: message.mentionedJids ?? [],
   };
 }
 
@@ -101,7 +103,9 @@ function sameMessage(a: Message, b: Message) {
     a.timestamp === b.timestamp && a.isSentFromUser === b.isSentFromUser &&
     a.read === b.read && a.sent === b.sent && a.delivered === b.delivered &&
     a.pending === b.pending &&
-    a.mediaType === b.mediaType;
+    a.mediaType === b.mediaType &&
+    a.mentionedJids?.length === b.mentionedJids?.length &&
+    (a.mentionedJids ?? []).every((jid, index) => jid === b.mentionedJids?.[index]);
 }
 
 function sameChat(a: Chat, b: Chat) {

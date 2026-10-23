@@ -53,6 +53,7 @@ type MessageRowProps = {
   isGroup: boolean;
   senderName?: string;
   senderAvatar?: string;
+  mentionNames?: (string | undefined)[];
   showSender: boolean;
   compact: boolean;
   isLast: boolean;
@@ -66,6 +67,7 @@ const MessageRow = memo(function MessageRow({
   isGroup,
   senderName,
   senderAvatar,
+  mentionNames,
   showSender,
   compact,
   isLast,
@@ -99,6 +101,7 @@ const MessageRow = memo(function MessageRow({
           isGroup={isGroup}
           senderName={senderName}
           senderAvatar={senderAvatar}
+          mentionNames={mentionNames}
           showSender={showSender}
           blueTickEnabled={blueTickEnabled}
         />
@@ -291,6 +294,17 @@ const MessageList = memo(function MessageList({
             candidate && [candidate.id, candidate.phoneJid, candidate.lidJid]
               .some((alias) => alias && normalizeJid(alias) === senderId)
           );
+          const mentionNames = message.mentionedJids?.map((jid) => {
+            const normalizedJid = normalizeJid(jid);
+            const mentionedContact = contacts?.[normalizedJid] ?? Object.values(contacts ?? {}).find((candidate) =>
+              candidate && [candidate.id, candidate.phoneJid, candidate.lidJid]
+                .some((alias) => alias && normalizeJid(alias) === normalizedJid)
+            );
+            if (mentionedContact) return mentionedContact.displayName;
+            return jid.endsWith("@s.whatsapp.net")
+              ? resolveContactDisplayName({ jid })
+              : undefined;
+          });
           const isOldestUnread = unreadCount > 0 && index === unreadMarkerIndex;
 
           return (
@@ -308,6 +322,7 @@ const MessageList = memo(function MessageList({
                 isGroup={isGroup}
                 senderName={contact?.displayName ?? resolveContactDisplayName({ jid: message.contactId })}
                 senderAvatar={contact?.contactAvatar}
+                mentionNames={mentionNames}
                 showSender={!repeatedIncomingSender}
                 compact={compact}
                 isLast={index === messages.length - 1}

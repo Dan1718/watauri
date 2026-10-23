@@ -39,6 +39,7 @@ export type CurrentChatData = {
   isLoading: boolean;
   error: string | null;
   hasMoreMessages: boolean;
+  unreadAnchorMessageId: string | null;
 };
 
 export type CurrentChat = CurrentChatData & {
@@ -120,6 +121,7 @@ type CachedMessages = {
   latestCursor: string | null;
   hasMore: boolean;
   initialized: boolean;
+  unreadAnchorMessageId: string | null;
 };
 
 type ActiveRequest = {
@@ -146,6 +148,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     isLoading: false,
     error: null,
     hasMoreMessages: false,
+    unreadAnchorMessageId: null,
   });
   const {
     chats: { complete },
@@ -192,6 +195,9 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     try {
       const page = await listBackendMessages(chatId, {
         limit: 100,
+        anchor: direction === "initial" && currentChatRef.current.chatId === chatId && currentChatRef.current.unreadCount > 0
+          ? "oldestUnread"
+          : undefined,
         before: direction === "older" ? cached?.nextCursor ?? undefined : undefined,
         after: direction === "newer" ? cached?.latestCursor ?? undefined : undefined,
         signal: controller.signal,
@@ -209,6 +215,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
             latestCursor: page.latestCursor,
             hasMore: page.hasMore,
             initialized: true,
+            unreadAnchorMessageId: page.anchorMessageId ?? null,
           }
         : direction === "older"
           ? {
@@ -216,28 +223,33 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
               messages: mergeMessages(current.messages, incoming, true),
               nextCursor: page.nextCursor,
               hasMore: page.hasMore,
+              unreadAnchorMessageId: current.unreadAnchorMessageId,
             }
           : {
               ...current,
               messages: mergeMessages(current.messages, incoming),
               latestCursor: page.latestCursor ?? current.latestCursor,
+              unreadAnchorMessageId: current.unreadAnchorMessageId,
             };
       const next = current && candidate.messages === current.messages &&
         candidate.nextCursor === current.nextCursor &&
         candidate.latestCursor === current.latestCursor &&
         candidate.hasMore === current.hasMore &&
-        candidate.initialized === current.initialized
+        candidate.initialized === current.initialized &&
+        candidate.unreadAnchorMessageId === current.unreadAnchorMessageId
         ? current
         : candidate;
       cacheRef.current.set(chatId, next);
       setCurrentChat((prev) => {
         if (prev.chatId !== chatId) return prev;
         if (prev.messages === next.messages && prev.hasMoreMessages === next.hasMore &&
+          prev.unreadAnchorMessageId === next.unreadAnchorMessageId &&
           !prev.isLoading && prev.error === null) return prev;
         return {
           ...prev,
           messages: next.messages,
           hasMoreMessages: next.hasMore,
+          unreadAnchorMessageId: next.unreadAnchorMessageId,
           isLoading: false,
           error: null,
         };
@@ -262,7 +274,8 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
     if (activeRequest) await activeRequest.done;
     if (currentChatRef.current.chatId !== chatId) return;
     const initialized = cacheRef.current.get(chatId)?.initialized;
-    await requestPage(chatId, initialized ? "newer" : "initial");
+    const hasUnreadMessages = currentChatRef.current.unreadCount > 0;
+    await requestPage(chatId, initialized && !hasUnreadMessages ? "newer" : "initial");
   }, [requestPage]);
 
   useEffect(() => {
@@ -380,7 +393,8 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
           group: null,
           messages: cached?.messages ?? [],
           hasMoreMessages: cached?.hasMore ?? false,
-          isLoading: !cached?.initialized,
+          isLoading: !cached?.initialized || (chat.unreadCount ?? 0) > 0,
+          unreadAnchorMessageId: null,
           error: null,
         } : {}),
         ...chat,
@@ -495,6 +509,7 @@ export default function CurrentChatProvider({ children }: PropsWithChildren) {
       ? { ...cached, messages: mergeMessages(cached.messages, [optimisticMessage]) }
       : {
           messages: [optimisticMessage], nextCursor: null, latestCursor: null, hasMore: false, initialized: false,
+          unreadAnchorMessageId: null,
         });
     setCurrentChat((prev) => prev.chatId === chatId
       ? { ...prev, messages: mergeMessages(prev.messages, [optimisticMessage]), error: null }

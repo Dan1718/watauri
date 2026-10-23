@@ -197,7 +197,7 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	if anchor == "oldestUnread" {
 		messagesCtx, finishMessages := traceStart(r.Context(), "api.messages.query_anchor", map[string]any{"limit": limit})
-		messages, hasOlder, hasNewer, latestRevision, err := store.GetMessagesAnchoredAtOldestUnreadContext(messagesCtx, chatID, limit)
+		messages, hasOlder, hasNewer, latestRevision, anchorMessageID, err := store.GetMessagesAnchoredAtOldestUnreadContext(messagesCtx, chatID, limit)
 		finishMessages(err)
 		if err != nil {
 			log.Printf("[http] GET /api/chats/%s error: %v", chatID, err)
@@ -221,14 +221,15 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 
 		_, finishEncode := traceStart(r.Context(), "api.messages.encode", map[string]any{"message_count": len(messages)})
 		encodeErr := json.NewEncoder(w).Encode(MessagePage{
-			Messages:     messages,
-			NextCursor:   olderCursor,
-			LatestCursor: latestRevisionCursor(latestRevision),
-			HasMore:      hasOlder,
-			OlderCursor:  olderCursor,
-			NewerCursor:  newerCursor,
-			HasOlder:     hasOlder,
-			HasNewer:     hasNewer,
+			Messages:        messages,
+			AnchorMessageID: anchorMessageID,
+			NextCursor:      olderCursor,
+			LatestCursor:    latestRevisionCursor(latestRevision),
+			HasMore:         hasOlder,
+			OlderCursor:     olderCursor,
+			NewerCursor:     newerCursor,
+			HasOlder:        hasOlder,
+			HasNewer:        hasNewer,
 		})
 		finishEncode(encodeErr)
 

@@ -31,6 +31,7 @@ export type BackendMessage = {
 
 export type MessagePage = {
   messages: BackendMessage[];
+  anchorMessageId?: string;
   nextCursor: string | null;
   latestCursor: string | null;
   hasMore: boolean;
@@ -39,6 +40,7 @@ export type MessagePage = {
 export type MessagePageOptions = {
   before?: string;
   after?: string;
+  anchor?: "oldestUnread";
   limit?: number;
   signal?: AbortSignal;
 };
@@ -93,11 +95,12 @@ export const getBackendProfile = (signal?: AbortSignal) =>
 
 export const listBackendMessages = (
   chatId: string,
-  { before, after, limit, signal }: MessagePageOptions = {}
+  { before, after, anchor, limit, signal }: MessagePageOptions = {}
 ) => {
   const query = new URLSearchParams();
   if (before) query.set("before", before);
   if (after) query.set("after", after);
+  if (anchor) query.set("anchor", anchor);
   if (limit !== undefined) query.set("limit", String(limit));
   const suffix = query.size ? `?${query}` : "";
   return request<MessagePage>(`/api/chats/${chatId}${suffix}`, { signal });

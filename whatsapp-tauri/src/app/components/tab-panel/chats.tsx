@@ -16,6 +16,8 @@ import { formatTime, getDisplayNameFromJid, resolveContactDisplayName } from "@/
 import MessageStatusIcon from "../message-status-icon";
 import { useProfile } from "@/app/hooks/use-profile";
 import { createPortal } from "react-dom";
+import { splitMessageContent } from "../tab-active-panel/chat-message";
+import { normalizeJid } from "@/app/utils";
 
 const unreadCountFormatter = new Intl.NumberFormat("en", {
   notation: "compact",
@@ -42,6 +44,7 @@ type ChatRowProps = {
   name: string;
   avatar?: string;
   senderName?: string;
+  previewMessage: string;
   isCurrent: boolean;
   typingMatchesLastSender: boolean;
   blueTickEnabled: boolean;
@@ -53,6 +56,7 @@ const ChatRow = memo(function ChatRow({
   name,
   avatar,
   senderName,
+  previewMessage,
   isCurrent,
   typingMatchesLastSender,
   blueTickEnabled,
@@ -62,9 +66,11 @@ const ChatRow = memo(function ChatRow({
   const metaMessage = lastMessage
     ? !chat.group && typingMatchesLastSender
       ? "typing..."
-      : chat.group
-        ? `${senderName}: ${lastMessage.message}`
-        : lastMessage.message
+      : lastMessage.isSentFromUser
+        ? `You: ${previewMessage}`
+        : chat.group
+          ? `${senderName}: ${previewMessage}`
+          : previewMessage
     : "No messages yet";
 
   return (
@@ -208,12 +214,17 @@ const ChatList = memo(function ChatList({
     const contact = contactId ? getContact(contactId) : undefined;
     const lastMessage = chat.messages[chat.messages.length - 1];
     const sender = lastMessage && chat.group
-      ? chat.participants?.find(({ id }) => id === lastMessage.contactId)
+      ? chat.participants?.find((participant) =>
+          [participant.id, participant.phoneJid, participant.lidJid]
+            .some((alias) => alias && normalizeJid(alias) === normalizeJid(lastMessage.contactId))
+        )
       : undefined;
     const senderContact = lastMessage && chat.group
       ? (sender?.phoneNumber ? getContact(sender.phoneNumber) : undefined) ?? getContact(lastMessage.contactId)
       : undefined;
-    const senderName = lastMessage && chat.group
+    const senderName = lastMessage?.isSentFromUser
+      ? "You"
+      : lastMessage && chat.group
       ? resolveContactDisplayName({
           name: senderContact?.name || (sender?.isSaved ? sender?.name : undefined),
           pushName: senderContact?.pushName || sender?.pushName,
@@ -221,6 +232,35 @@ const ChatList = memo(function ChatList({
           jid: lastMessage.contactId,
         })
       : undefined;
+    const mentionTargets = lastMessage?.mentionedJids?.map((jid) => {
+      const normalizedJid = normalizeJid(jid);
+      const participant = chat.participants?.find((candidate) =>
+        [candidate.id, candidate.phoneJid, candidate.lidJid]
+          .some((alias) => alias && normalizeJid(alias) === normalizedJid)
+      );
+      const mentionedContact = participant
+        ? [participant.phoneNumber, participant.phoneJid, participant.lidJid, participant.id]
+            .filter((alias): alias is string => Boolean(alias))
+            .map(getContact)
+            .find(Boolean)
+        : getContact(jid);
+      const resolvedName = mentionedContact?.displayName && mentionedContact.displayName !== "Unknown contact"
+        ? mentionedContact.displayName
+        : resolveContactDisplayName({
+            name: mentionedContact?.name || (participant?.isSaved ? participant.name : undefined),
+            pushName: mentionedContact?.pushName || participant?.pushName,
+            phoneNumber: participant?.phoneNumber || mentionedContact?.phone,
+            jid: participant?.phoneJid || participant?.id || jid,
+          });
+      return { jid, name: resolvedName === "Unknown contact" ? undefined : resolvedName };
+    });
+    const previewMessage = lastMessage
+      ? splitMessageContent(lastMessage.message, mentionTargets)
+          .map((part) => part.type === "mention"
+            ? `@${part.target.name ?? part.fallbackText.slice(1)}`
+            : part.text)
+          .join("")
+      : "No messages yet";
     return (
       <ChatRow
         key={chat.id}
@@ -228,6 +268,7 @@ const ChatList = memo(function ChatList({
         name={getChatName(chat)}
         avatar={contact?.contactAvatar}
         senderName={senderName}
+        previewMessage={previewMessage}
         isCurrent={chat.id === currentChatId}
         typingMatchesLastSender={Boolean(lastMessage && typingContactId === lastMessage.contactId)}
         blueTickEnabled={blueTickEnabled}

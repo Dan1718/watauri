@@ -65,13 +65,17 @@ func (wa *WAManager) lockAvatar(jid types.JID) func() {
 }
 
 func (wa *WAManager) fetchMissingAvatar(ctx context.Context, jid types.JID) {
+	ctx, finish := traceStart(ctx, "avatar.fetch_missing", map[string]any{"target_type": avatarTargetType(jid)})
+	var result error
+	defer func() { finish(result) }()
 	if wa.store == nil || jid.IsEmpty() {
 		return
 	}
 	jid = jid.ToNonAD()
 	group := jid.Server == types.GroupServer
-	assetID, _, err := wa.store.AvatarMetadata(jid.String(), group)
+	assetID, _, err := wa.store.AvatarMetadataContext(ctx, jid.String(), group)
 	if err != nil {
+		result = err
 		log.Printf("[avatar] metadata lookup for %s failed: %v", jid, err)
 		return
 	}
@@ -79,6 +83,7 @@ func (wa *WAManager) fetchMissingAvatar(ctx context.Context, jid types.JID) {
 		return
 	}
 	if err := wa.refreshAvatarWithRetries(ctx, jid, true); err != nil {
+		result = err
 		log.Printf("[avatar] giving up after %d attempts for %s: %v", avatarRefreshAttempts, jid, err)
 	}
 }
@@ -89,7 +94,9 @@ func (wa *WAManager) refreshAvatar(ctx context.Context, jid types.JID) {
 	}
 }
 
-func (wa *WAManager) refreshAvatarWithRetries(ctx context.Context, jid types.JID, onlyIfMissing bool) error {
+func (wa *WAManager) refreshAvatarWithRetries(ctx context.Context, jid types.JID, onlyIfMissing bool) (result error) {
+	ctx, finish := traceStart(ctx, "avatar.refresh", map[string]any{"target_type": avatarTargetType(jid), "only_if_missing": onlyIfMissing})
+	defer func() { finish(result) }()
 	if wa.store == nil || wa.client == nil || jid.IsEmpty() {
 		return nil
 	}
@@ -111,13 +118,17 @@ func (wa *WAManager) refreshAvatarWithRetries(ctx context.Context, jid types.JID
 	}()
 
 	for attempt := 1; attempt <= avatarRefreshAttempts; attempt++ {
+		_, finishAttempt := traceStart(ctx, "avatar.attempt", map[string]any{"attempt": attempt, "target_type": avatarTargetType(jid)})
 		if err := wa.refreshAvatarAttempt(ctx, jid, onlyIfMissing); err == nil {
+			finishAttempt(nil)
 			return nil
 		} else if attempt == avatarRefreshAttempts {
 			flight.err = err
+			finishAttempt(err)
 			return err
 		} else {
 			flight.err = err
+			finishAttempt(err)
 		}
 		timer := time.NewTimer(time.Duration(attempt) * 500 * time.Millisecond)
 		select {
@@ -130,26 +141,33 @@ func (wa *WAManager) refreshAvatarWithRetries(ctx context.Context, jid types.JID
 	return nil
 }
 
-func (wa *WAManager) refreshAvatarAttempt(ctx context.Context, jid types.JID, onlyIfMissing bool) error {
+func (wa *WAManager) refreshAvatarAttempt(ctx context.Context, jid types.JID, onlyIfMissing bool) (result error) {
 	if wa.store == nil || wa.client == nil || jid.IsEmpty() {
 		return nil
 	}
 	jid = jid.ToNonAD()
+	ctx, finish := traceStart(ctx, "avatar.refresh_attempt", map[string]any{"target_type": avatarTargetType(jid), "only_if_missing": onlyIfMissing})
+	defer func() { finish(result) }()
 	ctx, cancel := context.WithTimeout(ctx, avatarRefreshTimeout)
 	defer cancel()
 
 	if wa.avatarSlots != nil {
+		queueStarted := time.Now()
 		select {
 		case wa.avatarSlots <- struct{}{}:
+			traceEvent(ctx, "avatar.queue_acquired", map[string]any{"wait_ns": time.Since(queueStarted).Nanoseconds()})
 			defer func() { <-wa.avatarSlots }()
 		case <-ctx.Done():
+			traceEvent(ctx, "avatar.queue_timeout", map[string]any{"wait_ns": time.Since(queueStarted).Nanoseconds()})
 			return ctx.Err()
 		}
 	}
+	avatarLockStarted := time.Now()
 	unlock := wa.lockAvatar(jid)
+	traceEvent(ctx, "avatar.jid_lock_acquired", map[string]any{"wait_ns": time.Since(avatarLockStarted).Nanoseconds()})
 	defer unlock()
 	group := jid.Server == types.GroupServer
-	oldAssetID, previousPictureID, err := wa.store.AvatarMetadata(jid.String(), group)
+	oldAssetID, previousPictureID, err := wa.store.AvatarMetadataContext(ctx, jid.String(), group)
 	if err != nil {
 		log.Printf("[avatar] metadata lookup for %s failed: %v", jid, err)
 		return err
@@ -160,9 +178,11 @@ func (wa *WAManager) refreshAvatarAttempt(ctx context.Context, jid types.JID, on
 	if oldAssetID == "" {
 		previousPictureID = "" // Without a local file, force a full lookup even if legacy metadata has an ID.
 	}
+	lookupStarted := time.Now()
 	info, err := wa.client.GetProfilePictureInfo(ctx, jid, &whatsmeow.GetProfilePictureParams{ExistingID: previousPictureID})
+	traceEvent(ctx, "avatar.whatsapp_lookup", map[string]any{"duration_ns": time.Since(lookupStarted).Nanoseconds(), "failed": err != nil, "error_type": errorType(err)})
 	if errors.Is(err, whatsmeow.ErrProfilePictureNotSet) {
-		wa.removeAvatarLocked(jid, group)
+		wa.removeAvatarLockedContext(ctx, jid, group)
 		return nil
 	}
 	if err != nil {
@@ -179,7 +199,9 @@ func (wa *WAManager) refreshAvatarAttempt(ctx context.Context, jid types.JID, on
 		err := fmt.Errorf("picture lookup returned incomplete data")
 		return err
 	}
+	downloadStarted := time.Now()
 	data, err := downloadAvatar(ctx, info.URL)
+	traceEvent(ctx, "avatar.download", map[string]any{"duration_ns": time.Since(downloadStarted).Nanoseconds(), "bytes": len(data), "failed": err != nil, "error_type": errorType(err)})
 	if err != nil {
 		return err
 	}
@@ -191,13 +213,19 @@ func (wa *WAManager) refreshAvatarAttempt(ctx context.Context, jid types.JID, on
 	if err != nil {
 		return err
 	}
+	fileStarted := time.Now()
 	if err := writeAvatarAtomically(path, data); err != nil {
+		traceEvent(ctx, "avatar.file_write", map[string]any{"duration_ns": time.Since(fileStarted).Nanoseconds(), "bytes": len(data), "failed": true, "error_type": errorType(err)})
 		return err
 	}
-	if err := wa.store.SaveAvatar(jid.String(), assetID, info.ID, group); err != nil {
+	traceEvent(ctx, "avatar.file_write", map[string]any{"duration_ns": time.Since(fileStarted).Nanoseconds(), "bytes": len(data)})
+	dbStarted := time.Now()
+	if err := wa.store.SaveAvatarContext(ctx, jid.String(), assetID, info.ID, group); err != nil {
+		traceEvent(ctx, "avatar.metadata_save", map[string]any{"duration_ns": time.Since(dbStarted).Nanoseconds(), "failed": true, "error_type": errorType(err)})
 		_ = os.Remove(path)
 		return err
 	}
+	traceEvent(ctx, "avatar.metadata_save", map[string]any{"duration_ns": time.Since(dbStarted).Nanoseconds()})
 	if oldAssetID != "" {
 		if oldPath, err := wa.store.avatarPath(oldAssetID); err == nil {
 			_ = os.Remove(oldPath)
@@ -212,6 +240,8 @@ func (wa *WAManager) refreshAvatarAttempt(ctx context.Context, jid types.JID, on
 }
 
 func (wa *WAManager) backfillMissingAvatars(ctx context.Context) {
+	ctx, finish := traceStart(ctx, "avatar.backfill", nil)
+	defer func() { finish(nil) }()
 	wa.avatarBackfillMu.Lock()
 	if wa.avatarBackfillRun {
 		wa.avatarBackfillMu.Unlock()
@@ -226,6 +256,7 @@ func (wa *WAManager) backfillMissingAvatars(ctx context.Context) {
 	}()
 
 	candidates, err := wa.store.MissingAvatarCandidates()
+	traceEvent(ctx, "avatar.backfill_candidates", map[string]any{"count": len(candidates), "failed": err != nil, "error_type": errorType(err)})
 	if err != nil {
 		log.Printf("[avatar] failed to list backfill candidates: %v", err)
 		return
@@ -260,15 +291,29 @@ func (wa *WAManager) backfillMissingAvatars(ctx context.Context) {
 	log.Printf("[avatar] backfill completed: candidates=%d", len(candidates))
 }
 
+func avatarTargetType(jid types.JID) string {
+	if jid.Server == types.GroupServer {
+		return "group"
+	}
+	return "contact"
+}
+
+func errorType(err error) string {
+	if err == nil {
+		return ""
+	}
+	return fmt.Sprintf("%T", err)
+}
+
 func (wa *WAManager) removeAvatar(jid types.JID, group bool) {
 	jid = jid.ToNonAD()
 	unlock := wa.lockAvatar(jid)
 	defer unlock()
-	wa.removeAvatarLocked(jid, group)
+	wa.removeAvatarLockedContext(context.Background(), jid, group)
 }
 
-func (wa *WAManager) removeAvatarLocked(jid types.JID, group bool) {
-	oldID, err := wa.store.ClearAvatar(jid.String(), group)
+func (wa *WAManager) removeAvatarLockedContext(ctx context.Context, jid types.JID, group bool) {
+	oldID, err := wa.store.ClearAvatarContext(ctx, jid.String(), group)
 	if err != nil {
 		log.Printf("[avatar] failed to clear metadata for %s: %v", jid, err)
 		return

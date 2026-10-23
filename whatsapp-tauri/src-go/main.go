@@ -12,6 +12,7 @@ var (
 )
 
 func main() {
+	enableLogWriteTiming()
 	log.Println("[main] Starting WhatsApp Tauri backend...")
 
 	var err error
@@ -21,6 +22,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("[main] Failed to open userdata.db: %v", err)
 	}
+	startStoreLockTrace()
 	log.Println("[main] User data store ready")
 
 	log.Println("[main] Initializing WhatsApp manager...")

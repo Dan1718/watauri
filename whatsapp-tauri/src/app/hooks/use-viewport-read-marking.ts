@@ -16,7 +16,7 @@ export function useViewportReadMarking(
       timer = undefined;
       if (!canReadConversation(active, document.visibilityState, document.hasFocus())) return;
       const ids = visibleUnreadIds(scroller, window.innerWidth, window.innerHeight);
-      markVisibleMessagesRead(chatId, ids);
+      if (ids.length > 0) markVisibleMessagesRead(chatId, ids);
     };
     const schedule = () => {
       if (timer === undefined) timer = setTimeout(flush, 200);

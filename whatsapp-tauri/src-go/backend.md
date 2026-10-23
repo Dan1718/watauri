@@ -532,13 +532,16 @@ data: {"type":"resync"}
 
 **Behavior**:
 - Sends a keep-alive comment every 20 seconds; disconnected clients are removed.
+- History-sync progress events are sent immediately. A new connection receives the latest progress for each active sync so its progress indicator can recover after reconnecting.
+- While one or more history syncs are active, `message`, `receipt`, `chat`, `contact`, and `resync` invalidations are coalesced into a single global `resync` at most once per minute. When the final active sync completes, any pending invalidation is flushed immediately; subsequent invalidations publish normally.
+- The frontend shows the active history-sync progress in a top-of-window progress bar. Progress is removed when that sync reports 100%.
 - The initial message invalidation emitted for a text send includes `clientSendId` when the request supplied one, allowing the sender to reconcile its optimistic row with the persisted message ID.
 - EventSource reconnects automatically. On each connection/reconnection, the frontend refreshes current state through existing APIs.
 - Message and receipt events identify the affected chat and message IDs; the active conversation refetches changes using its revision cursor. The sidebar refreshes from `GET /api/chats`.
-- Chat invalidations may include a chat ID; history sync can emit a global `resync` invalidation.
+- Chat invalidations may include a chat ID. During history sync, changed data is represented by the coalesced global `resync` invalidation.
 - Contact avatar updates/removals emit `contact`, prompting the contact list to refetch `/api/contacts`.
 - A slow client's bounded queue is replaced with a `resync` event rather than blocking WhatsApp event processing.
-- Event delivery is best-effort, not replayable. The frontend refreshes the chat list when SSE connects and on relevant invalidations; it does not poll the full chat list while SSE is unavailable.
+- Invalidation delivery is best-effort and not replayable. Active sync progress is sent to new connections as a current-state snapshot. The frontend refreshes the chat list when SSE connects and on relevant invalidations; it does not poll the full chat list while SSE is unavailable.
 
 **Status**: Implemented.
 

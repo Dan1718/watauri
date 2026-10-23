@@ -67,6 +67,8 @@ export class ReadBatches {
     } catch (error) {
       ids.forEach((id) => retryIds.add(id));
       this.retry.set(chatId, retryIds);
+      ids.forEach((id) => this.optimistic.get(chatId)?.delete(id));
+      if (this.optimistic.get(chatId)?.size === 0) this.optimistic.delete(chatId);
       throw error;
     } finally {
       this.inFlight.delete(chatId);

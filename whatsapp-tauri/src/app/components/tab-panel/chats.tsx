@@ -287,7 +287,10 @@ function ChatHeaderMenu() {
       setIsOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsOpen(false);
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        setIsOpen(false);
+      }
     };
 
     updatePosition();

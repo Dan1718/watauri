@@ -4,7 +4,7 @@ import dayjs from "dayjs";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Message } from "@/app/context/chats-provider";
 import { CurrentChatContacts } from "@/app/context/current-chat-provider";
-import { useViewportReadMarking } from "@/app/hooks/use-viewport-read-marking";
+import { useViewportReadMarking, useViewportScrollerRef } from "@/app/hooks/use-viewport-read-marking";
 import { useCurrentChat } from "@/app/hooks/use-current-chat";
 import { useChats } from "@/app/hooks/use-chats";
 import { useProfile } from "@/app/hooks/use-profile";
@@ -162,6 +162,7 @@ const MessageList = memo(function MessageList({
 }) {
   const setScroller = useViewportReadMarking(chatId, markVisibleMessagesRead);
   const scrollerRef = useRef<HTMLElement | null>(null);
+  const handleScrollerRef = useViewportScrollerRef(setScroller, scrollerRef);
   const [activeReactionId, setActiveReactionId] = useState<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isScrolling, setIsScrolling] = useState(false);
@@ -261,10 +262,7 @@ const MessageList = memo(function MessageList({
         {visibleTimestamp !== null ? <DatePill timestamp={visibleTimestamp} floating /> : null}
       </div>
       <Virtuoso
-        scrollerRef={(element) => {
-          scrollerRef.current = element instanceof HTMLElement ? element : null;
-          setScroller(element);
-        }}
+        scrollerRef={handleScrollerRef}
         ref={virtuosoRef}
         key={chatId}
         className="h-full w-full"
@@ -710,6 +708,17 @@ export default function CurrentChat() {
       group: null,
     });
   }, [complete, group?.contacts, loadCurrentChat]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    const closeChatOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (event.target instanceof Element && event.target.closest('[role="menu"], [role="dialog"], [aria-modal="true"]')) return;
+      loadCurrentChat({ chatId: null });
+    };
+    document.addEventListener("keydown", closeChatOnEscape);
+    return () => document.removeEventListener("keydown", closeChatOnEscape);
+  }, [chatId, loadCurrentChat]);
   if (!chatId) {
     return (
       <section className="flex h-full w-full items-center justify-center bg-[#1d1f1f] text-white">
